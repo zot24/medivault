@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import React, { useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
@@ -50,6 +50,30 @@ export default function Dashboard() {
 
   // Memoize computed values for better performance
   const recentDocuments = React.useMemo(() => allDocuments?.slice(0, 5), [allDocuments]);
+  
+  const totalDocuments = React.useMemo(() => allDocuments?.length || 0, [allDocuments]);
+  
+  const documentsThisMonth = React.useMemo(() => 
+    allDocuments?.filter(doc => {
+      if (!doc.createdAt) return false;
+      const docDate = new Date(doc.createdAt);
+      const now = new Date();
+      return docDate.getMonth() === now.getMonth() && docDate.getFullYear() === now.getFullYear();
+    }).length || 0, [allDocuments]
+  );
+  
+  const documentTypeStats = React.useMemo(() => {
+    const types = allDocuments?.reduce((acc, doc) => {
+      acc[doc.documentType] = (acc[doc.documentType] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>) || {};
+    
+    const mostCommonType = Object.entries(types).reduce((a, b) => 
+      types[a[0]] > types[b[0]] ? a : b, ['none', 0]
+    )[0];
+    
+    return { types, mostCommonType };
+  }, [allDocuments]);
 
   if (isLoading) {
     return (
