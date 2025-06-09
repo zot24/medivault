@@ -175,7 +175,7 @@ export default function Landing() {
             {/* Symptoms Tracking Card */}
             <div className="relative">
               <Card className="rounded-2xl shadow-2xl">
-                <CardContent className="p-6">
+                <CardContent className="p-6 pt-[0px] pb-[0px]">
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium" style={{ color: "hsl(215, 15%, 45%)" }}>Symptom Tracking</span>
