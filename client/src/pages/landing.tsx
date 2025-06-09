@@ -39,9 +39,6 @@ export default function Landing() {
             </div>
             <div className="hidden md:block">
               <div className="ml-10 flex items-baseline space-x-8">
-                <a href="#features" className="hover:text-medical-blue transition-colors duration-200" style={{ color: "hsl(215, 28%, 17%)" }}>Features</a>
-                <a href="#security" className="hover:text-medical-blue transition-colors duration-200" style={{ color: "hsl(215, 28%, 17%)" }}>Security</a>
-                <a href="#about" className="hover:text-medical-blue transition-colors duration-200" style={{ color: "hsl(215, 28%, 17%)" }}>About</a>
                 <Button 
                   variant="ghost" 
                   onClick={handleSignIn}
@@ -82,13 +79,7 @@ export default function Landing() {
                 >
                   Create Your Account
                 </Button>
-                <Button 
-                  variant="outline" 
-                  size="lg"
-                  className="border-2 border-white text-white hover:bg-white hover:text-medical-blue font-semibold text-lg"
-                >
-                  Watch Demo
-                </Button>
+
               </div>
               <div className="flex items-center mt-8 text-blue-100">
                 <Lock className="mr-2 h-4 w-4" />
@@ -193,7 +184,7 @@ export default function Landing() {
                   <div className="text-center">
                     <UserCheck className="w-16 h-16 text-trust-purple mx-auto mb-6" />
                     <blockquote className="text-lg mb-4" style={{ color: "hsl(215, 28%, 17%)" }}>
-                      "Now I can walk into any appointment knowing exactly what's been going on. My records and notes are always with me."
+                      "Now I know what's going on with my health and what questions to ask next. Everything is organized and ready."
                     </blockquote>
                     <p className="text-sm" style={{ color: "hsl(215, 15%, 45%)" }}>— Real user</p>
                   </div>
@@ -258,13 +249,7 @@ export default function Landing() {
             >
               Start Free Account
             </Button>
-            <Button 
-              variant="outline" 
-              size="lg"
-              className="border-2 border-white text-white hover:bg-white hover:text-medical-blue font-semibold text-lg"
-            >
-              Schedule Demo
-            </Button>
+
           </div>
           <div className="flex items-center justify-center mt-8 text-blue-100">
             <CheckCircle className="mr-2 h-4 w-4" />
@@ -285,43 +270,21 @@ export default function Landing() {
       {/* Footer */}
       <footer className="bg-professional-dark text-white py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid md:grid-cols-4 gap-8">
-            <div className="md:col-span-2">
-              <div className="flex items-center mb-6">
-                <Shield className="text-medical-blue text-2xl mr-3" />
-                <span className="text-xl font-semibold">MediVault</span>
-              </div>
-              <p className="text-gray-300 mb-6 leading-relaxed">
-                Empowering patients to take control of their healthcare journey through secure, organized medical record management.
-              </p>
+          <div className="text-center">
+            <div className="flex items-center justify-center mb-6">
+              <Shield className="text-medical-blue text-2xl mr-3" />
+              <span className="text-xl font-semibold">MediVault</span>
             </div>
-            
-            <div>
-              <h4 className="font-semibold mb-4">Product</h4>
-              <ul className="space-y-3 text-gray-300">
-                <li><a href="#features" className="hover:text-white transition-colors duration-200">Features</a></li>
-                <li><a href="#security" className="hover:text-white transition-colors duration-200">Security</a></li>
-                <li><a href="#" className="hover:text-white transition-colors duration-200">Pricing</a></li>
-                <li><a href="#" className="hover:text-white transition-colors duration-200">Mobile App</a></li>
-              </ul>
-            </div>
-            
-            <div>
-              <h4 className="font-semibold mb-4">Support</h4>
-              <ul className="space-y-3 text-gray-300">
-                <li><a href="#" className="hover:text-white transition-colors duration-200">Help Center</a></li>
-                <li><a href="#" className="hover:text-white transition-colors duration-200">Privacy Policy</a></li>
-                <li><a href="#" className="hover:text-white transition-colors duration-200">Terms of Service</a></li>
-                <li><a href="#" className="hover:text-white transition-colors duration-200">Contact Us</a></li>
-              </ul>
-            </div>
+            <p className="text-gray-300 mb-6 leading-relaxed max-w-2xl mx-auto">
+              Empowering patients to take control of their healthcare journey through secure, organized medical record management.
+            </p>
           </div>
           
           <div className="border-t border-gray-700 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
             <p className="text-gray-400">© 2024 MediVault. All rights reserved.</p>
             <div className="flex items-center mt-4 md:mt-0">
               <Shield className="text-health-green mr-2 h-4 w-4" />
-              <span className="text-gray-400 text-sm">HIPAA Compliant • SOC 2 Certified</span>
+              <span className="text-gray-400 text-sm">Secure & Private • Your Data Stays Yours</span>
             </div>
           </div>
         </div>
