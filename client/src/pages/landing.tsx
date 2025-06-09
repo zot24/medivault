@@ -61,7 +61,7 @@ export default function Landing() {
       {/* Hero Section */}
       <section className="relative bg-gradient-to-br from-medical-blue to-trust-purple py-20 lg:py-32">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid lg:grid-cols-3 gap-8 items-start">
+          <div className="grid lg:grid-cols-4 gap-6 items-start">
             <div className="text-white lg:col-span-1">
               <h1 className="text-4xl lg:text-5xl font-bold mb-6 leading-tight">
                 Take Control of Your Health —
@@ -129,12 +129,11 @@ export default function Landing() {
                       <div className="w-3 h-3 bg-medical-blue rounded-full"></div>
                     </div>
                     
-                    <div className="space-y-4">
+                    <div className="space-y-3">
                       {[
                         { name: "Blood Analysis", type: "Lab Report", date: "Nov 28", icon: "📊" },
                         { name: "ECG Results", type: "Test Results", date: "Nov 12", icon: "❤️" },
-                        { name: "X-Ray Chest", type: "Imaging", date: "Oct 15", icon: "🔍" },
-                        { name: "Prescription", type: "Medication", date: "Oct 30", icon: "💊" }
+                        { name: "X-Ray Chest", type: "Imaging", date: "Oct 15", icon: "🔍" }
                       ].map((doc, index) => (
                         <div key={index} className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
                           <div className="text-lg">{doc.icon}</div>
@@ -142,9 +141,44 @@ export default function Landing() {
                             <div className="flex items-center justify-between">
                               <div>
                                 <span className="text-sm font-medium block" style={{ color: "hsl(215, 28%, 17%)" }}>{doc.name}</span>
-                                <span className="text-xs" style={{ color: "hsl(215, 15%, 45%)" }}>{doc.type}</span>
+                                <span className="text-xs inline-block mr-2" style={{ color: "hsl(215, 15%, 45%)" }}>{doc.type}</span>
+                                <span className="text-xs" style={{ color: "hsl(215, 15%, 45%)" }}>• {doc.date}</span>
                               </div>
-                              <span className="text-xs" style={{ color: "hsl(215, 15%, 45%)" }}>{doc.date}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+            
+            {/* Symptoms Tracking Card */}
+            <div className="relative">
+              <Card className="rounded-2xl shadow-2xl">
+                <CardContent className="p-6">
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium" style={{ color: "hsl(215, 15%, 45%)" }}>Symptom Tracking</span>
+                      <div className="w-3 h-3 bg-trust-purple rounded-full"></div>
+                    </div>
+                    
+                    <div className="space-y-3">
+                      {[
+                        { symptom: "Headache", severity: "Mild", date: "Today", trend: "📉" },
+                        { symptom: "Joint Pain", severity: "Moderate", date: "Yesterday", trend: "📈" },
+                        { symptom: "Fatigue", severity: "Mild", date: "Dec 1", trend: "➡️" }
+                      ].map((item, index) => (
+                        <div key={index} className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
+                          <div className="text-lg">{item.trend}</div>
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <span className="text-sm font-medium block" style={{ color: "hsl(215, 28%, 17%)" }}>{item.symptom}</span>
+                                <span className="text-xs inline-block mr-2" style={{ color: "hsl(215, 15%, 45%)" }}>{item.severity}</span>
+                                <span className="text-xs" style={{ color: "hsl(215, 15%, 45%)" }}>• {item.date}</span>
+                              </div>
                             </div>
                           </div>
                         </div>
