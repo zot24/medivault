@@ -90,13 +90,13 @@ export default function Landing() {
             <div className="relative">
               <Card className="rounded-2xl shadow-2xl">
                 <CardContent className="p-6">
-                  <div className="space-y-6">
+                  <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium" style={{ color: "hsl(215, 15%, 45%)" }}>Recent Health Timeline</span>
                       <div className="w-3 h-3 bg-health-green rounded-full"></div>
                     </div>
                     
-                    <div className="space-y-4">
+                    <div className="space-y-2">
                       {[
                         { date: "Dec 15", event: "Annual Physical", type: "checkup", color: "bg-medical-blue" },
                         { date: "Nov 28", event: "Lab Results", type: "lab", color: "bg-health-green" },
@@ -123,7 +123,7 @@ export default function Landing() {
             <div className="relative">
               <Card className="rounded-2xl shadow-2xl">
                 <CardContent className="p-6">
-                  <div className="space-y-6">
+                  <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium" style={{ color: "hsl(215, 15%, 45%)" }}>Stored Documents</span>
                       <div className="w-3 h-3 bg-medical-blue rounded-full"></div>
@@ -156,7 +156,7 @@ export default function Landing() {
             <div className="relative">
               <Card className="rounded-2xl shadow-2xl">
                 <CardContent className="p-6">
-                  <div className="space-y-6">
+                  <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium" style={{ color: "hsl(215, 15%, 45%)" }}>Symptom Tracking</span>
                       <div className="w-3 h-3 bg-trust-purple rounded-full"></div>
@@ -356,16 +356,16 @@ export default function Landing() {
               <Shield className="text-medical-blue text-2xl mr-3" />
               <span className="text-xl font-semibold text-white">MediVault</span>
             </div>
-            <p className="mb-6 leading-relaxed max-w-2xl mx-auto" style={{ color: "rgba(255, 255, 255, 0.9)" }}>
+            <p className="mb-6 leading-relaxed max-w-2xl mx-auto text-gray-200">
               Empowering patients to take control of their healthcare journey through secure, organized medical record management.
             </p>
           </div>
           
-          <div className="border-t mt-12 pt-8 flex flex-col md:flex-row justify-between items-center" style={{ borderColor: "rgba(255, 255, 255, 0.3)" }}>
-            <p style={{ color: "rgba(255, 255, 255, 0.8)" }}>© 2024 MediVault. All rights reserved.</p>
+          <div className="border-t border-gray-600 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
+            <p className="text-gray-300">© 2024 MediVault. All rights reserved.</p>
             <div className="flex items-center mt-4 md:mt-0">
               <Shield className="text-health-green mr-2 h-4 w-4" />
-              <span className="text-sm" style={{ color: "rgba(255, 255, 255, 0.8)" }}>Secure & Private • Your Data Stays Yours</span>
+              <span className="text-sm text-gray-300">Secure & Private • Your Data Stays Yours</span>
             </div>
           </div>
         </div>
