@@ -7,6 +7,7 @@ import {
   index,
   serial,
   date,
+  integer,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -54,7 +55,30 @@ export const medicalDocuments = pgTable("medical_documents", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Symptom tracking table
+export const symptoms = pgTable("symptoms", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  symptomName: varchar("symptom_name").notNull(),
+  severity: integer("severity").notNull(), // 1-10 scale
+  description: text("description"),
+  location: varchar("location"), // body part/area
+  duration: varchar("duration"), // "minutes", "hours", "days"
+  triggers: text("triggers").array(),
+  medications: text("medications").array(),
+  notes: text("notes"),
+  loggedAt: timestamp("logged_at").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const insertMedicalDocumentSchema = createInsertSchema(medicalDocuments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertSymptomSchema = createInsertSchema(symptoms).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
@@ -64,3 +88,5 @@ export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type MedicalDocument = typeof medicalDocuments.$inferSelect;
 export type InsertMedicalDocument = z.infer<typeof insertMedicalDocumentSchema>;
+export type Symptom = typeof symptoms.$inferSelect;
+export type InsertSymptom = z.infer<typeof insertSymptomSchema>;

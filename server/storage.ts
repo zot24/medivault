@@ -1,10 +1,13 @@
 import {
   users,
   medicalDocuments,
+  symptoms,
   type User,
   type UpsertUser,
   type MedicalDocument,
   type InsertMedicalDocument,
+  type Symptom,
+  type InsertSymptom,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, ilike, or } from "drizzle-orm";
@@ -23,6 +26,14 @@ export interface IStorage {
   searchMedicalDocuments(userId: string, query: string): Promise<MedicalDocument[]>;
   getMedicalDocumentsByType(userId: string, type: string): Promise<MedicalDocument[]>;
   deleteMedicalDocument(id: number, userId: string): Promise<boolean>;
+  
+  // Symptom tracking operations
+  createSymptom(symptom: InsertSymptom): Promise<Symptom>;
+  getSymptoms(userId: string, limit?: number): Promise<Symptom[]>;
+  getSymptomsByDateRange(userId: string, startDate: string, endDate: string): Promise<Symptom[]>;
+  getSymptomsByName(userId: string, symptomName: string): Promise<Symptom[]>;
+  updateSymptom(id: number, userId: string, updates: Partial<InsertSymptom>): Promise<Symptom | undefined>;
+  deleteSymptom(id: number, userId: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -117,7 +128,75 @@ export class DatabaseStorage implements IStorage {
         eq(medicalDocuments.id, id),
         eq(medicalDocuments.userId, userId)
       ));
-    return result.rowCount > 0;
+    return (result.rowCount || 0) > 0;
+  }
+
+  // Symptom tracking operations
+  async createSymptom(symptom: InsertSymptom): Promise<Symptom> {
+    const [created] = await db
+      .insert(symptoms)
+      .values(symptom)
+      .returning();
+    return created;
+  }
+
+  async getSymptoms(userId: string, limit?: number): Promise<Symptom[]> {
+    let query = db
+      .select()
+      .from(symptoms)
+      .where(eq(symptoms.userId, userId))
+      .orderBy(desc(symptoms.dateRecorded), desc(symptoms.createdAt));
+    
+    if (limit) {
+      query = query.limit(limit);
+    }
+    
+    return await query;
+  }
+
+  async getSymptomsByDateRange(userId: string, startDate: string, endDate: string): Promise<Symptom[]> {
+    return await db
+      .select()
+      .from(symptoms)
+      .where(and(
+        eq(symptoms.userId, userId),
+        // Using string comparison for dates in YYYY-MM-DD format
+        desc(symptoms.dateRecorded)
+      ))
+      .orderBy(desc(symptoms.dateRecorded));
+  }
+
+  async getSymptomsByName(userId: string, symptomName: string): Promise<Symptom[]> {
+    return await db
+      .select()
+      .from(symptoms)
+      .where(and(
+        eq(symptoms.userId, userId),
+        ilike(symptoms.symptomName, `%${symptomName}%`)
+      ))
+      .orderBy(desc(symptoms.dateRecorded));
+  }
+
+  async updateSymptom(id: number, userId: string, updates: Partial<InsertSymptom>): Promise<Symptom | undefined> {
+    const [updated] = await db
+      .update(symptoms)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(and(
+        eq(symptoms.id, id),
+        eq(symptoms.userId, userId)
+      ))
+      .returning();
+    return updated;
+  }
+
+  async deleteSymptom(id: number, userId: string): Promise<boolean> {
+    const result = await db
+      .delete(symptoms)
+      .where(and(
+        eq(symptoms.id, id),
+        eq(symptoms.userId, userId)
+      ));
+    return (result.rowCount || 0) > 0;
   }
 }
 

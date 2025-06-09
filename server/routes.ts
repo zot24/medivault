@@ -5,7 +5,7 @@ import path from "path";
 import fs from "fs";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertMedicalDocumentSchema } from "@shared/schema";
+import { insertMedicalDocumentSchema, insertSymptomSchema } from "@shared/schema";
 import { z } from "zod";
 
 // Configure multer for file uploads
