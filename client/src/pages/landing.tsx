@@ -12,8 +12,7 @@ import {
   UserCheck,
   Server,
   Star,
-  CheckCircle,
-  Activity
+  CheckCircle
 } from "lucide-react";
 
 export default function Landing() {
@@ -67,11 +66,11 @@ export default function Landing() {
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div className="text-white">
               <h1 className="text-4xl lg:text-6xl font-bold mb-6 leading-tight">
-                your health,
-                <span className="text-warm-amber"> finally organized</span>
+                Your Health Records,
+                <span className="text-warm-amber"> Securely Organized</span>
               </h1>
               <p className="text-xl lg:text-2xl mb-8 text-blue-100 leading-relaxed">
-                ditch the chaos. store your medical records, track symptoms, and stay on top of appointments — all in one simple, private app
+                Take control of your medical history with our secure, easy-to-use platform. Upload, organize, and access your health records anytime, anywhere.
               </p>
               <div className="flex flex-col sm:flex-row gap-4">
                 <Button 
@@ -79,19 +78,19 @@ export default function Landing() {
                   onClick={handleGetStarted}
                   className="bg-health-green text-white hover:bg-emerald-600 font-semibold text-lg transform hover:scale-105 transition-all duration-200"
                 >
-                  start now
+                  Start Free Today
                 </Button>
                 <Button 
                   variant="outline" 
                   size="lg"
                   className="border-2 border-white text-white hover:bg-white hover:text-medical-blue font-semibold text-lg"
                 >
-                  watch demo
+                  Watch Demo
                 </Button>
               </div>
               <div className="flex items-center mt-8 text-blue-100">
                 <Lock className="mr-2 h-4 w-4" />
-                <span className="text-sm">your data stays yours — encrypted storage, no ads</span>
+                <span className="text-sm">HIPAA Compliant & Bank-Level Security</span>
               </div>
             </div>
             <div className="relative">
@@ -119,11 +118,11 @@ export default function Landing() {
       <section id="features" className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <h2 className="text-3xl lg:text-4xl font-bold mb-4" style={{ color: "hsl(215, 28%, 17%)" }}>
-              built for peace of mind
+            <h2 className="text-3xl lg:text-4xl font-bold text-professional-dark mb-4">
+              Everything You Need to Manage Your Health
             </h2>
-            <p className="text-xl max-w-3xl mx-auto" style={{ color: "hsl(215, 15%, 45%)" }}>
-              whether you're dealing with chronic stuff or just want your medical life in order — medivault gives you the tools to actually manage your health
+            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
+              From document storage to appointment tracking, MediVault provides a comprehensive solution for your healthcare management needs.
             </p>
           </div>
 
@@ -131,51 +130,45 @@ export default function Landing() {
             {[
               {
                 icon: Upload,
-                emoji: "✅",
-                title: "upload anything",
-                description: "store lab results, prescriptions, images, and notes — auto-organized by date & type",
+                title: "Secure Document Upload",
+                description: "Upload lab results, prescriptions, and medical images with end-to-end encryption. All files are automatically organized by date and type.",
                 color: "medical-blue"
               },
               {
                 icon: Calendar,
-                emoji: "📅",
-                title: "timeline tracking",
-                description: "see your full health journey — appointments, treatments, and key events in one clean view",
+                title: "Appointment Tracking",
+                description: "Keep track of all your medical appointments, check-ups, and treatment dates in one convenient timeline view.",
                 color: "health-green"
               },
               {
-                icon: Activity,
-                emoji: "📓",
-                title: "symptom tracking",
-                description: "log symptoms in real-time and spot patterns over days, weeks, or months — finally see what your body's been trying to tell you",
+                icon: Search,
+                title: "Smart Search & Filter",
+                description: "Find any record instantly with powerful search and filtering options. Filter by date, doctor, or condition.",
                 color: "trust-purple"
               },
               {
-                icon: Search,
-                emoji: "🔍",
-                title: "lightning-fast search",
-                description: "search by doctor, keyword, date, or condition — no more endless scrolling",
+                icon: Share2,
+                title: "Easy Sharing",
+                description: "Securely share specific records with your healthcare providers with just a few clicks. Control who sees what.",
                 color: "warm-amber"
               },
               {
-                icon: Bell,
-                emoji: "🔔",
-                title: "smart reminders",
-                description: "set nudges for meds, checkups, symptoms, or custom goals — stay on top of it all",
+                icon: Smartphone,
+                title: "Mobile Access",
+                description: "Access your medical records on any device, anywhere. Our mobile-optimized interface works seamlessly across all platforms.",
                 color: "medical-blue"
               },
               {
-                icon: Smartphone,
-                emoji: "📱",
-                title: "always with you",
-                description: "access everything on mobile or desktop, wherever you are",
+                icon: Bell,
+                title: "Smart Reminders",
+                description: "Never miss an appointment or medication. Set custom reminders for check-ups, prescriptions, and health goals.",
                 color: "health-green"
               }
             ].map((feature, index) => (
               <Card key={index} className="p-8 border border-gray-100 hover:shadow-lg hover:border-medical-blue transition-all duration-200 group">
                 <CardContent className="p-0">
                   <div className="mb-6">
-                    <span className="text-4xl">{feature.emoji}</span>
+                    <feature.icon className={`w-12 h-12 text-${feature.color} group-hover:scale-110 transition-transform duration-200`} />
                   </div>
                   <h3 className="text-xl font-semibold mb-4" style={{ color: "hsl(215, 28%, 17%)" }}>{feature.title}</h3>
                   <p className="leading-relaxed" style={{ color: "hsl(215, 15%, 45%)" }}>
@@ -184,53 +177,6 @@ export default function Landing() {
                 </CardContent>
               </Card>
             ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Testimonial Section */}
-      <section className="py-20 bg-gray-50">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl lg:text-4xl font-bold mb-12" style={{ color: "hsl(215, 28%, 17%)" }}>
-            why people love medivault
-          </h2>
-          <Card className="p-8 border-none shadow-lg">
-            <CardContent className="p-0">
-              <blockquote className="text-xl lg:text-2xl leading-relaxed mb-6" style={{ color: "hsl(215, 28%, 17%)" }}>
-                "i can actually show my doctor symptom trends and past lab results in seconds — makes appointments way less stressful"
-              </blockquote>
-              <p className="text-lg" style={{ color: "hsl(215, 15%, 45%)" }}>
-                — someone tired of guessing what happened 3 months ago
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </section>
-
-      {/* Final CTA Section */}
-      <section className="py-20 bg-white">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <h2 className="text-3xl lg:text-4xl font-bold mb-6" style={{ color: "hsl(215, 28%, 17%)" }}>
-            ready to take control of your health?
-          </h2>
-          <p className="text-xl mb-8" style={{ color: "hsl(215, 15%, 45%)" }}>
-            join people who are finally managing their medical life on their terms
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button 
-              size="lg"
-              onClick={handleGetStarted}
-              className="bg-medical-blue text-white hover:bg-blue-700 font-semibold text-lg"
-            >
-              get started
-            </Button>
-            <Button 
-              variant="outline" 
-              size="lg"
-              className="border-2 border-medical-blue text-medical-blue hover:bg-medical-blue hover:text-white font-semibold text-lg"
-            >
-              see it in action
-            </Button>
           </div>
         </div>
       </section>
@@ -337,21 +283,44 @@ export default function Landing() {
       {/* Footer */}
       <footer className="bg-professional-dark text-white py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-12">
-            <div className="flex items-center justify-center mb-6">
-              <Shield className="text-medical-blue text-2xl mr-3" />
-              <span className="text-2xl font-semibold">medivault</span>
+          <div className="grid md:grid-cols-4 gap-8">
+            <div className="md:col-span-2">
+              <div className="flex items-center mb-6">
+                <Shield className="text-medical-blue text-2xl mr-3" />
+                <span className="text-xl font-semibold">MediVault</span>
+              </div>
+              <p className="text-gray-300 mb-6 leading-relaxed">
+                Empowering patients to take control of their healthcare journey through secure, organized medical record management.
+              </p>
             </div>
-            <h3 className="text-2xl font-bold mb-6">honest tech, no bullshit</h3>
-            <div className="max-w-2xl mx-auto space-y-4 text-gray-300">
-              <p>we're not HIPAA or SOC2 certified — just clear about what we are</p>
-              <p>🔐 your data is encrypted and never sold</p>
-              <p>this is built for humans, not hospital systems</p>
+            
+            <div>
+              <h4 className="font-semibold mb-4">Product</h4>
+              <ul className="space-y-3 text-gray-300">
+                <li><a href="#features" className="hover:text-white transition-colors duration-200">Features</a></li>
+                <li><a href="#security" className="hover:text-white transition-colors duration-200">Security</a></li>
+                <li><a href="#" className="hover:text-white transition-colors duration-200">Pricing</a></li>
+                <li><a href="#" className="hover:text-white transition-colors duration-200">Mobile App</a></li>
+              </ul>
+            </div>
+            
+            <div>
+              <h4 className="font-semibold mb-4">Support</h4>
+              <ul className="space-y-3 text-gray-300">
+                <li><a href="#" className="hover:text-white transition-colors duration-200">Help Center</a></li>
+                <li><a href="#" className="hover:text-white transition-colors duration-200">Privacy Policy</a></li>
+                <li><a href="#" className="hover:text-white transition-colors duration-200">Terms of Service</a></li>
+                <li><a href="#" className="hover:text-white transition-colors duration-200">Contact Us</a></li>
+              </ul>
             </div>
           </div>
           
-          <div className="border-t border-gray-700 pt-8 text-center">
-            <p className="text-gray-400">© 2024 medivault. built for people who want their health data organized.</p>
+          <div className="border-t border-gray-700 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
+            <p className="text-gray-400">© 2024 MediVault. All rights reserved.</p>
+            <div className="flex items-center mt-4 md:mt-0">
+              <Shield className="text-health-green mr-2 h-4 w-4" />
+              <span className="text-gray-400 text-sm">HIPAA Compliant • SOC 2 Certified</span>
+            </div>
           </div>
         </div>
       </footer>
