@@ -268,7 +268,7 @@ export default function Dashboard() {
                     Log Symptoms
                   </Link>
                 </Button>
-                <Button variant="outline" className="w-full">
+                <Button variant="outline" className="w-full" onClick={() => alert('Appointment scheduling feature coming soon! Please contact your healthcare provider directly.')}>
                   <Calendar className="mr-2 h-4 w-4 text-health-green" />
                   Schedule Appointment
                 </Button>

@@ -111,13 +111,24 @@ export default function Navigation() {
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Mobile menu button */}
-          <div className="md:hidden">
-            <Button variant="ghost" size="icon">
-              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-            </Button>
+          {/* Mobile navigation */}
+          <div className="md:hidden flex items-center space-x-2">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = location === item.href;
+              
+              return (
+                <Link key={item.href} href={item.href}>
+                  <Button
+                    variant={isActive ? "default" : "ghost"}
+                    size="sm"
+                    className={isActive ? "bg-medical-blue text-white" : ""}
+                  >
+                    <Icon className="h-4 w-4" />
+                  </Button>
+                </Link>
+              );
+            })}
           </div>
         </div>
       </div>
