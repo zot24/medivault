@@ -54,6 +54,27 @@ export default function Landing() {
                 </Button>
               </div>
             </div>
+            
+            {/* Mobile menu button */}
+            <div className="md:hidden">
+              <div className="flex space-x-2">
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={handleSignIn}
+                  className="text-medical-blue hover:text-blue-700 font-medium"
+                >
+                  Sign In
+                </Button>
+                <Button 
+                  size="sm"
+                  onClick={handleGetStarted}
+                  className="bg-medical-blue text-white hover:bg-blue-700 font-medium"
+                >
+                  Start
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       </nav>
