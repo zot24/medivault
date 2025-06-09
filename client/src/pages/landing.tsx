@@ -165,13 +165,13 @@ export default function Landing() {
                 color: "health-green"
               }
             ].map((feature, index) => (
-              <Card key={index} className="p-8 border border-gray-100 hover:shadow-lg transition-all duration-200">
+              <Card key={index} className="p-8 border border-gray-100 hover:shadow-lg hover:border-medical-blue transition-all duration-200 group">
                 <CardContent className="p-0">
-                  <div className={`w-12 h-12 bg-${feature.color} bg-opacity-10 rounded-xl flex items-center justify-center mb-6`}>
-                    <feature.icon className={`text-${feature.color} text-xl`} />
+                  <div className="mb-6">
+                    <feature.icon className={`w-12 h-12 text-${feature.color} group-hover:scale-110 transition-transform duration-200`} />
                   </div>
-                  <h3 className="text-xl font-semibold text-professional-dark mb-4">{feature.title}</h3>
-                  <p className="text-gray-600 leading-relaxed">
+                  <h3 className="text-xl font-semibold mb-4" style={{ color: "hsl(215, 28%, 17%)" }}>{feature.title}</h3>
+                  <p className="leading-relaxed" style={{ color: "hsl(215, 15%, 45%)" }}>
                     {feature.description}
                   </p>
                 </CardContent>
