@@ -33,14 +33,14 @@ export default function Landing() {
             <div className="flex items-center">
               <div className="flex-shrink-0 flex items-center">
                 <Shield className="text-medical-blue text-2xl mr-3" />
-                <span className="text-xl font-semibold text-professional-dark">MedVault</span>
+                <span className="text-xl font-semibold" style={{ color: "hsl(215, 28%, 17%)" }}>MedVault</span>
               </div>
             </div>
             <div className="hidden md:block">
               <div className="ml-10 flex items-baseline space-x-8">
-                <a href="#features" className="text-gray-600 hover:text-medical-blue transition-colors duration-200">Features</a>
-                <a href="#security" className="text-gray-600 hover:text-medical-blue transition-colors duration-200">Security</a>
-                <a href="#about" className="text-gray-600 hover:text-medical-blue transition-colors duration-200">About</a>
+                <a href="#features" className="hover:text-medical-blue transition-colors duration-200" style={{ color: "hsl(215, 28%, 17%)" }}>Features</a>
+                <a href="#security" className="hover:text-medical-blue transition-colors duration-200" style={{ color: "hsl(215, 28%, 17%)" }}>Security</a>
+                <a href="#about" className="hover:text-medical-blue transition-colors duration-200" style={{ color: "hsl(215, 28%, 17%)" }}>About</a>
                 <Button 
                   variant="ghost" 
                   onClick={handleSignIn}
@@ -98,7 +98,7 @@ export default function Landing() {
                 <CardContent className="p-6">
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-600">Dashboard Overview</span>
+                      <span className="text-sm font-medium" style={{ color: "hsl(215, 15%, 45%)" }}>Dashboard Overview</span>
                       <div className="w-3 h-3 bg-health-green rounded-full"></div>
                     </div>
                     <div className="space-y-3">

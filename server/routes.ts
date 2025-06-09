@@ -260,7 +260,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       // Remove undefined values
-      Object.keys(updates).forEach(key => updates[key] === undefined && delete updates[key]);
+      Object.keys(updates).forEach(key => {
+        if ((updates as any)[key] === undefined) {
+          delete (updates as any)[key];
+        }
+      });
       
       const symptom = await storage.updateSymptom(symptomId, userId, updates);
       

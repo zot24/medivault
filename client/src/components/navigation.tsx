@@ -39,7 +39,7 @@ export default function Navigation() {
           {/* Logo */}
           <Link href="/" className="flex items-center">
             <Shield className="text-medical-blue text-2xl mr-3" />
-            <span className="text-xl font-semibold text-professional-dark">MedVault</span>
+            <span className="text-xl font-semibold" style={{ color: "hsl(215, 28%, 17%)" }}>MedVault</span>
           </Link>
 
           {/* Navigation Items */}
@@ -55,8 +55,9 @@ export default function Navigation() {
                   className={`flex items-center space-x-2 px-3 py-2 rounded-lg font-medium transition-colors duration-200 ${
                     isActive
                       ? "text-medical-blue bg-medical-blue bg-opacity-10"
-                      : "text-gray-600 hover:text-medical-blue hover:bg-gray-50"
+                      : "hover:text-medical-blue hover:bg-gray-50"
                   }`}
+                  style={{ color: isActive ? "hsl(217, 91%, 60%)" : "hsl(215, 28%, 17%)" }}
                 >
                   <Icon className="h-4 w-4" />
                   <span>{item.label}</span>
