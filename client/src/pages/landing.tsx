@@ -78,6 +78,7 @@ export default function Landing() {
           </div>
         </div>
       </nav>
+
       {/* Hero Section */}
       <section className="relative bg-gradient-to-br from-medical-blue to-trust-purple py-20 lg:py-32">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -142,7 +143,7 @@ export default function Landing() {
             {/* Documents Card */}
             <div className="relative">
               <Card className="rounded-2xl shadow-2xl">
-                <CardContent className="p-6 pt-[0px] pb-[0px] pl-[24px] pr-[24px]">
+                <CardContent className="p-6">
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium" style={{ color: "hsl(215, 15%, 45%)" }}>Stored Documents</span>
@@ -175,7 +176,7 @@ export default function Landing() {
             {/* Symptoms Tracking Card */}
             <div className="relative">
               <Card className="rounded-2xl shadow-2xl">
-                <CardContent className="p-6 pt-[0px] pb-[0px]">
+                <CardContent className="p-6">
                   <div className="space-y-4">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium" style={{ color: "hsl(215, 15%, 45%)" }}>Symptom Tracking</span>
@@ -207,6 +208,7 @@ export default function Landing() {
           </div>
         </div>
       </section>
+
       {/* Features Section */}
       <section id="features" className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -273,6 +275,7 @@ export default function Landing() {
           </div>
         </div>
       </section>
+
       {/* Built for People Section */}
       <section className="py-20 bg-gradient-to-r from-clean-white to-blue-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -329,6 +332,7 @@ export default function Landing() {
           </div>
         </div>
       </section>
+
       {/* CTA Section */}
       <section className="py-20 bg-gradient-to-r from-medical-blue to-trust-purple">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
@@ -355,6 +359,7 @@ export default function Landing() {
           </div>
         </div>
       </section>
+
       {/* Transparency Section */}
       <section className="py-12 bg-gray-50">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
@@ -363,6 +368,7 @@ export default function Landing() {
           </p>
         </div>
       </section>
+
       {/* Footer */}
       <footer className="py-16" style={{ backgroundColor: "hsl(215, 28%, 17%)" }}>
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
