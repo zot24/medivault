@@ -356,16 +356,16 @@ export default function Landing() {
               <Shield className="text-medical-blue text-2xl mr-3" />
               <span className="text-xl font-semibold text-white">MediVault</span>
             </div>
-            <p className="mb-6 leading-relaxed max-w-2xl mx-auto text-gray-200">
+            <p className="mb-6 leading-relaxed max-w-2xl mx-auto text-white">
               Empowering patients to take control of their healthcare journey through secure, organized medical record management.
             </p>
           </div>
           
-          <div className="border-t border-gray-600 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
-            <p className="text-gray-300">© 2024 MediVault. All rights reserved.</p>
+          <div className="border-t border-gray-500 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
+            <p className="text-white">© 2024 MediVault. All rights reserved.</p>
             <div className="flex items-center mt-4 md:mt-0">
               <Shield className="text-health-green mr-2 h-4 w-4" />
-              <span className="text-sm text-gray-300">Secure & Private • Your Data Stays Yours</span>
+              <span className="text-sm text-white">Secure & Private • Your Data Stays Yours</span>
             </div>
           </div>
         </div>
