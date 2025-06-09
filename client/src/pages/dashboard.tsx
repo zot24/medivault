@@ -16,7 +16,8 @@ import {
   Plus,
   TrendingUp,
   Clock,
-  CheckCircle
+  CheckCircle,
+  Activity
 } from "lucide-react";
 import { format } from "date-fns";
 import type { MedicalDocument } from "@shared/schema";
