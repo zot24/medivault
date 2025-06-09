@@ -26,10 +26,10 @@ export default function Navigation() {
   ];
 
   const getUserInitials = () => {
-    if (user?.firstName && user?.lastName) {
-      return `${user.firstName.charAt(0)}${user.lastName.charAt(0)}`.toUpperCase();
+    if ((user as any)?.firstName && (user as any)?.lastName) {
+      return `${(user as any).firstName.charAt(0)}${(user as any).lastName.charAt(0)}`.toUpperCase();
     }
-    return user?.email?.charAt(0).toUpperCase() || "U";
+    return (user as any)?.email?.charAt(0).toUpperCase() || "U";
   };
 
   return (
@@ -70,7 +70,7 @@ export default function Navigation() {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="relative h-10 w-10 rounded-full">
                 <Avatar className="h-10 w-10">
-                  <AvatarImage src={user?.profileImageUrl || ""} alt={user?.firstName || ""} />
+                  <AvatarImage src={(user as any)?.profileImageUrl || ""} alt={(user as any)?.firstName || ""} />
                   <AvatarFallback className="bg-medical-blue text-white">
                     {getUserInitials()}
                   </AvatarFallback>
@@ -80,13 +80,13 @@ export default function Navigation() {
             <DropdownMenuContent className="w-56" align="end" forceMount>
               <div className="flex flex-col space-y-1 p-2">
                 <p className="text-sm font-medium leading-none">
-                  {user?.firstName && user?.lastName 
-                    ? `${user.firstName} ${user.lastName}`
+                  {(user as any)?.firstName && (user as any)?.lastName 
+                    ? `${(user as any).firstName} ${(user as any).lastName}`
                     : "User"
                   }
                 </p>
                 <p className="text-xs leading-none text-muted-foreground">
-                  {user?.email}
+                  {(user as any)?.email}
                 </p>
               </div>
               <DropdownMenuSeparator />
