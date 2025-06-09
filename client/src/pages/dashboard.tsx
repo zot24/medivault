@@ -41,17 +41,15 @@ export default function Dashboard() {
     }
   }, [isAuthenticated, isLoading, toast]);
 
-  const { data: recentDocuments, isLoading: documentsLoading } = useQuery<MedicalDocument[]>({
+  const { data: allDocuments, isLoading: documentsLoading } = useQuery<MedicalDocument[]>({
     queryKey: ["/api/documents"],
     enabled: isAuthenticated,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    select: (data) => data?.slice(0, 5), // Limit to 5 on client side
+    staleTime: 5 * 60 * 1000, // 5 minutes cache
+    refetchOnWindowFocus: false, // Prevent unnecessary refetches
   });
 
-  const { data: allDocuments } = useQuery<MedicalDocument[]>({
-    queryKey: ["/api/documents"],
-    enabled: isAuthenticated,
-  });
+  // Memoize computed values for better performance
+  const recentDocuments = React.useMemo(() => allDocuments?.slice(0, 5), [allDocuments]);
 
   if (isLoading) {
     return (
@@ -80,6 +78,7 @@ export default function Dashboard() {
 
   const totalDocuments = allDocuments?.length || 0;
   const documentsThisMonth = allDocuments?.filter(doc => {
+    if (!doc.createdAt) return false;
     const docDate = new Date(doc.createdAt);
     const now = new Date();
     return docDate.getMonth() === now.getMonth() && docDate.getFullYear() === now.getFullYear();
@@ -102,7 +101,7 @@ export default function Dashboard() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-professional-dark mb-2">
-            Welcome back, {user?.firstName || 'Patient'}!
+            Welcome back, {(user as any)?.firstName || 'Patient'}!
           </h1>
           <p className="text-gray-600">
             Here's an overview of your medical records and health data.
@@ -161,8 +160,8 @@ export default function Dashboard() {
                 <div>
                   <p className="text-sm text-gray-600">Last Upload</p>
                   <p className="text-sm font-semibold text-professional-dark">
-                    {recentDocuments?.[0] 
-                      ? format(new Date(recentDocuments[0].createdAt), 'MMM d')
+                    {recentDocuments?.[0]?.createdAt 
+                      ? format(new Date(recentDocuments[0].createdAt!), 'MMM d')
                       : 'No uploads'
                     }
                   </p>
