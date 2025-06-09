@@ -71,7 +71,7 @@ export default function Landing() {
                 Your health records are scattered. Your symptoms, untracked. Your appointments? Forgotten.
                 MediVault brings it all together — securely, simply, and finally in your control.
               </p>
-              <div className="flex flex-col sm:flex-row gap-4">
+              <div className="flex justify-center">
                 <Button 
                   size="lg"
                   onClick={handleGetStarted}
@@ -79,7 +79,6 @@ export default function Landing() {
                 >
                   Create Your Account
                 </Button>
-
               </div>
               <div className="flex items-center mt-8 text-blue-100">
                 <Lock className="mr-2 h-4 w-4" />
@@ -89,15 +88,30 @@ export default function Landing() {
             <div className="relative">
               <Card className="rounded-2xl shadow-2xl">
                 <CardContent className="p-6">
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium" style={{ color: "hsl(215, 15%, 45%)" }}>Dashboard Overview</span>
+                      <span className="text-sm font-medium" style={{ color: "hsl(215, 15%, 45%)" }}>Recent Health Timeline</span>
                       <div className="w-3 h-3 bg-health-green rounded-full"></div>
                     </div>
-                    <div className="space-y-3">
-                      <div className="h-3 bg-gray-200 rounded"></div>
-                      <div className="h-3 bg-gray-200 rounded w-4/5"></div>
-                      <div className="h-3 bg-gray-200 rounded w-3/5"></div>
+                    
+                    {/* Timeline visualization */}
+                    <div className="space-y-4">
+                      {[
+                        { date: "Dec 15", event: "Annual Physical", type: "checkup", color: "bg-medical-blue" },
+                        { date: "Nov 28", event: "Lab Results", type: "lab", color: "bg-health-green" },
+                        { date: "Nov 12", event: "Cardiology Consult", type: "specialist", color: "bg-trust-purple" },
+                        { date: "Oct 30", event: "Prescription Refill", type: "medication", color: "bg-warm-amber" }
+                      ].map((item, index) => (
+                        <div key={index} className="flex items-center space-x-3">
+                          <div className={`w-3 h-3 ${item.color} rounded-full flex-shrink-0`}></div>
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium" style={{ color: "hsl(215, 28%, 17%)" }}>{item.event}</span>
+                              <span className="text-xs" style={{ color: "hsl(215, 15%, 45%)" }}>{item.date}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 </CardContent>
@@ -253,7 +267,7 @@ export default function Landing() {
           </div>
           <div className="flex items-center justify-center mt-8 text-blue-100">
             <CheckCircle className="mr-2 h-4 w-4" />
-            <span>Free forever • No credit card required • Private & Secure</span>
+            <span>No credit card required • Private & Secure</span>
           </div>
         </div>
       </section>
@@ -269,7 +283,7 @@ export default function Landing() {
 
       {/* Footer */}
       <footer className="bg-professional-dark text-white py-16">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
             <div className="flex items-center justify-center mb-6">
               <Shield className="text-medical-blue text-2xl mr-3" />

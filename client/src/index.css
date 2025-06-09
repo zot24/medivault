@@ -119,6 +119,14 @@
   .border-health-green {
     border-color: var(--health-green);
   }
+
+  .bg-trust-purple {
+    background-color: hsl(262, 83%, 58%);
+  }
+  
+  .bg-warm-amber {
+    background-color: hsl(43, 96%, 56%);
+  }
   
   .bg-clean-white {
     background-color: var(--clean-white);
