@@ -86,6 +86,11 @@
     color: hsl(215, 28%, 17%) !important;
   }
 
+  /* Allow footer text to be white */
+  footer p, footer span, footer div {
+    color: inherit !important;
+  }
+
   button {
     color: inherit;
   }
