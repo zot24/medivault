@@ -42,8 +42,10 @@ export default function Dashboard() {
   }, [isAuthenticated, isLoading, toast]);
 
   const { data: recentDocuments, isLoading: documentsLoading } = useQuery<MedicalDocument[]>({
-    queryKey: ["/api/documents", { limit: 5 }],
+    queryKey: ["/api/documents"],
     enabled: isAuthenticated,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    select: (data) => data?.slice(0, 5), // Limit to 5 on client side
   });
 
   const { data: allDocuments } = useQuery<MedicalDocument[]>({
