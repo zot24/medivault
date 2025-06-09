@@ -261,13 +261,15 @@ export default function Dashboard() {
                     Upload New Record
                   </Link>
                 </Button>
+                <Button asChild variant="outline" className="w-full">
+                  <Link href="/symptoms">
+                    <Activity className="mr-2 h-4 w-4 text-trust-purple" />
+                    Log Symptoms
+                  </Link>
+                </Button>
                 <Button variant="outline" className="w-full">
                   <Calendar className="mr-2 h-4 w-4 text-health-green" />
                   Schedule Appointment
-                </Button>
-                <Button variant="outline" className="w-full">
-                  <Share2 className="mr-2 h-4 w-4 text-warm-amber" />
-                  Share Records
                 </Button>
               </CardContent>
             </Card>
