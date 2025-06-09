@@ -12,7 +12,8 @@ import {
   UserCheck,
   Server,
   Star,
-  CheckCircle
+  CheckCircle,
+  Activity
 } from "lucide-react";
 
 export default function Landing() {
@@ -66,11 +67,11 @@ export default function Landing() {
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div className="text-white">
               <h1 className="text-4xl lg:text-6xl font-bold mb-6 leading-tight">
-                Your Health Records,
-                <span className="text-warm-amber"> Securely Organized</span>
+                your health,
+                <span className="text-warm-amber"> finally organized</span>
               </h1>
               <p className="text-xl lg:text-2xl mb-8 text-blue-100 leading-relaxed">
-                Take control of your medical history with our secure, easy-to-use platform. Upload, organize, and access your health records anytime, anywhere.
+                ditch the chaos. store your medical records, track symptoms, and stay on top of appointments — all in one simple, private app
               </p>
               <div className="flex flex-col sm:flex-row gap-4">
                 <Button 
@@ -78,19 +79,19 @@ export default function Landing() {
                   onClick={handleGetStarted}
                   className="bg-health-green text-white hover:bg-emerald-600 font-semibold text-lg transform hover:scale-105 transition-all duration-200"
                 >
-                  Start Free Today
+                  start now
                 </Button>
                 <Button 
                   variant="outline" 
                   size="lg"
                   className="border-2 border-white text-white hover:bg-white hover:text-medical-blue font-semibold text-lg"
                 >
-                  Watch Demo
+                  watch demo
                 </Button>
               </div>
               <div className="flex items-center mt-8 text-blue-100">
                 <Lock className="mr-2 h-4 w-4" />
-                <span className="text-sm">HIPAA Compliant & Bank-Level Security</span>
+                <span className="text-sm">your data stays yours — encrypted storage, no ads</span>
               </div>
             </div>
             <div className="relative">
@@ -118,11 +119,11 @@ export default function Landing() {
       <section id="features" className="py-20 bg-white">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
-            <h2 className="text-3xl lg:text-4xl font-bold text-professional-dark mb-4">
-              Everything You Need to Manage Your Health
+            <h2 className="text-3xl lg:text-4xl font-bold mb-4" style={{ color: "hsl(215, 28%, 17%)" }}>
+              built for peace of mind
             </h2>
-            <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              From document storage to appointment tracking, MediVault provides a comprehensive solution for your healthcare management needs.
+            <p className="text-xl max-w-3xl mx-auto" style={{ color: "hsl(215, 15%, 45%)" }}>
+              whether you're dealing with chronic stuff or just want your medical life in order — medivault gives you the tools to actually manage your health
             </p>
           </div>
 
@@ -130,45 +131,51 @@ export default function Landing() {
             {[
               {
                 icon: Upload,
-                title: "Secure Document Upload",
-                description: "Upload lab results, prescriptions, and medical images with end-to-end encryption. All files are automatically organized by date and type.",
+                emoji: "✅",
+                title: "upload anything",
+                description: "store lab results, prescriptions, images, and notes — auto-organized by date & type",
                 color: "medical-blue"
               },
               {
                 icon: Calendar,
-                title: "Appointment Tracking",
-                description: "Keep track of all your medical appointments, check-ups, and treatment dates in one convenient timeline view.",
+                emoji: "📅",
+                title: "timeline tracking",
+                description: "see your full health journey — appointments, treatments, and key events in one clean view",
                 color: "health-green"
               },
               {
-                icon: Search,
-                title: "Smart Search & Filter",
-                description: "Find any record instantly with powerful search and filtering options. Filter by date, doctor, or condition.",
+                icon: Activity,
+                emoji: "📓",
+                title: "symptom tracking",
+                description: "log symptoms in real-time and spot patterns over days, weeks, or months — finally see what your body's been trying to tell you",
                 color: "trust-purple"
               },
               {
-                icon: Share2,
-                title: "Easy Sharing",
-                description: "Securely share specific records with your healthcare providers with just a few clicks. Control who sees what.",
+                icon: Search,
+                emoji: "🔍",
+                title: "lightning-fast search",
+                description: "search by doctor, keyword, date, or condition — no more endless scrolling",
                 color: "warm-amber"
               },
               {
-                icon: Smartphone,
-                title: "Mobile Access",
-                description: "Access your medical records on any device, anywhere. Our mobile-optimized interface works seamlessly across all platforms.",
+                icon: Bell,
+                emoji: "🔔",
+                title: "smart reminders",
+                description: "set nudges for meds, checkups, symptoms, or custom goals — stay on top of it all",
                 color: "medical-blue"
               },
               {
-                icon: Bell,
-                title: "Smart Reminders",
-                description: "Never miss an appointment or medication. Set custom reminders for check-ups, prescriptions, and health goals.",
+                icon: Smartphone,
+                emoji: "📱",
+                title: "always with you",
+                description: "access everything on mobile or desktop, wherever you are",
                 color: "health-green"
               }
             ].map((feature, index) => (
               <Card key={index} className="p-8 border border-gray-100 hover:shadow-lg hover:border-medical-blue transition-all duration-200 group">
                 <CardContent className="p-0">
                   <div className="mb-6">
-                    <feature.icon className={`w-12 h-12 text-${feature.color} group-hover:scale-110 transition-transform duration-200`} />
+                    <span className="text-4xl">{feature.emoji}</span>
                   </div>
                   <h3 className="text-xl font-semibold mb-4" style={{ color: "hsl(215, 28%, 17%)" }}>{feature.title}</h3>
                   <p className="leading-relaxed" style={{ color: "hsl(215, 15%, 45%)" }}>
@@ -177,6 +184,53 @@ export default function Landing() {
                 </CardContent>
               </Card>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Testimonial Section */}
+      <section className="py-20 bg-gray-50">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-3xl lg:text-4xl font-bold mb-12" style={{ color: "hsl(215, 28%, 17%)" }}>
+            why people love medivault
+          </h2>
+          <Card className="p-8 border-none shadow-lg">
+            <CardContent className="p-0">
+              <blockquote className="text-xl lg:text-2xl leading-relaxed mb-6" style={{ color: "hsl(215, 28%, 17%)" }}>
+                "i can actually show my doctor symptom trends and past lab results in seconds — makes appointments way less stressful"
+              </blockquote>
+              <p className="text-lg" style={{ color: "hsl(215, 15%, 45%)" }}>
+                — someone tired of guessing what happened 3 months ago
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      {/* Final CTA Section */}
+      <section className="py-20 bg-white">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-3xl lg:text-4xl font-bold mb-6" style={{ color: "hsl(215, 28%, 17%)" }}>
+            ready to take control of your health?
+          </h2>
+          <p className="text-xl mb-8" style={{ color: "hsl(215, 15%, 45%)" }}>
+            join people who are finally managing their medical life on their terms
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Button 
+              size="lg"
+              onClick={handleGetStarted}
+              className="bg-medical-blue text-white hover:bg-blue-700 font-semibold text-lg"
+            >
+              get started
+            </Button>
+            <Button 
+              variant="outline" 
+              size="lg"
+              className="border-2 border-medical-blue text-medical-blue hover:bg-medical-blue hover:text-white font-semibold text-lg"
+            >
+              see it in action
+            </Button>
           </div>
         </div>
       </section>
