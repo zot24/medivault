@@ -70,14 +70,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getMedicalDocuments(userId: string, limit?: number): Promise<MedicalDocument[]> {
-    let query = db
+    const query = db
       .select()
       .from(medicalDocuments)
       .where(eq(medicalDocuments.userId, userId))
       .orderBy(desc(medicalDocuments.documentDate), desc(medicalDocuments.createdAt));
     
     if (limit) {
-      query = query.limit(limit);
+      return await query.limit(limit);
     }
     
     return await query;
@@ -141,14 +141,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getSymptoms(userId: string, limit?: number): Promise<Symptom[]> {
-    let query = db
+    const query = db
       .select()
       .from(symptoms)
       .where(eq(symptoms.userId, userId))
       .orderBy(desc(symptoms.dateRecorded), desc(symptoms.createdAt));
     
     if (limit) {
-      query = query.limit(limit);
+      return await query.limit(limit);
     }
     
     return await query;

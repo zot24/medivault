@@ -67,7 +67,8 @@ export const symptoms = pgTable("symptoms", {
   triggers: text("triggers").array(),
   medications: text("medications").array(),
   notes: text("notes"),
-  loggedAt: timestamp("logged_at").notNull(),
+  dateRecorded: date("date_recorded").notNull(),
+  timeOfDay: varchar("time_of_day"), // "morning", "afternoon", "evening", "night"
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

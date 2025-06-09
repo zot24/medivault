@@ -181,6 +181,118 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Symptom tracking routes
+  app.get('/api/symptoms', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+      const symptoms = await storage.getSymptoms(userId, limit);
+      res.json(symptoms);
+    } catch (error) {
+      console.error("Error fetching symptoms:", error);
+      res.status(500).json({ message: "Failed to fetch symptoms" });
+    }
+  });
+
+  app.post('/api/symptoms', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      
+      const symptomData = insertSymptomSchema.parse({
+        userId,
+        symptomName: req.body.symptomName,
+        severity: parseInt(req.body.severity),
+        description: req.body.description,
+        location: req.body.location,
+        duration: req.body.duration,
+        triggers: req.body.triggers || [],
+        medications: req.body.medications || [],
+        notes: req.body.notes,
+        dateRecorded: req.body.dateRecorded,
+        timeOfDay: req.body.timeOfDay,
+      });
+
+      const symptom = await storage.createSymptom(symptomData);
+      res.status(201).json(symptom);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Validation error", errors: error.errors });
+      }
+      
+      console.error("Error creating symptom:", error);
+      res.status(500).json({ message: "Failed to create symptom" });
+    }
+  });
+
+  app.get('/api/symptoms/search', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const query = req.query.q as string;
+      
+      if (!query) {
+        return res.status(400).json({ message: "Search query is required" });
+      }
+      
+      const symptoms = await storage.getSymptomsByName(userId, query);
+      res.json(symptoms);
+    } catch (error) {
+      console.error("Error searching symptoms:", error);
+      res.status(500).json({ message: "Failed to search symptoms" });
+    }
+  });
+
+  app.put('/api/symptoms/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const symptomId = parseInt(req.params.id);
+      
+      const updates = {
+        symptomName: req.body.symptomName,
+        severity: req.body.severity ? parseInt(req.body.severity) : undefined,
+        description: req.body.description,
+        location: req.body.location,
+        duration: req.body.duration,
+        triggers: req.body.triggers,
+        medications: req.body.medications,
+        notes: req.body.notes,
+        dateRecorded: req.body.dateRecorded,
+        timeOfDay: req.body.timeOfDay,
+      };
+
+      // Remove undefined values
+      Object.keys(updates).forEach(key => updates[key] === undefined && delete updates[key]);
+      
+      const symptom = await storage.updateSymptom(symptomId, userId, updates);
+      
+      if (!symptom) {
+        return res.status(404).json({ message: "Symptom not found" });
+      }
+      
+      res.json(symptom);
+    } catch (error) {
+      console.error("Error updating symptom:", error);
+      res.status(500).json({ message: "Failed to update symptom" });
+    }
+  });
+
+  app.delete('/api/symptoms/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const symptomId = parseInt(req.params.id);
+      
+      const deleted = await storage.deleteSymptom(symptomId, userId);
+      
+      if (deleted) {
+        res.json({ message: "Symptom deleted successfully" });
+      } else {
+        res.status(404).json({ message: "Symptom not found" });
+      }
+    } catch (error) {
+      console.error("Error deleting symptom:", error);
+      res.status(500).json({ message: "Failed to delete symptom" });
+    }
+  });
+
   // Serve uploaded files
   app.get('/api/files/:filename', isAuthenticated, (req, res) => {
     const filename = req.params.filename;
@@ -190,6 +302,98 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.sendFile(filePath);
     } else {
       res.status(404).json({ message: "File not found" });
+    }
+  });
+
+  // Symptom tracking routes
+  app.get('/api/symptoms', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
+      const symptoms = await storage.getSymptoms(userId, limit);
+      res.json(symptoms);
+    } catch (error) {
+      console.error("Error fetching symptoms:", error);
+      res.status(500).json({ message: "Failed to fetch symptoms" });
+    }
+  });
+
+  app.post('/api/symptoms', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      
+      const symptomData = insertSymptomSchema.parse({
+        userId,
+        ...req.body,
+      });
+
+      const symptom = await storage.createSymptom(symptomData);
+      res.status(201).json(symptom);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Validation error", errors: error.errors });
+      }
+      
+      console.error("Error creating symptom:", error);
+      res.status(500).json({ message: "Failed to create symptom" });
+    }
+  });
+
+  app.get('/api/symptoms/search', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const query = req.query.q as string;
+      
+      if (!query) {
+        return res.status(400).json({ message: "Search query is required" });
+      }
+      
+      const symptoms = await storage.getSymptomsByName(userId, query);
+      res.json(symptoms);
+    } catch (error) {
+      console.error("Error searching symptoms:", error);
+      res.status(500).json({ message: "Failed to search symptoms" });
+    }
+  });
+
+  app.put('/api/symptoms/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const symptomId = parseInt(req.params.id);
+      
+      const updates = insertSymptomSchema.partial().parse(req.body);
+      const symptom = await storage.updateSymptom(symptomId, userId, updates);
+      
+      if (!symptom) {
+        return res.status(404).json({ message: "Symptom not found" });
+      }
+      
+      res.json(symptom);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Validation error", errors: error.errors });
+      }
+      
+      console.error("Error updating symptom:", error);
+      res.status(500).json({ message: "Failed to update symptom" });
+    }
+  });
+
+  app.delete('/api/symptoms/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const symptomId = parseInt(req.params.id);
+      
+      const deleted = await storage.deleteSymptom(symptomId, userId);
+      
+      if (deleted) {
+        res.json({ message: "Symptom deleted successfully" });
+      } else {
+        res.status(404).json({ message: "Symptom not found" });
+      }
+    } catch (error) {
+      console.error("Error deleting symptom:", error);
+      res.status(500).json({ message: "Failed to delete symptom" });
     }
   });
 

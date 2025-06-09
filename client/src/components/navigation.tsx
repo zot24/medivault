@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Shield, FileText, LayoutDashboard, LogOut, Settings, User } from "lucide-react";
+import { Shield, FileText, LayoutDashboard, LogOut, Settings, User, Activity } from "lucide-react";
 
 export default function Navigation() {
   const [location] = useLocation();
@@ -22,6 +22,7 @@ export default function Navigation() {
   const navItems = [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/documents", label: "Documents", icon: FileText },
+    { href: "/symptoms", label: "Symptoms", icon: Activity },
   ];
 
   const getUserInitials = () => {
