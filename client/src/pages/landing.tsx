@@ -92,7 +92,7 @@ export default function Landing() {
               </div>
               <div className="flex items-center mt-8 text-blue-100">
                 <Lock className="mr-2 h-4 w-4" />
-                <span className="text-sm">HIPAA Compliant & Bank-Level Security</span>
+                <span className="text-sm">Secure & Private • Your Data Stays Yours</span>
               </div>
             </div>
             <div className="relative">
@@ -247,7 +247,8 @@ export default function Landing() {
             Ready to Get Organized?
           </h2>
           <p className="text-xl text-blue-100 mb-10 leading-relaxed">
-            Join thousands of patients who trust MedVault to securely manage their medical history. Start your free account today and experience the peace of mind that comes with organized healthcare.
+            Join others who've stopped relying on memory, sticky notes, and scattered documents.
+            Start using MediVault and make your health history work for you.
           </p>
           <div className="flex flex-col sm:flex-row gap-6 justify-center">
             <Button 
@@ -267,8 +268,17 @@ export default function Landing() {
           </div>
           <div className="flex items-center justify-center mt-8 text-blue-100">
             <CheckCircle className="mr-2 h-4 w-4" />
-            <span>Free forever • No credit card required • HIPAA compliant</span>
+            <span>Free forever • No credit card required • Private & Secure</span>
           </div>
+        </div>
+      </section>
+
+      {/* Transparency Section */}
+      <section className="py-12 bg-gray-50">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+          <p className="text-sm leading-relaxed" style={{ color: "hsl(215, 15%, 45%)" }}>
+            MediVault is not a healthcare provider or certified storage facility. We're not HIPAA-compliant — and we're transparent about it. But we are committed to keeping your data safe, private, and only accessible by you.
+          </p>
         </div>
       </section>
 
