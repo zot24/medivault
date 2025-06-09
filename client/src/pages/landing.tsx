@@ -129,22 +129,20 @@ export default function Landing() {
                       <div className="w-3 h-3 bg-medical-blue rounded-full"></div>
                     </div>
                     
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       {[
                         { name: "Blood Analysis", type: "Lab Report", date: "Nov 28", color: "bg-health-green" },
                         { name: "ECG Results", type: "Test Results", date: "Nov 12", color: "bg-medical-blue" },
                         { name: "X-Ray Chest", type: "Imaging", date: "Oct 15", color: "bg-trust-purple" }
                       ].map((doc, index) => (
-                        <div key={index} className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
-                          <div className={`w-3 h-3 ${doc.color} rounded-full flex-shrink-0`}></div>
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <span className="text-sm font-medium block" style={{ color: "hsl(215, 28%, 17%)" }}>{doc.name}</span>
-                                <span className="text-xs inline-block mr-2" style={{ color: "hsl(215, 15%, 45%)" }}>{doc.type}</span>
-                                <span className="text-xs" style={{ color: "hsl(215, 15%, 45%)" }}>• {doc.date}</span>
-                              </div>
-                            </div>
+                        <div key={index} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 transition-colors">
+                          <div className="flex items-center space-x-3">
+                            <div className={`w-3 h-3 ${doc.color} rounded-full flex-shrink-0`}></div>
+                            <span className="text-sm font-medium" style={{ color: "hsl(215, 28%, 17%)" }}>{doc.name}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs block" style={{ color: "hsl(215, 15%, 45%)" }}>{doc.type}</span>
+                            <span className="text-xs" style={{ color: "hsl(215, 15%, 45%)" }}>{doc.date}</span>
                           </div>
                         </div>
                       ))}
@@ -164,22 +162,20 @@ export default function Landing() {
                       <div className="w-3 h-3 bg-trust-purple rounded-full"></div>
                     </div>
                     
-                    <div className="space-y-3">
+                    <div className="space-y-2">
                       {[
                         { symptom: "Headache", severity: "Mild", date: "Today", color: "bg-health-green" },
                         { symptom: "Joint Pain", severity: "Moderate", date: "Yesterday", color: "bg-warm-amber" },
                         { symptom: "Fatigue", severity: "Mild", date: "Dec 1", color: "bg-trust-purple" }
                       ].map((item, index) => (
-                        <div key={index} className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
-                          <div className={`w-3 h-3 ${item.color} rounded-full flex-shrink-0`}></div>
-                          <div className="flex-1">
-                            <div className="flex items-center justify-between">
-                              <div>
-                                <span className="text-sm font-medium block" style={{ color: "hsl(215, 28%, 17%)" }}>{item.symptom}</span>
-                                <span className="text-xs inline-block mr-2" style={{ color: "hsl(215, 15%, 45%)" }}>{item.severity}</span>
-                                <span className="text-xs" style={{ color: "hsl(215, 15%, 45%)" }}>• {item.date}</span>
-                              </div>
-                            </div>
+                        <div key={index} className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 transition-colors">
+                          <div className="flex items-center space-x-3">
+                            <div className={`w-3 h-3 ${item.color} rounded-full flex-shrink-0`}></div>
+                            <span className="text-sm font-medium" style={{ color: "hsl(215, 28%, 17%)" }}>{item.symptom}</span>
+                          </div>
+                          <div className="text-right">
+                            <span className="text-xs block" style={{ color: "hsl(215, 15%, 45%)" }}>{item.severity}</span>
+                            <span className="text-xs" style={{ color: "hsl(215, 15%, 45%)" }}>{item.date}</span>
                           </div>
                         </div>
                       ))}
