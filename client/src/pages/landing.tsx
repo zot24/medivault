@@ -337,44 +337,21 @@ export default function Landing() {
       {/* Footer */}
       <footer className="bg-professional-dark text-white py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid md:grid-cols-4 gap-8">
-            <div className="md:col-span-2">
-              <div className="flex items-center mb-6">
-                <Shield className="text-medical-blue text-2xl mr-3" />
-                <span className="text-xl font-semibold">MediVault</span>
-              </div>
-              <p className="text-gray-300 mb-6 leading-relaxed">
-                Empowering patients to take control of their healthcare journey through secure, organized medical record management.
-              </p>
+          <div className="text-center mb-12">
+            <div className="flex items-center justify-center mb-6">
+              <Shield className="text-medical-blue text-2xl mr-3" />
+              <span className="text-2xl font-semibold">medivault</span>
             </div>
-            
-            <div>
-              <h4 className="font-semibold mb-4">Product</h4>
-              <ul className="space-y-3 text-gray-300">
-                <li><a href="#features" className="hover:text-white transition-colors duration-200">Features</a></li>
-                <li><a href="#security" className="hover:text-white transition-colors duration-200">Security</a></li>
-                <li><a href="#" className="hover:text-white transition-colors duration-200">Pricing</a></li>
-                <li><a href="#" className="hover:text-white transition-colors duration-200">Mobile App</a></li>
-              </ul>
-            </div>
-            
-            <div>
-              <h4 className="font-semibold mb-4">Support</h4>
-              <ul className="space-y-3 text-gray-300">
-                <li><a href="#" className="hover:text-white transition-colors duration-200">Help Center</a></li>
-                <li><a href="#" className="hover:text-white transition-colors duration-200">Privacy Policy</a></li>
-                <li><a href="#" className="hover:text-white transition-colors duration-200">Terms of Service</a></li>
-                <li><a href="#" className="hover:text-white transition-colors duration-200">Contact Us</a></li>
-              </ul>
+            <h3 className="text-2xl font-bold mb-6">honest tech, no bullshit</h3>
+            <div className="max-w-2xl mx-auto space-y-4 text-gray-300">
+              <p>we're not HIPAA or SOC2 certified — just clear about what we are</p>
+              <p>🔐 your data is encrypted and never sold</p>
+              <p>this is built for humans, not hospital systems</p>
             </div>
           </div>
           
-          <div className="border-t border-gray-700 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
-            <p className="text-gray-400">© 2024 MediVault. All rights reserved.</p>
-            <div className="flex items-center mt-4 md:mt-0">
-              <Shield className="text-health-green mr-2 h-4 w-4" />
-              <span className="text-gray-400 text-sm">HIPAA Compliant • SOC 2 Certified</span>
-            </div>
+          <div className="border-t border-gray-700 pt-8 text-center">
+            <p className="text-gray-400">© 2024 medivault. built for people who want their health data organized.</p>
           </div>
         </div>
       </footer>
