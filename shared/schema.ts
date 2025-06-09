@@ -73,6 +73,22 @@ export const symptoms = pgTable("symptoms", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Appointments table
+export const appointments = pgTable("appointments", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  doctorName: varchar("doctor_name").notNull(),
+  specialty: varchar("specialty"),
+  appointmentDate: timestamp("appointment_date").notNull(),
+  reason: text("reason"),
+  location: varchar("location"),
+  notes: text("notes"),
+  status: varchar("status").notNull().default("scheduled"), // scheduled, completed, cancelled
+  reminderSent: boolean("reminder_sent").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const insertMedicalDocumentSchema = createInsertSchema(medicalDocuments).omit({
   id: true,
   createdAt: true,
@@ -85,9 +101,17 @@ export const insertSymptomSchema = createInsertSchema(symptoms).omit({
   updatedAt: true,
 });
 
+export const insertAppointmentSchema = createInsertSchema(appointments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type MedicalDocument = typeof medicalDocuments.$inferSelect;
 export type InsertMedicalDocument = z.infer<typeof insertMedicalDocumentSchema>;
 export type Symptom = typeof symptoms.$inferSelect;
 export type InsertSymptom = z.infer<typeof insertSymptomSchema>;
+export type Appointment = typeof appointments.$inferSelect;
+export type InsertAppointment = z.infer<typeof insertAppointmentSchema>;
