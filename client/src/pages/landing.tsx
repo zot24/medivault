@@ -61,13 +61,13 @@ export default function Landing() {
       {/* Hero Section */}
       <section className="relative bg-gradient-to-br from-medical-blue to-trust-purple py-20 lg:py-32">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="grid lg:grid-cols-2 gap-12 items-center">
-            <div className="text-white">
-              <h1 className="text-4xl lg:text-6xl font-bold mb-6 leading-tight">
+          <div className="grid lg:grid-cols-3 gap-8 items-start">
+            <div className="text-white lg:col-span-1">
+              <h1 className="text-4xl lg:text-5xl font-bold mb-6 leading-tight">
                 Take Control of Your Health —
                 <span className="text-warm-amber"> Without the Chaos</span>
               </h1>
-              <p className="text-xl lg:text-2xl mb-8 text-blue-100 leading-relaxed">
+              <p className="text-xl mb-8 text-blue-100 leading-relaxed">
                 Your health records are scattered. Your symptoms, untracked. Your appointments? Forgotten.
                 MediVault brings it all together — securely, simply, and finally in your control.
               </p>
@@ -85,6 +85,8 @@ export default function Landing() {
                 <span className="text-sm">Secure & Private • Your Data Stays Yours</span>
               </div>
             </div>
+            
+            {/* Timeline Card */}
             <div className="relative">
               <Card className="rounded-2xl shadow-2xl">
                 <CardContent className="p-6">
@@ -94,7 +96,6 @@ export default function Landing() {
                       <div className="w-3 h-3 bg-health-green rounded-full"></div>
                     </div>
                     
-                    {/* Timeline visualization */}
                     <div className="space-y-4">
                       {[
                         { date: "Dec 15", event: "Annual Physical", type: "checkup", color: "bg-medical-blue" },
@@ -108,6 +109,42 @@ export default function Landing() {
                             <div className="flex items-center justify-between">
                               <span className="text-sm font-medium" style={{ color: "hsl(215, 28%, 17%)" }}>{item.event}</span>
                               <span className="text-xs" style={{ color: "hsl(215, 15%, 45%)" }}>{item.date}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+            
+            {/* Documents Card */}
+            <div className="relative">
+              <Card className="rounded-2xl shadow-2xl">
+                <CardContent className="p-6">
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium" style={{ color: "hsl(215, 15%, 45%)" }}>Stored Documents</span>
+                      <div className="w-3 h-3 bg-medical-blue rounded-full"></div>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      {[
+                        { name: "Blood Analysis", type: "Lab Report", date: "Nov 28", icon: "📊" },
+                        { name: "ECG Results", type: "Test Results", date: "Nov 12", icon: "❤️" },
+                        { name: "X-Ray Chest", type: "Imaging", date: "Oct 15", icon: "🔍" },
+                        { name: "Prescription", type: "Medication", date: "Oct 30", icon: "💊" }
+                      ].map((doc, index) => (
+                        <div key={index} className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
+                          <div className="text-lg">{doc.icon}</div>
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <span className="text-sm font-medium block" style={{ color: "hsl(215, 28%, 17%)" }}>{doc.name}</span>
+                                <span className="text-xs" style={{ color: "hsl(215, 15%, 45%)" }}>{doc.type}</span>
+                              </div>
+                              <span className="text-xs" style={{ color: "hsl(215, 15%, 45%)" }}>{doc.date}</span>
                             </div>
                           </div>
                         </div>
@@ -289,16 +326,16 @@ export default function Landing() {
               <Shield className="text-medical-blue text-2xl mr-3" />
               <span className="text-xl font-semibold">MediVault</span>
             </div>
-            <p className="text-gray-300 mb-6 leading-relaxed max-w-2xl mx-auto">
+            <p className="text-white/80 mb-6 leading-relaxed max-w-2xl mx-auto">
               Empowering patients to take control of their healthcare journey through secure, organized medical record management.
             </p>
           </div>
           
-          <div className="border-t border-gray-700 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
-            <p className="text-gray-400">© 2024 MediVault. All rights reserved.</p>
+          <div className="border-t border-white/20 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
+            <p className="text-white/60">© 2024 MediVault. All rights reserved.</p>
             <div className="flex items-center mt-4 md:mt-0">
               <Shield className="text-health-green mr-2 h-4 w-4" />
-              <span className="text-gray-400 text-sm">Secure & Private • Your Data Stays Yours</span>
+              <span className="text-white/60 text-sm">Secure & Private • Your Data Stays Yours</span>
             </div>
           </div>
         </div>
