@@ -71,7 +71,7 @@ export default function Landing() {
                   onClick={handleGetStarted}
                   className="bg-medical-blue text-white hover:bg-blue-700 font-medium"
                 >
-                  Start
+                  Login
                 </Button>
               </div>
             </div>
