@@ -33,7 +33,7 @@ export default function Landing() {
             <div className="flex items-center">
               <div className="flex-shrink-0 flex items-center">
                 <Shield className="text-medical-blue text-2xl mr-3" />
-                <span className="text-xl font-semibold" style={{ color: "hsl(215, 28%, 17%)" }}>MedVault</span>
+                <span className="text-xl font-semibold" style={{ color: "hsl(215, 28%, 17%)" }}>MediVault</span>
               </div>
             </div>
             <div className="hidden md:block">
@@ -122,7 +122,7 @@ export default function Landing() {
               Everything You Need to Manage Your Health
             </h2>
             <p className="text-xl text-gray-600 max-w-3xl mx-auto">
-              From document storage to appointment tracking, MedVault provides a comprehensive solution for your healthcare management needs.
+              From document storage to appointment tracking, MediVault provides a comprehensive solution for your healthcare management needs.
             </p>
           </div>
 
@@ -287,7 +287,7 @@ export default function Landing() {
             <div className="md:col-span-2">
               <div className="flex items-center mb-6">
                 <Shield className="text-medical-blue text-2xl mr-3" />
-                <span className="text-xl font-semibold">MedVault</span>
+                <span className="text-xl font-semibold">MediVault</span>
               </div>
               <p className="text-gray-300 mb-6 leading-relaxed">
                 Empowering patients to take control of their healthcare journey through secure, organized medical record management.
@@ -316,7 +316,7 @@ export default function Landing() {
           </div>
           
           <div className="border-t border-gray-700 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
-            <p className="text-gray-400">© 2024 MedVault. All rights reserved.</p>
+            <p className="text-gray-400">© 2024 MediVault. All rights reserved.</p>
             <div className="flex items-center mt-4 md:mt-0">
               <Shield className="text-health-green mr-2 h-4 w-4" />
               <span className="text-gray-400 text-sm">HIPAA Compliant • SOC 2 Certified</span>

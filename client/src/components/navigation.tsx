@@ -39,7 +39,7 @@ export default function Navigation() {
           {/* Logo */}
           <Link href="/" className="flex items-center">
             <Shield className="text-medical-blue text-2xl mr-3" />
-            <span className="text-xl font-semibold" style={{ color: "hsl(215, 28%, 17%)" }}>MedVault</span>
+            <span className="text-xl font-semibold" style={{ color: "hsl(215, 28%, 17%)" }}>MediVault</span>
           </Link>
 
           {/* Navigation Items */}
