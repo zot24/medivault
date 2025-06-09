@@ -131,12 +131,12 @@ export default function Landing() {
                     
                     <div className="space-y-3">
                       {[
-                        { name: "Blood Analysis", type: "Lab Report", date: "Nov 28", icon: "📊" },
-                        { name: "ECG Results", type: "Test Results", date: "Nov 12", icon: "❤️" },
-                        { name: "X-Ray Chest", type: "Imaging", date: "Oct 15", icon: "🔍" }
+                        { name: "Blood Analysis", type: "Lab Report", date: "Nov 28", color: "bg-health-green" },
+                        { name: "ECG Results", type: "Test Results", date: "Nov 12", color: "bg-medical-blue" },
+                        { name: "X-Ray Chest", type: "Imaging", date: "Oct 15", color: "bg-trust-purple" }
                       ].map((doc, index) => (
                         <div key={index} className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
-                          <div className="text-lg">{doc.icon}</div>
+                          <div className={`w-3 h-3 ${doc.color} rounded-full flex-shrink-0`}></div>
                           <div className="flex-1">
                             <div className="flex items-center justify-between">
                               <div>
@@ -166,12 +166,12 @@ export default function Landing() {
                     
                     <div className="space-y-3">
                       {[
-                        { symptom: "Headache", severity: "Mild", date: "Today", trend: "📉" },
-                        { symptom: "Joint Pain", severity: "Moderate", date: "Yesterday", trend: "📈" },
-                        { symptom: "Fatigue", severity: "Mild", date: "Dec 1", trend: "➡️" }
+                        { symptom: "Headache", severity: "Mild", date: "Today", color: "bg-health-green" },
+                        { symptom: "Joint Pain", severity: "Moderate", date: "Yesterday", color: "bg-warm-amber" },
+                        { symptom: "Fatigue", severity: "Mild", date: "Dec 1", color: "bg-trust-purple" }
                       ].map((item, index) => (
                         <div key={index} className="flex items-center space-x-3 p-2 rounded-lg hover:bg-gray-50 transition-colors">
-                          <div className="text-lg">{item.trend}</div>
+                          <div className={`w-3 h-3 ${item.color} rounded-full flex-shrink-0`}></div>
                           <div className="flex-1">
                             <div className="flex items-center justify-between">
                               <div>
@@ -353,23 +353,23 @@ export default function Landing() {
       </section>
 
       {/* Footer */}
-      <footer className="bg-professional-dark text-white py-16">
+      <footer className="py-16" style={{ backgroundColor: "hsl(215, 28%, 17%)" }}>
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
             <div className="flex items-center justify-center mb-6">
               <Shield className="text-medical-blue text-2xl mr-3" />
-              <span className="text-xl font-semibold">MediVault</span>
+              <span className="text-xl font-semibold text-white">MediVault</span>
             </div>
-            <p className="text-white/80 mb-6 leading-relaxed max-w-2xl mx-auto">
+            <p className="mb-6 leading-relaxed max-w-2xl mx-auto text-white" style={{ opacity: 0.8 }}>
               Empowering patients to take control of their healthcare journey through secure, organized medical record management.
             </p>
           </div>
           
-          <div className="border-t border-white/20 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
-            <p className="text-white/60">© 2024 MediVault. All rights reserved.</p>
+          <div className="border-t mt-12 pt-8 flex flex-col md:flex-row justify-between items-center" style={{ borderColor: "rgba(255, 255, 255, 0.2)" }}>
+            <p className="text-white" style={{ opacity: 0.7 }}>© 2024 MediVault. All rights reserved.</p>
             <div className="flex items-center mt-4 md:mt-0">
               <Shield className="text-health-green mr-2 h-4 w-4" />
-              <span className="text-white/60 text-sm">Secure & Private • Your Data Stays Yours</span>
+              <span className="text-sm text-white" style={{ opacity: 0.7 }}>Secure & Private • Your Data Stays Yours</span>
             </div>
           </div>
         </div>
