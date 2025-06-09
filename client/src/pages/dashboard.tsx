@@ -31,7 +31,13 @@ export default function Dashboard() {
   const { user, isAuthenticated, isLoading } = useAuth();
   const queryClient = useQueryClient();
   const [appointmentDialogOpen, setAppointmentDialogOpen] = useState(false);
-  const [nextAppointment, setNextAppointment] = useState({
+  const [appointments, setAppointments] = useState<Array<{
+    id: string;
+    date: string;
+    doctor: string;
+    description: string;
+  }>>([]);
+  const [newAppointment, setNewAppointment] = useState({
     date: "",
     doctor: "",
     description: ""
@@ -59,16 +65,18 @@ export default function Dashboard() {
     refetchOnWindowFocus: false, // Prevent unnecessary refetches
   });
 
-  // Load stored appointment data
+  // Load stored appointments data
   useEffect(() => {
-    const stored = localStorage.getItem(`nextAppointment_${user?.id}`);
-    if (stored) {
-      setNextAppointment(JSON.parse(stored));
+    if ((user as any)?.id) {
+      const stored = localStorage.getItem(`appointments_${(user as any).id}`);
+      if (stored) {
+        setAppointments(JSON.parse(stored));
+      }
     }
-  }, [user?.id]);
+  }, [(user as any)?.id]);
 
   const saveAppointment = () => {
-    if (!nextAppointment.date || !nextAppointment.doctor) {
+    if (!newAppointment.date || !newAppointment.doctor) {
       toast({
         title: "Missing Information",
         description: "Please fill in the appointment date and doctor name.",
@@ -77,20 +85,32 @@ export default function Dashboard() {
       return;
     }
 
-    localStorage.setItem(`nextAppointment_${user?.id}`, JSON.stringify(nextAppointment));
+    const appointment = {
+      id: Date.now().toString(),
+      ...newAppointment
+    };
+
+    const updatedAppointments = [...appointments, appointment].sort((a, b) => 
+      new Date(a.date).getTime() - new Date(b.date).getTime()
+    );
+
+    setAppointments(updatedAppointments);
+    localStorage.setItem(`appointments_${(user as any)?.id}`, JSON.stringify(updatedAppointments));
+    setNewAppointment({ date: "", doctor: "", description: "" });
     setAppointmentDialogOpen(false);
     toast({
       title: "Appointment Scheduled",
-      description: "Your next appointment has been saved successfully.",
+      description: "Your appointment has been saved successfully.",
     });
   };
 
-  const clearAppointment = () => {
-    setNextAppointment({ date: "", doctor: "", description: "" });
-    localStorage.removeItem(`nextAppointment_${user?.id}`);
+  const removeAppointment = (appointmentId: string) => {
+    const updatedAppointments = appointments.filter(apt => apt.id !== appointmentId);
+    setAppointments(updatedAppointments);
+    localStorage.setItem(`appointments_${(user as any)?.id}`, JSON.stringify(updatedAppointments));
     toast({
-      title: "Appointment Cleared",
-      description: "Your scheduled appointment has been removed.",
+      title: "Appointment Removed",
+      description: "The appointment has been removed.",
     });
   };
 
@@ -139,7 +159,9 @@ export default function Dashboard() {
     documentTypes[a] > documentTypes[b] ? a : b, 'lab_result'
   );
 
-  const hasUpcomingAppointment = nextAppointment.date && nextAppointment.doctor;
+  const upcomingAppointments = appointments.filter(apt => new Date(apt.date) > new Date());
+  const nextAppointment = upcomingAppointments[0];
+  const hasUpcomingAppointment = upcomingAppointments.length > 0;
   const appointmentDate = hasUpcomingAppointment ? new Date(nextAppointment.date) : null;
   const isAppointmentSoon = appointmentDate && appointmentDate.getTime() - Date.now() < 7 * 24 * 60 * 60 * 1000;
 
@@ -314,8 +336,8 @@ export default function Dashboard() {
                           <Input
                             id="appointment-date"
                             type="datetime-local"
-                            value={nextAppointment.date}
-                            onChange={(e) => setNextAppointment(prev => ({ ...prev, date: e.target.value }))}
+                            value={newAppointment.date}
+                            onChange={(e) => setNewAppointment(prev => ({ ...prev, date: e.target.value }))}
                           />
                         </div>
                         <div>
@@ -323,8 +345,8 @@ export default function Dashboard() {
                           <Input
                             id="doctor-name"
                             placeholder="Dr. Smith"
-                            value={nextAppointment.doctor}
-                            onChange={(e) => setNextAppointment(prev => ({ ...prev, doctor: e.target.value }))}
+                            value={newAppointment.doctor}
+                            onChange={(e) => setNewAppointment(prev => ({ ...prev, doctor: e.target.value }))}
                           />
                         </div>
                         <div>
@@ -332,8 +354,8 @@ export default function Dashboard() {
                           <Textarea
                             id="appointment-description"
                             placeholder="Annual checkup, follow-up visit, etc."
-                            value={nextAppointment.description}
-                            onChange={(e) => setNextAppointment(prev => ({ ...prev, description: e.target.value }))}
+                            value={newAppointment.description}
+                            onChange={(e) => setNewAppointment(prev => ({ ...prev, description: e.target.value }))}
                           />
                         </div>
                         <div className="flex gap-2">
@@ -351,27 +373,45 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent>
                 {hasUpcomingAppointment ? (
-                  <div className="space-y-4">
-                    <div className={`p-4 rounded-lg border-l-4 ${isAppointmentSoon ? 'bg-orange-50 border-orange-400' : 'bg-blue-50 border-blue-400'}`}>
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <h6 className="font-medium text-professional-dark">{nextAppointment.doctor}</h6>
-                          <p className="text-sm text-gray-600">
-                            {format(appointmentDate!, 'MMM d, yyyy • h:mm a')}
-                          </p>
-                          {nextAppointment.description && (
-                            <p className="text-sm text-gray-700 mt-2">{nextAppointment.description}</p>
-                          )}
-                          {isAppointmentSoon && (
-                            <p className="text-xs text-orange-600 mt-2 font-medium">Upcoming within 7 days</p>
-                          )}
+                  <div className="space-y-3">
+                    {upcomingAppointments.slice(0, 3).map((appointment) => {
+                      const aptDate = new Date(appointment.date);
+                      const isAptSoon = aptDate.getTime() - Date.now() < 7 * 24 * 60 * 60 * 1000;
+                      return (
+                        <div key={appointment.id} className={`p-3 rounded-lg border-l-4 ${isAptSoon ? 'bg-orange-50 border-orange-400' : 'bg-blue-50 border-blue-400'}`}>
+                          <div className="flex items-start justify-between">
+                            <div className="flex-1">
+                              <h6 className="font-medium text-professional-dark">{appointment.doctor}</h6>
+                              <p className="text-sm text-gray-600">
+                                {format(aptDate, 'MMM d, yyyy • h:mm a')}
+                              </p>
+                              {appointment.description && (
+                                <p className="text-sm text-gray-700 mt-1">{appointment.description}</p>
+                              )}
+                              {isAptSoon && (
+                                <p className="text-xs text-orange-600 mt-1 font-medium">Upcoming within 7 days</p>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Calendar className={`h-4 w-4 ${isAptSoon ? 'text-orange-500' : 'text-blue-500'}`} />
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => removeAppointment(appointment.id)}
+                                className="h-6 w-6 p-0 text-gray-400 hover:text-red-500"
+                              >
+                                ×
+                              </Button>
+                            </div>
+                          </div>
                         </div>
-                        <Calendar className={`h-5 w-5 ${isAppointmentSoon ? 'text-orange-500' : 'text-blue-500'}`} />
-                      </div>
-                    </div>
-                    <Button variant="outline" size="sm" onClick={clearAppointment} className="w-full">
-                      Clear Appointment
-                    </Button>
+                      );
+                    })}
+                    {upcomingAppointments.length > 3 && (
+                      <p className="text-xs text-gray-500 text-center pt-2">
+                        +{upcomingAppointments.length - 3} more appointments
+                      </p>
+                    )}
                   </div>
                 ) : (
                   <div className="text-center py-6">
