@@ -21,7 +21,15 @@ import {
   TrendingUp,
   Clock,
   CheckCircle,
-  Activity
+  Activity,
+  Brain,
+  Sparkles,
+  ArrowRight,
+  BarChart3,
+  Zap,
+  FileImage,
+  HeartHandshake,
+  ChevronRight
 } from "lucide-react";
 import { format } from "date-fns";
 import type { MedicalDocument } from "@shared/schema";
@@ -115,17 +123,38 @@ export default function Dashboard() {
   };
 
   // Memoize computed values for better performance
-  const recentDocuments = React.useMemo(() => allDocuments?.slice(0, 5), [allDocuments]);
+  const recentDocuments = React.useMemo(() => {
+    if (!allDocuments) return undefined;
+    // Sort by createdAt descending and take first 5
+    return [...allDocuments]
+      .sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      })
+      .slice(0, 5);
+  }, [allDocuments]);
+
+  const lastUploadDate = React.useMemo(() => {
+    if (!allDocuments || allDocuments.length === 0) return null;
+    const sortedDocs = [...allDocuments]
+      .filter(doc => doc.createdAt)
+      .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
+    return sortedDocs[0]?.createdAt || null;
+  }, [allDocuments]);
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-clean-white">
+      <div className="min-h-screen bg-background">
         <Navigation />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <Skeleton className="h-8 w-48 mb-6" />
-          <div className="grid lg:grid-cols-4 gap-6">
+        <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8">
+          <div className="mb-8">
+            <Skeleton className="h-8 w-64 mb-4" />
+            <Skeleton className="h-4 w-96" />
+          </div>
+          <div className="grid lg:grid-cols-4 gap-6 mb-8">
             {Array.from({ length: 4 }).map((_, i) => (
-              <Card key={i}>
+              <Card key={i} className="bg-surface-1 border-white/10">
                 <CardContent className="p-6">
                   <Skeleton className="h-4 w-full mb-2" />
                   <Skeleton className="h-8 w-16" />
@@ -155,9 +184,11 @@ export default function Dashboard() {
     return acc;
   }, {} as Record<string, number>) || {};
 
-  const mostCommonType = Object.keys(documentTypes).reduce((a, b) => 
-    documentTypes[a] > documentTypes[b] ? a : b, 'lab_result'
-  );
+  const mostCommonType = Object.keys(documentTypes).length > 0 
+    ? Object.keys(documentTypes).reduce((a, b) => 
+        documentTypes[a] > documentTypes[b] ? a : b
+      )
+    : null;
 
   const upcomingAppointments = appointments.filter(apt => new Date(apt.date) > new Date());
   const nextAppointment = upcomingAppointments[0];
@@ -166,80 +197,93 @@ export default function Dashboard() {
   const isAppointmentSoon = appointmentDate && appointmentDate.getTime() - Date.now() < 7 * 24 * 60 * 60 * 1000;
 
   return (
-    <div className="min-h-screen bg-clean-white">
+    <div className="min-h-screen bg-background" data-testid="dashboard-page">
       <Navigation />
       
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-professional-dark mb-2">
-            Welcome back, {(user as any)?.firstName || 'Patient'}!
+        <div className="mb-12">
+          <div className="flex items-center space-x-3 mb-4">
+            <div className="p-2 rounded-xl bg-gradient-to-br from-primary to-secondary">
+              <Brain className="text-white h-5 w-5" />
+            </div>
+            <div className="inline-flex items-center space-x-2 bg-surface-1 border border-white/10 rounded-full px-3 py-1 text-xs text-foreground-muted">
+              <Sparkles className="h-3 w-3 text-primary" />
+              <span>AI-Powered Health Intelligence</span>
+            </div>
+          </div>
+          <h1 className="text-4xl font-bold text-foreground mb-3">
+            Welcome back, {(user as any)?.firstName || 'there'}!
           </h1>
-          <p className="text-gray-600">
-            Here's your personalized health intelligence dashboard with AI-powered insights from your medical data.
+          <p className="text-xl text-foreground-muted max-w-2xl">
+            Your personalized health dashboard analyzing patterns across all your medical data to deliver intelligent insights.
           </p>
         </div>
 
         {/* Stats Cards */}
-        <div className="grid lg:grid-cols-4 gap-6 mb-8">
-          <Card>
+        <div className="grid lg:grid-cols-4 gap-6 mb-12">
+          <Card className="bg-surface-1 border-white/10 hover:bg-surface-2 transition-all duration-300 group" data-testid="card-total-records">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600">Total Records</p>
-                  <p className="text-2xl font-bold text-professional-dark">{totalDocuments}</p>
+                  <p className="text-sm text-foreground-muted mb-1">Health Records</p>
+                  <p className="text-3xl font-bold text-foreground">{totalDocuments}</p>
+                  <p className="text-xs text-foreground-muted mt-1">Documents analyzed</p>
                 </div>
-                <div className="w-12 h-12 bg-medical-blue bg-opacity-10 rounded-xl flex items-center justify-center">
-                  <FileText className="text-medical-blue h-6 w-6" />
+                <div className="p-3 rounded-xl bg-gradient-to-br from-primary to-primary/70 group-hover:scale-110 transition-transform duration-300">
+                  <FileText className="text-white h-6 w-6" />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-surface-1 border-white/10 hover:bg-surface-2 transition-all duration-300 group" data-testid="card-this-month">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600">This Month</p>
-                  <p className="text-2xl font-bold text-professional-dark">{documentsThisMonth}</p>
+                  <p className="text-sm text-foreground-muted mb-1">This Month</p>
+                  <p className="text-3xl font-bold text-foreground">{documentsThisMonth}</p>
+                  <p className="text-xs text-foreground-muted mt-1">New uploads</p>
                 </div>
-                <div className="w-12 h-12 bg-health-green bg-opacity-10 rounded-xl flex items-center justify-center">
-                  <TrendingUp className="text-health-green h-6 w-6" />
+                <div className="p-3 rounded-xl bg-gradient-to-br from-secondary to-secondary/70 group-hover:scale-110 transition-transform duration-300">
+                  <TrendingUp className="text-white h-6 w-6" />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-surface-1 border-white/10 hover:bg-surface-2 transition-all duration-300 group" data-testid="card-common-type">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600">Most Common</p>
-                  <p className="text-sm font-semibold text-professional-dark capitalize">
-                    {mostCommonType.replace('_', ' ')}
+                  <p className="text-sm text-foreground-muted mb-1">Most Common</p>
+                  <p className="text-xl font-bold text-foreground capitalize">
+                    {mostCommonType ? mostCommonType.replace('_', ' ') : '—'}
                   </p>
+                  <p className="text-xs text-foreground-muted mt-1">Document type</p>
                 </div>
-                <div className="w-12 h-12 bg-trust-purple bg-opacity-10 rounded-xl flex items-center justify-center">
-                  <Activity className="text-trust-purple h-6 w-6" />
+                <div className="p-3 rounded-xl bg-gradient-to-br from-accent to-accent/70 group-hover:scale-110 transition-transform duration-300">
+                  <BarChart3 className="text-white h-6 w-6" />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="bg-surface-1 border-white/10 hover:bg-surface-2 transition-all duration-300 group" data-testid="card-last-upload">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600">Last Upload</p>
-                  <p className="text-sm font-semibold text-professional-dark">
-                    {recentDocuments?.[0]?.createdAt 
-                      ? format(new Date(recentDocuments[0].createdAt!), 'MMM d')
+                  <p className="text-sm text-foreground-muted mb-1">Last Upload</p>
+                  <p className="text-xl font-bold text-foreground">
+                    {lastUploadDate
+                      ? format(new Date(lastUploadDate), 'MMM d')
                       : 'No uploads'
                     }
                   </p>
+                  <p className="text-xs text-foreground-muted mt-1">Recent activity</p>
                 </div>
-                <div className="w-12 h-12 bg-warm-amber bg-opacity-10 rounded-xl flex items-center justify-center">
-                  <Clock className="text-warm-amber h-6 w-6" />
+                <div className="p-3 rounded-xl bg-gradient-to-br from-primary to-secondary group-hover:scale-110 transition-transform duration-300">
+                  <Clock className="text-white h-6 w-6" />
                 </div>
               </div>
             </CardContent>
@@ -249,15 +293,19 @@ export default function Dashboard() {
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Recent Records */}
           <div className="lg:col-span-2">
-            <Card>
+            <Card className="bg-surface-1 border-white/10" data-testid="recent-records-card">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg font-semibold text-professional-dark">
-                    Recent Records
-                  </CardTitle>
-                  <Button variant="ghost" asChild>
-                    <Link href="/documents" className="text-medical-blue hover:text-blue-700 font-medium">
-                      View All
+                  <div>
+                    <CardTitle className="text-xl font-semibold text-foreground mb-1">
+                      Recent Health Records
+                    </CardTitle>
+                    <p className="text-sm text-foreground-muted">AI-analyzed documents from your health journey</p>
+                  </div>
+                  <Button variant="ghost" asChild className="text-primary hover:text-primary hover:bg-white/5" data-testid="button-view-all-documents">
+                    <Link href="/documents" className="flex items-center space-x-2">
+                      <span>View All</span>
+                      <ArrowRight className="h-4 w-4" />
                     </Link>
                   </Button>
                 </div>
@@ -266,44 +314,50 @@ export default function Dashboard() {
                 {documentsLoading ? (
                   <div className="space-y-4">
                     {Array.from({ length: 3 }).map((_, i) => (
-                      <div key={i} className="flex items-center space-x-4">
-                        <Skeleton className="w-10 h-10 rounded-lg" />
+                      <div key={i} className="flex items-center space-x-4 p-4 bg-surface-2 rounded-xl">
+                        <Skeleton className="w-12 h-12 rounded-xl" />
                         <div className="flex-1">
                           <Skeleton className="h-4 w-3/4 mb-2" />
                           <Skeleton className="h-3 w-1/2" />
                         </div>
-                        <Skeleton className="w-16 h-6 rounded-full" />
+                        <Skeleton className="w-20 h-6 rounded-full" />
                       </div>
                     ))}
                   </div>
                 ) : recentDocuments && recentDocuments.length > 0 ? (
-                  <div className="space-y-4">
+                  <div className="space-y-3">
                     {recentDocuments.map((document) => (
-                      <div key={document.id} className="flex items-center p-4 bg-clean-white rounded-xl border border-gray-100 hover:shadow-md transition-shadow duration-200">
-                        <div className="w-10 h-10 bg-medical-blue bg-opacity-10 rounded-lg flex items-center justify-center mr-4">
-                          <FileText className="text-medical-blue h-5 w-5" />
+                      <div key={document.id} className="flex items-center p-4 bg-surface-2 rounded-xl border border-white/5 hover:bg-surface-3 transition-all duration-200 group" data-testid={`document-${document.id}`}>
+                        <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary to-primary/70 mr-4 group-hover:scale-105 transition-transform duration-200">
+                          <FileText className="text-white h-5 w-5" />
                         </div>
                         <div className="flex-1">
-                          <h5 className="font-medium text-professional-dark">{document.title}</h5>
-                          <p className="text-sm text-gray-600">
+                          <h5 className="font-medium text-foreground mb-1">{document.title}</h5>
+                          <p className="text-sm text-foreground-muted">
                             {document.doctorName ? `${document.doctorName} • ` : ''}
                             {format(new Date(document.documentDate), 'MMM d, yyyy')}
                           </p>
                         </div>
-                        <span className="px-3 py-1 text-xs font-medium bg-gray-100 text-gray-700 rounded-full capitalize">
-                          {document.documentType.replace('_', ' ')}
-                        </span>
+                        <div className="flex items-center space-x-3">
+                          <span className="px-3 py-1 text-xs font-medium bg-white/10 text-foreground-muted rounded-full capitalize border border-white/10">
+                            {document.documentType.replace('_', ' ')}
+                          </span>
+                          <ChevronRight className="h-4 w-4 text-foreground-muted group-hover:translate-x-1 transition-transform duration-200" />
+                        </div>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="text-center py-8">
-                    <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-600 mb-4">No documents uploaded yet</p>
-                    <Button asChild className="bg-medical-blue text-white hover:bg-blue-700">
-                      <Link href="/documents">
-                        <Upload className="mr-2 h-4 w-4" />
-                        Upload First Document
+                  <div className="text-center py-12">
+                    <div className="p-4 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 w-fit mx-auto mb-6">
+                      <FileImage className="w-12 h-12 text-primary mx-auto" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-foreground mb-2">Ready to unlock health insights?</h3>
+                    <p className="text-foreground-muted mb-6 max-w-sm mx-auto">Upload your first document and watch our AI analyze patterns in your health data</p>
+                    <Button asChild className="bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90" data-testid="button-upload-first-document">
+                      <Link href="/documents" className="flex items-center space-x-2">
+                        <Upload className="h-4 w-4" />
+                        <span>Upload First Document</span>
                       </Link>
                     </Button>
                   </div>
@@ -312,57 +366,64 @@ export default function Dashboard() {
             </Card>
           </div>
 
-          {/* Next Appointment */}
-          <div>
-            <Card>
+          {/* Right Column */}
+          <div className="space-y-6">
+            {/* Next Appointment */}
+            <Card className="bg-surface-1 border-white/10" data-testid="appointments-card">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg font-semibold text-professional-dark">
-                    Next Appointment
-                  </CardTitle>
+                  <div>
+                    <CardTitle className="text-lg font-semibold text-foreground mb-1">
+                      Upcoming Appointments
+                    </CardTitle>
+                    <p className="text-xs text-foreground-muted">Stay on track with your care plan</p>
+                  </div>
                   <Dialog open={appointmentDialogOpen} onOpenChange={setAppointmentDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="ghost" size="sm">
+                      <Button variant="ghost" size="sm" className="h-8 w-8 rounded-xl hover:bg-white/10" data-testid="button-add-appointment">
                         <Plus className="h-4 w-4" />
                       </Button>
                     </DialogTrigger>
-                    <DialogContent>
+                    <DialogContent className="bg-surface-1 border-white/20">
                       <DialogHeader>
-                        <DialogTitle>Schedule Appointment</DialogTitle>
+                        <DialogTitle className="text-foreground">Schedule Appointment</DialogTitle>
                       </DialogHeader>
                       <div className="space-y-4">
                         <div>
-                          <Label htmlFor="appointment-date">Date & Time</Label>
+                          <Label htmlFor="appointment-date" className="text-foreground">Date & Time</Label>
                           <Input
                             id="appointment-date"
                             type="datetime-local"
                             value={newAppointment.date}
                             onChange={(e) => setNewAppointment(prev => ({ ...prev, date: e.target.value }))}
+                            className="bg-surface-2 border-white/20 text-foreground"
                           />
                         </div>
                         <div>
-                          <Label htmlFor="doctor-name">Doctor Name</Label>
+                          <Label htmlFor="doctor-name" className="text-foreground">Doctor Name</Label>
                           <Input
                             id="doctor-name"
                             placeholder="Dr. Smith"
                             value={newAppointment.doctor}
                             onChange={(e) => setNewAppointment(prev => ({ ...prev, doctor: e.target.value }))}
+                            className="bg-surface-2 border-white/20 text-foreground"
                           />
                         </div>
                         <div>
-                          <Label htmlFor="appointment-description">Description (Optional)</Label>
+                          <Label htmlFor="appointment-description" className="text-foreground">Description (Optional)</Label>
                           <Textarea
                             id="appointment-description"
                             placeholder="Annual checkup, follow-up visit, etc."
                             value={newAppointment.description}
                             onChange={(e) => setNewAppointment(prev => ({ ...prev, description: e.target.value }))}
+                            className="bg-surface-2 border-white/20 text-foreground"
                           />
                         </div>
-                        <div className="flex gap-2">
-                          <Button onClick={saveAppointment} className="bg-medical-blue text-white hover:bg-blue-700">
+                        <div className="flex gap-3 pt-2">
+                          <Button onClick={saveAppointment} className="bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 flex-1" data-testid="button-save-appointment">
                             Save Appointment
                           </Button>
-                          <Button variant="outline" onClick={() => setAppointmentDialogOpen(false)}>
+                          <Button variant="outline" onClick={() => setAppointmentDialogOpen(false)} className="border-white/20 text-foreground hover:bg-white/5" data-testid="button-cancel-appointment">
                             Cancel
                           </Button>
                         </div>
@@ -378,27 +439,35 @@ export default function Dashboard() {
                       const aptDate = new Date(appointment.date);
                       const isAptSoon = aptDate.getTime() - Date.now() < 7 * 24 * 60 * 60 * 1000;
                       return (
-                        <div key={appointment.id} className={`p-3 rounded-lg border-l-4 ${isAptSoon ? 'bg-orange-50 border-orange-400' : 'bg-blue-50 border-blue-400'}`}>
+                        <div key={appointment.id} className={`p-4 rounded-xl border-l-4 ${
+                          isAptSoon 
+                            ? 'bg-gradient-to-r from-orange-500/10 to-transparent border-orange-400' 
+                            : 'bg-gradient-to-r from-primary/10 to-transparent border-primary'
+                        }`} data-testid={`appointment-${appointment.id}`}>
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
-                              <h6 className="font-medium text-professional-dark">{appointment.doctor}</h6>
-                              <p className="text-sm text-gray-600">
+                              <h6 className="font-medium text-foreground mb-1">{appointment.doctor}</h6>
+                              <p className="text-sm text-foreground-muted mb-1">
                                 {format(aptDate, 'MMM d, yyyy • h:mm a')}
                               </p>
                               {appointment.description && (
-                                <p className="text-sm text-gray-700 mt-1">{appointment.description}</p>
+                                <p className="text-sm text-foreground mt-1">{appointment.description}</p>
                               )}
                               {isAptSoon && (
-                                <p className="text-xs text-orange-600 mt-1 font-medium">Upcoming within 7 days</p>
+                                <div className="flex items-center space-x-1 mt-2">
+                                  <Zap className="h-3 w-3 text-orange-400" />
+                                  <p className="text-xs text-orange-400 font-medium">Upcoming within 7 days</p>
+                                </div>
                               )}
                             </div>
-                            <div className="flex items-center gap-2">
-                              <Calendar className={`h-4 w-4 ${isAptSoon ? 'text-orange-500' : 'text-blue-500'}`} />
+                            <div className="flex items-center space-x-2">
+                              <Calendar className={`h-4 w-4 ${isAptSoon ? 'text-orange-400' : 'text-primary'}`} />
                               <Button 
                                 variant="ghost" 
                                 size="sm" 
                                 onClick={() => removeAppointment(appointment.id)}
-                                className="h-6 w-6 p-0 text-gray-400 hover:text-red-500"
+                                className="h-6 w-6 p-0 text-foreground-muted hover:text-destructive hover:bg-destructive/10"
+                                data-testid={`button-remove-appointment-${appointment.id}`}
                               >
                                 ×
                               </Button>
@@ -408,43 +477,87 @@ export default function Dashboard() {
                       );
                     })}
                     {upcomingAppointments.length > 3 && (
-                      <p className="text-xs text-gray-500 text-center pt-2">
+                      <p className="text-xs text-foreground-muted text-center pt-2">
                         +{upcomingAppointments.length - 3} more appointments
                       </p>
                     )}
                   </div>
                 ) : (
-                  <div className="text-center py-6">
-                    <Calendar className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-                    <p className="text-sm text-gray-600 mb-3">No upcoming appointments</p>
-                    <p className="text-xs text-gray-500">Schedule your next checkup to stay on track</p>
+                  <div className="text-center py-8">
+                    <div className="p-3 rounded-xl bg-gradient-to-br from-secondary/10 to-accent/10 w-fit mx-auto mb-4">
+                      <Calendar className="w-8 h-8 text-secondary mx-auto" />
+                    </div>
+                    <p className="text-sm text-foreground mb-2">No upcoming appointments</p>
+                    <p className="text-xs text-foreground-muted">Schedule your next visit to stay on track</p>
                   </div>
                 )}
               </CardContent>
             </Card>
 
             {/* Quick Actions */}
-            <Card className="mt-6">
+            <Card className="bg-surface-1 border-white/10" data-testid="quick-actions-card">
               <CardHeader>
-                <CardTitle className="text-lg font-semibold text-professional-dark">
+                <CardTitle className="text-lg font-semibold text-foreground">
                   Quick Actions
                 </CardTitle>
+                <p className="text-xs text-foreground-muted">Fast access to key features</p>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  <Button asChild className="w-full bg-medical-blue text-white hover:bg-blue-700 justify-start">
-                    <Link href="/documents">
-                      <Upload className="mr-2 h-4 w-4" />
-                      Upload Document
+                  <Button asChild className="w-full bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 justify-start group" data-testid="button-upload-document">
+                    <Link href="/documents" className="flex items-center space-x-3">
+                      <div className="p-1 rounded bg-white/20">
+                        <Upload className="h-4 w-4" />
+                      </div>
+                      <span>Upload Document</span>
+                      <ArrowRight className="ml-auto h-4 w-4 group-hover:translate-x-1 transition-transform" />
                     </Link>
                   </Button>
-                  <Button asChild variant="outline" className="w-full justify-start">
-                    <Link href="/symptoms">
-                      <Activity className="mr-2 h-4 w-4" />
-                      Track Symptoms
+                  <Button asChild variant="outline" className="w-full justify-start border-white/20 text-foreground hover:bg-white/5 group" data-testid="button-track-symptoms">
+                    <Link href="/symptoms" className="flex items-center space-x-3">
+                      <div className="p-1 rounded border border-white/20">
+                        <Activity className="h-4 w-4" />
+                      </div>
+                      <span>Track Symptoms</span>
+                      <ArrowRight className="ml-auto h-4 w-4 group-hover:translate-x-1 transition-transform" />
                     </Link>
                   </Button>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* AI Insights Preview */}
+            <Card className="bg-gradient-to-br from-primary/5 to-secondary/5 border-primary/20" data-testid="ai-insights-card">
+              <CardHeader>
+                <div className="flex items-center space-x-2">
+                  <Brain className="h-5 w-5 text-primary" />
+                  <CardTitle className="text-lg font-semibold text-foreground">
+                    AI Health Insights
+                  </CardTitle>
+                </div>
+                <p className="text-xs text-foreground-muted">Unlock patterns in your health data</p>
+              </CardHeader>
+              <CardContent>
+                {totalDocuments > 0 ? (
+                  <div className="space-y-3">
+                    <div className="p-3 bg-white/5 rounded-xl border border-white/10">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <Sparkles className="h-3 w-3 text-primary" />
+                        <p className="text-xs font-medium text-primary">Pattern Analysis Ready</p>
+                      </div>
+                      <p className="text-sm text-foreground">Your health data can reveal trends across {totalDocuments} documents</p>
+                    </div>
+                    <Button variant="outline" className="w-full border-primary/30 text-primary hover:bg-primary/10" data-testid="button-view-insights">
+                      <Brain className="mr-2 h-4 w-4" />
+                      View AI Insights
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="text-center py-4">
+                    <HeartHandshake className="h-8 w-8 text-primary mx-auto mb-2" />
+                    <p className="text-sm text-foreground-muted">Upload documents to unlock AI insights</p>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
