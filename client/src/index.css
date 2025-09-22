@@ -200,7 +200,9 @@
 
   /* Navigation */
   .nav-blur {
-    @apply bg-background/80 backdrop-blur-xl border-b border-white/10;
+    @apply backdrop-blur-xl border-b;
+    background: hsla(240, 10%, 4%, 0.8);
+    border-color: rgba(255, 255, 255, 0.1);
   }
 }
 
