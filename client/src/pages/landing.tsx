@@ -85,12 +85,11 @@ export default function Landing() {
           <div className="grid lg:grid-cols-4 gap-6 items-start">
             <div className="text-white lg:col-span-1">
               <h1 className="text-4xl lg:text-5xl font-bold mb-6 leading-tight">
-                Take Control of Your Health —
-                <span className="text-warm-amber"> Without the Chaos</span>
+                AI-Powered Health Insights —
+                <span className="text-warm-amber"> Tailored Just for You</span>
               </h1>
               <p className="text-xl mb-8 text-blue-100 leading-relaxed">
-                Your health records are scattered. Your symptoms, untracked. Your appointments? Forgotten.
-                MediVault brings it all together — securely, simply, and finally in your control.
+                Stop guessing about your health. Our AI analyzes your documents, symptoms, tests, and history to give you personalized health insights and actionable recommendations — like having a health expert who knows everything about you.
               </p>
               <div className="flex justify-center">
                 <Button 
@@ -98,12 +97,12 @@ export default function Landing() {
                   onClick={handleGetStarted}
                   className="bg-health-green text-white hover:bg-emerald-600 font-semibold text-lg transform hover:scale-105 transition-all duration-200"
                 >
-                  Create Your Account
+                  Get AI Health Insights
                 </Button>
               </div>
               <div className="flex items-center mt-8 text-blue-100">
                 <Lock className="mr-2 h-4 w-4" />
-                <span className="text-sm">Secure & Private • Your Data Stays Yours</span>
+                <span className="text-sm">AI-Powered Analysis • 100% Private • Your Data Stays Yours</span>
               </div>
             </div>
             
@@ -214,10 +213,10 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center mb-16">
             <h2 className="text-3xl lg:text-4xl font-bold mb-4" style={{ color: "hsl(215, 28%, 17%)" }}>
-              All Your Health Info, One Place
+              AI That Actually Understands Your Health
             </h2>
             <p className="text-xl max-w-3xl mx-auto" style={{ color: "hsl(215, 15%, 45%)" }}>
-              Your health history shouldn't live in random email threads, old paperwork, or forgotten apps. MediVault puts everything in one place — accessible, organized, and ready when you need it.
+              Our intelligent AI doesn't just store your data — it analyzes patterns, connects the dots between symptoms and treatments, and gives you insights that help you make better health decisions. It's like having a medical expert who never forgets anything about you.
             </p>
           </div>
 
@@ -225,38 +224,38 @@ export default function Landing() {
             {[
               {
                 icon: Upload,
-                title: "Upload & Organize",
-                description: "Easily store lab results, prescriptions, medical images, and documents. Files are automatically organized by date and type — no setup required.",
+                title: "Smart Document Analysis",
+                description: "Upload any medical document and watch our AI instantly extract key insights, track trends, and flag important changes. Your lab results become actionable intelligence.",
                 color: "medical-blue"
               },
               {
                 icon: Activity,
-                title: "Symptom Tracking",
-                description: "Log symptoms as they happen. Track changes over time, spot trends, and share accurate information with your doctors.",
+                title: "AI-Powered Symptom Intelligence",
+                description: "Our AI connects your symptoms to your medical history, treatments, and lifestyle patterns. Get personalized insights about what might be causing changes and when to seek care.",
                 color: "health-green"
               },
               {
                 icon: Calendar,
-                title: "Appointment Timeline",
-                description: "Keep track of all your past and upcoming medical visits with a clear, visual timeline. No more missed follow-ups or confusion.",
+                title: "Predictive Health Planning",
+                description: "AI analyzes your health patterns to suggest optimal timing for checkups, remind you of follow-ups based on your conditions, and help you stay ahead of your health needs.",
                 color: "trust-purple"
               },
               {
                 icon: Search,
-                title: "Smart Search",
-                description: "Quickly find any record using powerful filters. Search by doctor, keyword, condition, or date.",
+                title: "Intelligent Health Search",
+                description: "Ask natural questions like 'How has my blood pressure changed?' or 'What treatments worked best for my migraines?' Our AI understands context and delivers precise answers.",
                 color: "warm-amber"
               },
               {
                 icon: Share2,
-                title: "Private Sharing",
-                description: "Securely share specific records with healthcare providers. You choose what to share and who sees it.",
+                title: "AI-Generated Health Summaries",
+                description: "Automatically create comprehensive health summaries for doctor visits. Our AI highlights relevant patterns, recent changes, and important trends to share with your care team.",
                 color: "medical-blue"
               },
               {
                 icon: Bell,
-                title: "Reminders That Actually Help",
-                description: "Set custom reminders for medications, checkups, or health goals. Stay on track without the mental load.",
+                title: "Personalized Health Recommendations",
+                description: "Get AI-driven suggestions based on your unique health profile. From medication timing optimization to lifestyle recommendations tailored to your conditions and goals.",
                 color: "health-green"
               }
             ].map((feature, index) => (
