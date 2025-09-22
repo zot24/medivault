@@ -3,64 +3,76 @@
 @tailwind utilities;
 
 :root {
-  --background: hsl(218, 27%, 98%);
-  --foreground: hsl(215, 28%, 17%);
-  --muted: hsl(218, 15%, 94%);
-  --muted-foreground: hsl(215, 15%, 45%);
-  --popover: hsl(0, 0%, 100%);
-  --popover-foreground: hsl(215, 28%, 17%);
-  --card: hsl(0, 0%, 100%);
-  --card-foreground: hsl(215, 28%, 17%);
-  --border: hsl(218, 15%, 88%);
-  --input: hsl(218, 15%, 94%);
-  --primary: hsl(217, 91%, 60%);
+  /* Modern Dark Theme - Primary Palette */
+  --background: hsl(240, 10%, 4%);
+  --surface-1: hsl(240, 8%, 9%);
+  --surface-2: hsl(240, 6%, 12%);
+  --surface-3: hsl(240, 5%, 15%);
+  
+  /* Text Colors */
+  --foreground: hsl(0, 0%, 98%);
+  --foreground-muted: hsl(220, 10%, 65%);
+  --foreground-subtle: hsl(220, 10%, 45%);
+  
+  /* UI Elements */
+  --border: hsl(240, 6%, 20%);
+  --border-subtle: hsl(240, 6%, 15%);
+  --input: hsl(240, 6%, 12%);
+  
+  /* Brand Colors */
+  --primary: hsl(262, 83%, 58%);
   --primary-foreground: hsl(0, 0%, 100%);
-  --secondary: hsl(218, 15%, 94%);
-  --secondary-foreground: hsl(215, 28%, 17%);
-  --accent: hsl(158, 64%, 52%);
+  --primary-hover: hsl(262, 83%, 65%);
+  
+  --secondary: hsl(199, 89%, 48%);
+  --secondary-foreground: hsl(0, 0%, 100%);
+  
+  /* Status Colors */
+  --accent: hsl(142, 71%, 45%);
   --accent-foreground: hsl(0, 0%, 100%);
+  --warning: hsl(38, 92%, 50%);
+  --warning-foreground: hsl(0, 0%, 100%);
   --destructive: hsl(0, 84%, 60%);
   --destructive-foreground: hsl(0, 0%, 100%);
-  --ring: hsl(217, 91%, 60%);
-  --radius: 0.75rem;
   
-  /* Custom medical theme colors */
-  --medical-blue: hsl(217, 91%, 60%);
-  --health-green: hsl(158, 64%, 52%);
-  --clean-white: hsl(218, 27%, 98%);
-  --professional-dark: hsl(215, 28%, 17%);
-  --warm-amber: hsl(43, 96%, 56%);
-  --trust-purple: hsl(243, 75%, 59%);
+  /* Component Specific */
+  --card: hsl(240, 8%, 9%);
+  --card-foreground: hsl(0, 0%, 98%);
+  --popover: hsl(240, 8%, 9%);
+  --popover-foreground: hsl(0, 0%, 98%);
+  --muted: hsl(240, 6%, 12%);
+  --muted-foreground: hsl(220, 10%, 65%);
+  
+  --ring: hsl(262, 83%, 58%);
+  --radius: 1rem;
+  
+  /* Legacy Support */
+  --medical-blue: hsl(262, 83%, 58%);
+  --health-green: hsl(142, 71%, 45%);
+  --trust-purple: hsl(262, 83%, 58%);
+  --warm-amber: hsl(38, 92%, 50%);
 }
 
-.dark {
-  --background: hsl(240, 10%, 3.9%);
-  --foreground: hsl(0, 0%, 98%);
-  --muted: hsl(240, 3.7%, 15.9%);
-  --muted-foreground: hsl(240, 5%, 64.9%);
-  --popover: hsl(240, 10%, 3.9%);
-  --popover-foreground: hsl(0, 0%, 98%);
-  --card: hsl(240, 10%, 3.9%);
-  --card-foreground: hsl(0, 0%, 98%);
-  --border: hsl(240, 3.7%, 15.9%);
-  --input: hsl(240, 3.7%, 15.9%);
-  --primary: hsl(207, 90%, 54%);
-  --primary-foreground: hsl(0, 0%, 98%);
-  --secondary: hsl(240, 3.7%, 15.9%);
-  --secondary-foreground: hsl(0, 0%, 98%);
-  --accent: hsl(240, 3.7%, 15.9%);
-  --accent-foreground: hsl(0, 0%, 98%);
-  --destructive: hsl(0, 62.8%, 30.6%);
-  --destructive-foreground: hsl(0, 0%, 98%);
-  --ring: hsl(207, 90%, 54%);
+.light {
+  --background: hsl(0, 0%, 100%);
+  --surface-1: hsl(0, 0%, 98%);
+  --surface-2: hsl(0, 0%, 96%);
+  --surface-3: hsl(0, 0%, 94%);
   
-  /* Dark mode medical colors */
-  --medical-blue: hsl(217, 91%, 60%);
-  --health-green: hsl(158, 64%, 52%);
-  --clean-white: hsl(240, 10%, 3.9%);
-  --professional-dark: hsl(0, 0%, 98%);
-  --warm-amber: hsl(43, 96%, 56%);
-  --trust-purple: hsl(243, 75%, 59%);
+  --foreground: hsl(240, 10%, 4%);
+  --foreground-muted: hsl(220, 10%, 35%);
+  --foreground-subtle: hsl(220, 10%, 55%);
+  
+  --border: hsl(240, 6%, 90%);
+  --border-subtle: hsl(240, 6%, 95%);
+  --input: hsl(240, 6%, 96%);
+  
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(240, 10%, 4%);
+  --popover: hsl(0, 0%, 100%);
+  --popover-foreground: hsl(240, 10%, 4%);
+  --muted: hsl(240, 6%, 96%);
+  --muted-foreground: hsl(220, 10%, 35%);
 }
 
 @layer base {
@@ -68,125 +80,240 @@
     @apply border-border;
   }
 
+  html {
+    @apply bg-background text-foreground;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  html.light {
+    color-scheme: light;
+  }
+
   body {
-    @apply font-sans antialiased bg-background text-foreground;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    color: hsl(215, 28%, 17%);
-    background-color: hsl(218, 27%, 98%);
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
-  h1, h2, h3, h4, h5, h6 {
-    @apply text-foreground;
-    color: hsl(215, 28%, 17%) !important;
-    font-weight: 600;
+  /* Modern Typography Scale */
+  h1 {
+    @apply text-4xl md:text-6xl font-semibold tracking-tight leading-tight;
+    color: var(--foreground);
   }
 
-  p, span, div {
-    @apply text-foreground;
-    color: hsl(215, 28%, 17%) !important;
+  h2 {
+    @apply text-3xl md:text-5xl font-semibold tracking-tight leading-tight;
+    color: var(--foreground);
   }
 
-  /* Allow footer text to be white */
-  footer p, footer span, footer div {
-    color: inherit !important;
+  h3 {
+    @apply text-2xl md:text-3xl font-semibold tracking-tight;
+    color: var(--foreground);
   }
 
-  button {
-    color: inherit;
+  h4 {
+    @apply text-xl font-semibold;
+    color: var(--foreground);
   }
 
-  .text-muted-foreground {
-    color: hsl(215, 15%, 45%) !important;
+  h5 {
+    @apply text-lg font-semibold;
+    color: var(--foreground);
   }
 
-  .text-card-foreground {
-    color: hsl(215, 28%, 17%) !important;
+  h6 {
+    @apply text-base font-semibold;
+    color: var(--foreground);
+  }
+
+  p {
+    @apply text-base leading-relaxed;
+    color: var(--foreground-muted);
+  }
+
+  /* Focus styles */
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    @apply outline-none ring-2;
+    ring-color: hsl(262, 83%, 58%, 0.5);
+  }
+
+  /* Selection styles */
+  ::selection {
+    background: hsl(262, 83%, 58%, 0.2);
+    color: var(--foreground);
+  }
+}
+
+@layer components {
+  /* Modern Card Component */
+  .card-modern {
+    @apply bg-white/5 border border-white/10 rounded-2xl backdrop-blur-sm;
+    @apply hover:border-white/20 transition-all duration-200;
+  }
+
+  /* Modern Button Variants */
+  .btn-primary {
+    @apply bg-primary hover:bg-primary-hover text-primary-foreground;
+    @apply px-6 py-2.5 rounded-xl font-medium transition-all duration-200;
+    @apply hover:scale-[1.02] active:scale-[0.98];
+  }
+
+  .btn-ghost {
+    @apply bg-white/5 hover:bg-white/10 border border-white/10;
+    @apply px-6 py-2.5 rounded-xl font-medium transition-all duration-200;
+    @apply hover:border-white/20;
+  }
+
+  .btn-minimal {
+    @apply hover:bg-white/5 px-4 py-2 rounded-lg;
+    @apply transition-all duration-200;
+  }
+
+  /* Modern Input */
+  .input-modern {
+    @apply bg-white/5 border border-white/10 rounded-xl px-4 py-3;
+    @apply placeholder:text-white/40 transition-all duration-200;
+    @apply focus:border-primary/50 focus:bg-white/8;
+  }
+
+  /* Surface layers */
+  .surface-1 {
+    background-color: var(--surface-1);
+  }
+
+  .surface-2 {
+    background-color: var(--surface-2);
+  }
+
+  .surface-3 {
+    background-color: var(--surface-3);
+  }
+
+  /* Navigation */
+  .nav-blur {
+    @apply bg-background/80 backdrop-blur-xl border-b border-white/10;
   }
 }
 
 @layer utilities {
-  .bg-medical-blue {
-    background-color: var(--medical-blue);
-  }
-  .text-medical-blue {
-    color: var(--medical-blue);
-  }
-  .border-medical-blue {
-    border-color: var(--medical-blue);
-  }
-  
-  .bg-health-green {
-    background-color: var(--health-green);
-  }
-  .text-health-green {
-    color: var(--health-green);
-  }
-  .border-health-green {
-    border-color: var(--health-green);
+  /* Color Utilities */
+  .text-muted {
+    color: var(--foreground-muted);
   }
 
-  .bg-trust-purple {
-    background-color: hsl(262, 83%, 58%);
+  .text-subtle {
+    color: var(--foreground-subtle);
   }
-  
-  .bg-warm-amber {
-    background-color: hsl(43, 96%, 56%);
+
+  .border-subtle {
+    border-color: var(--border-subtle);
   }
-  
-  .bg-clean-white {
-    background-color: var(--clean-white);
+
+  /* Modern gradients */
+  .gradient-radial {
+    background: radial-gradient(circle at center, hsl(262, 83%, 58%) 0%, hsl(240, 10%, 4%) 100%);
   }
-  .text-clean-white {
-    color: var(--clean-white);
+
+  .gradient-primary {
+    background: linear-gradient(135deg, hsl(262, 83%, 58%) 0%, hsl(199, 89%, 48%) 100%);
   }
-  
-  .bg-professional-dark {
-    background-color: var(--professional-dark);
+
+  .gradient-surface {
+    background: linear-gradient(135deg, var(--surface-1) 0%, var(--surface-2) 100%);
   }
-  .text-professional-dark {
-    color: var(--professional-dark);
+
+  /* Glass effect */
+  .glass {
+    @apply bg-white/5 backdrop-blur-md border border-white/10;
   }
-  
-  .bg-warm-amber {
-    background-color: var(--warm-amber);
+
+  .glass-strong {
+    @apply bg-white/10 backdrop-blur-xl border border-white/20;
   }
-  .text-warm-amber {
-    color: var(--warm-amber);
+
+  /* Animations */
+  .animate-fade-in {
+    animation: fade-in 0.5s ease-out forwards;
   }
-  .border-warm-amber {
-    border-color: var(--warm-amber);
+
+  .animate-slide-up {
+    animation: slide-up 0.6s ease-out forwards;
   }
-  
-  .bg-trust-purple {
-    background-color: var(--trust-purple);
+
+  .animate-scale-in {
+    animation: scale-in 0.4s ease-out forwards;
   }
-  .text-trust-purple {
-    color: var(--trust-purple);
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
-  .border-trust-purple {
-    border-color: var(--trust-purple);
+
+  @keyframes slide-up {
+    from { 
+      opacity: 0; 
+      transform: translateY(20px); 
+    }
+    to { 
+      opacity: 1; 
+      transform: translateY(0); 
+    }
+  }
+
+  @keyframes scale-in {
+    from { 
+      opacity: 0; 
+      transform: scale(0.95); 
+    }
+    to { 
+      opacity: 1; 
+      transform: scale(1); 
+    }
   }
 }
 
-/* Custom scroll styles for better UX */
+/* Modern Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: hsl(240, 4.8%, 95.9%);
+  background: var(--surface-1);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: hsl(240, 5.9%, 90%);
-  border-radius: 3px;
+  background: var(--border);
+  border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: hsl(240, 5.9%, 80%);
+  background: var(--border);
+  opacity: 0.8;
 }
 
-/* Line clamp utility */
+/* Firefox scrollbar */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--surface-1);
+}
+
+/* Line clamp utilities */
+.line-clamp-1 {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
