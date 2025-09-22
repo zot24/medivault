@@ -22,7 +22,13 @@ import {
   Thermometer,
   Trash2,
   Edit,
-  Activity
+  Activity,
+  Brain,
+  Sparkles,
+  BarChart3,
+  HeartHandshake,
+  Zap,
+  TrendingUp
 } from "lucide-react";
 import { format } from "date-fns";
 import type { Symptom } from "@shared/schema";
@@ -121,13 +127,16 @@ export default function Symptoms() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-clean-white">
+      <div className="min-h-screen bg-background">
         <Navigation />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <Skeleton className="h-8 w-48 mb-6" />
+        <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8">
+          <div className="mb-8">
+            <Skeleton className="h-8 w-64 mb-4" />
+            <Skeleton className="h-4 w-96" />
+          </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i}>
+              <Card key={i} className="bg-surface-1 border-white/10">
                 <CardContent className="p-6">
                   <Skeleton className="h-4 w-full mb-2" />
                   <Skeleton className="h-4 w-3/4 mb-2" />
@@ -155,9 +164,15 @@ export default function Symptoms() {
   }) || [];
 
   const getSeverityColor = (severity: number) => {
-    if (severity <= 3) return "bg-health-green bg-opacity-10 text-health-green";
-    if (severity <= 6) return "bg-warm-amber bg-opacity-10 text-warm-amber";
-    return "bg-red-500 bg-opacity-10 text-red-500";
+    if (severity <= 3) return "from-green-500 to-green-600";
+    if (severity <= 6) return "from-yellow-500 to-orange-500";
+    return "from-red-500 to-red-600";
+  };
+
+  const getSeverityTextColor = (severity: number) => {
+    if (severity <= 3) return "text-green-400";
+    if (severity <= 6) return "text-yellow-400";
+    return "text-red-400";
   };
 
   const handleDelete = (symptomId: number) => {
@@ -166,46 +181,129 @@ export default function Symptoms() {
     }
   };
 
+  const avgSeverity = symptoms && symptoms.length > 0 
+    ? (symptoms.reduce((sum, s) => sum + s.severity, 0) / symptoms.length).toFixed(1)
+    : "0";
+
   return (
-    <div className="min-h-screen bg-clean-white">
+    <div className="min-h-screen bg-background" data-testid="symptoms-page">
       <Navigation />
       
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-professional-dark mb-2">Symptom Tracker</h1>
-            <p className="text-gray-600">
-              Log symptoms and let AI analyze patterns, connections to treatments, and provide personalized health insights
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-12">
+          <div className="max-w-2xl">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="p-2 rounded-xl bg-gradient-to-br from-secondary to-accent">
+                <Activity className="text-white h-5 w-5" />
+              </div>
+              <div className="inline-flex items-center space-x-2 bg-surface-1 border border-white/10 rounded-full px-3 py-1 text-xs text-foreground-muted">
+                <Brain className="h-3 w-3 text-secondary" />
+                <span>AI Pattern Analysis</span>
+              </div>
+            </div>
+            <h1 className="text-4xl font-bold text-foreground mb-3">Symptom Intelligence</h1>
+            <p className="text-xl text-foreground-muted">
+              Track symptoms and let our AI discover patterns, correlate with treatments, and provide personalized health insights to optimize your care.
             </p>
           </div>
           <Button 
             onClick={() => setIsAddingSymptom(true)}
-            className="bg-medical-blue text-white hover:bg-blue-700 mt-4 sm:mt-0"
+            className="bg-gradient-to-r from-secondary to-accent text-white hover:opacity-90 mt-6 lg:mt-0 px-6 py-3 rounded-xl"
+            data-testid="button-add-symptom"
           >
-            <Plus className="mr-2 h-4 w-4" />
+            <Plus className="mr-2 h-5 w-5" />
             Log Symptom
           </Button>
         </div>
 
         {/* Search */}
         <div className="relative mb-8">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+          <Search className="absolute left-3 top-3 h-4 w-4 text-foreground-muted" />
           <Input
             placeholder="Search symptoms, locations, or descriptions..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="pl-10"
+            className="pl-10 bg-surface-1 border-white/20 text-foreground placeholder:text-foreground-muted"
+            data-testid="input-search-symptoms"
           />
         </div>
 
+        {/* Stats Row */}
+        {symptoms && symptoms.length > 0 && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <Card className="bg-surface-1 border-white/10">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-secondary to-secondary/70">
+                    <Activity className="h-4 w-4 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-foreground-muted">Total Logs</p>
+                    <p className="text-lg font-bold text-foreground">{symptoms.length}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-surface-1 border-white/10">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-accent to-accent/70">
+                    <BarChart3 className="h-4 w-4 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-foreground-muted">Avg Severity</p>
+                    <p className="text-lg font-bold text-foreground">{avgSeverity}/10</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-surface-1 border-white/10">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-primary to-primary/70">
+                    <TrendingUp className="h-4 w-4 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-foreground-muted">This Month</p>
+                    <p className="text-lg font-bold text-foreground">
+                      {symptoms.filter(symptom => {
+                        const sympDate = new Date(symptom.dateRecorded);
+                        const now = new Date();
+                        return sympDate.getMonth() === now.getMonth() && sympDate.getFullYear() === now.getFullYear();
+                      }).length}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-surface-1 border-white/10">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-secondary to-accent">
+                    <Brain className="h-4 w-4 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-foreground-muted">Patterns</p>
+                    <p className="text-lg font-bold text-foreground">
+                      {new Set(symptoms.map(s => s.symptomName.toLowerCase())).size}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
         {/* Add Symptom Form */}
         {isAddingSymptom && (
-          <Card className="mb-8">
+          <Card className="mb-8 bg-surface-1 border-white/10" data-testid="add-symptom-form">
             <CardHeader>
-              <CardTitle className="text-lg font-semibold text-professional-dark">
-                Log New Symptom
+              <CardTitle className="text-xl font-semibold text-foreground flex items-center space-x-2">
+                <Sparkles className="h-5 w-5 text-secondary" />
+                <span>Log New Symptom</span>
               </CardTitle>
+              <p className="text-sm text-foreground-muted">AI will analyze patterns and correlations with your health data</p>
             </CardHeader>
             <CardContent>
               <SymptomForm
@@ -221,7 +319,7 @@ export default function Symptoms() {
         {symptomsLoading ? (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i}>
+              <Card key={i} className="bg-surface-1 border-white/10">
                 <CardContent className="p-6">
                   <Skeleton className="h-4 w-full mb-2" />
                   <Skeleton className="h-4 w-3/4 mb-2" />
@@ -232,28 +330,35 @@ export default function Symptoms() {
             ))}
           </div>
         ) : filteredSymptoms.length > 0 ? (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="symptoms-grid">
             {filteredSymptoms.map((symptom) => (
-              <Card key={symptom.id} className="hover:shadow-lg transition-all duration-200">
+              <Card key={symptom.id} className="bg-surface-1 border-white/10 hover:bg-surface-2 transition-all duration-300 group" data-testid={`symptom-card-${symptom.id}`}>
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h3 className="font-semibold text-professional-dark text-lg capitalize">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-foreground text-lg capitalize mb-2">
                         {symptom.symptomName}
                       </h3>
-                      <div className="flex items-center gap-2 mt-2">
-                        <Badge className={`text-xs ${getSeverityColor(symptom.severity)}`}>
-                          <Thermometer className="mr-1 h-3 w-3" />
-                          Severity {symptom.severity}/10
-                        </Badge>
+                      <div className="flex items-center space-x-2">
+                        <div className={`px-3 py-1 rounded-full bg-gradient-to-r ${getSeverityColor(symptom.severity)} text-white text-xs font-medium flex items-center space-x-1`}>
+                          <Thermometer className="h-3 w-3" />
+                          <span>Severity {symptom.severity}/10</span>
+                        </div>
+                        {symptom.severity > 7 && (
+                          <div className="flex items-center space-x-1">
+                            <Zap className="h-3 w-3 text-red-400" />
+                            <span className="text-xs text-red-400 font-medium">High</span>
+                          </div>
+                        )}
                       </div>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <Button
                         variant="ghost"
                         size="icon"
                         onClick={() => setEditingSymptom(symptom)}
-                        className="h-8 w-8"
+                        className="h-8 w-8 hover:bg-white/10"
+                        data-testid={`button-edit-symptom-${symptom.id}`}
                       >
                         <Edit className="h-4 w-4" />
                       </Button>
@@ -261,7 +366,8 @@ export default function Symptoms() {
                         variant="ghost"
                         size="icon"
                         onClick={() => handleDelete(symptom.id)}
-                        className="h-8 w-8 text-red-600 hover:text-red-700"
+                        className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        data-testid={`button-delete-symptom-${symptom.id}`}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -269,13 +375,13 @@ export default function Symptoms() {
                   </div>
 
                   {symptom.description && (
-                    <p className="text-gray-600 text-sm mb-4 line-clamp-2">
+                    <p className="text-foreground-muted text-sm mb-4 line-clamp-2">
                       {symptom.description}
                     </p>
                   )}
 
                   <div className="space-y-2 mb-4">
-                    <div className="flex items-center text-sm text-gray-500">
+                    <div className="flex items-center text-sm text-foreground-muted">
                       <Calendar className="mr-2 h-4 w-4" />
                       <span>
                         {format(new Date(symptom.dateRecorded), "MMM d, yyyy")}
@@ -283,21 +389,21 @@ export default function Symptoms() {
                     </div>
                     
                     {symptom.timeOfDay && (
-                      <div className="flex items-center text-sm text-gray-500">
+                      <div className="flex items-center text-sm text-foreground-muted">
                         <Clock className="mr-2 h-4 w-4" />
                         <span className="capitalize">{symptom.timeOfDay}</span>
                       </div>
                     )}
                     
                     {symptom.location && (
-                      <div className="flex items-center text-sm text-gray-500">
+                      <div className="flex items-center text-sm text-foreground-muted">
                         <MapPin className="mr-2 h-4 w-4" />
                         <span>{symptom.location}</span>
                       </div>
                     )}
 
                     {symptom.duration && (
-                      <div className="flex items-center text-sm text-gray-500">
+                      <div className="flex items-center text-sm text-foreground-muted">
                         <Activity className="mr-2 h-4 w-4" />
                         <span>Duration: {symptom.duration}</span>
                       </div>
@@ -307,20 +413,20 @@ export default function Symptoms() {
                   {/* Triggers and Medications */}
                   {((symptom.triggers && symptom.triggers.length > 0) || 
                     (symptom.medications && symptom.medications.length > 0)) && (
-                    <div className="space-y-2">
+                    <div className="space-y-3 pt-3 border-t border-white/10">
                       {symptom.triggers && symptom.triggers.length > 0 && (
                         <div>
-                          <p className="text-xs text-gray-500 mb-1">Triggers:</p>
+                          <p className="text-xs text-foreground-muted mb-2">Triggers:</p>
                           <div className="flex flex-wrap gap-1">
                             {symptom.triggers.slice(0, 3).map((trigger, index) => (
-                              <Badge key={index} variant="secondary" className="text-xs">
+                              <span key={index} className="px-2 py-1 text-xs bg-red-500/20 text-red-400 rounded-full border border-red-500/30">
                                 {trigger}
-                              </Badge>
+                              </span>
                             ))}
                             {symptom.triggers.length > 3 && (
-                              <Badge variant="secondary" className="text-xs">
+                              <span className="px-2 py-1 text-xs bg-white/10 text-foreground-muted rounded-full border border-white/20">
                                 +{symptom.triggers.length - 3} more
-                              </Badge>
+                              </span>
                             )}
                           </div>
                         </div>
@@ -328,17 +434,17 @@ export default function Symptoms() {
 
                       {symptom.medications && symptom.medications.length > 0 && (
                         <div>
-                          <p className="text-xs text-gray-500 mb-1">Medications:</p>
+                          <p className="text-xs text-foreground-muted mb-2">Medications:</p>
                           <div className="flex flex-wrap gap-1">
                             {symptom.medications.slice(0, 3).map((medication, index) => (
-                              <Badge key={index} variant="outline" className="text-xs">
+                              <span key={index} className="px-2 py-1 text-xs bg-green-500/20 text-green-400 rounded-full border border-green-500/30">
                                 {medication}
-                              </Badge>
+                              </span>
                             ))}
                             {symptom.medications.length > 3 && (
-                              <Badge variant="outline" className="text-xs">
+                              <span className="px-2 py-1 text-xs bg-white/10 text-foreground-muted rounded-full border border-white/20">
                                 +{symptom.medications.length - 3} more
-                              </Badge>
+                              </span>
                             )}
                           </div>
                         </div>
@@ -350,33 +456,54 @@ export default function Symptoms() {
             ))}
           </div>
         ) : symptoms && symptoms.length > 0 ? (
-          <div className="text-center py-12">
-            <Search className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-600 mb-2">No symptoms found</h3>
-            <p className="text-gray-500 mb-4">
-              Try adjusting your search criteria
+          <div className="text-center py-16">
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-secondary/10 to-accent/10 w-fit mx-auto mb-6">
+              <Search className="w-12 h-12 text-secondary mx-auto" />
+            </div>
+            <h3 className="text-xl font-semibold text-foreground mb-3">No symptoms found</h3>
+            <p className="text-foreground-muted mb-6 max-w-sm mx-auto">
+              Try adjusting your search criteria to find what you're looking for
             </p>
             <Button 
               variant="outline"
               onClick={() => setSearchQuery("")}
+              className="border-white/20 text-foreground hover:bg-white/5"
+              data-testid="button-clear-search"
             >
               Clear search
             </Button>
           </div>
         ) : (
-          <div className="text-center py-12">
-            <Activity className="w-16 h-16 text-gray-400 mx-auto mb-6" />
-            <h3 className="text-2xl font-semibold text-gray-600 mb-4">No symptoms logged yet</h3>
-            <p className="text-gray-500 mb-8 max-w-md mx-auto">
-              Start tracking your symptoms to identify patterns and share valuable information with your healthcare providers.
+          <div className="text-center py-16">
+            <div className="p-6 rounded-2xl bg-gradient-to-br from-secondary/10 to-accent/10 w-fit mx-auto mb-8">
+              <HeartHandshake className="w-16 h-16 text-secondary mx-auto" />
+            </div>
+            <h3 className="text-3xl font-bold text-foreground mb-4">Start your health intelligence journey</h3>
+            <p className="text-xl text-foreground-muted mb-8 max-w-2xl mx-auto leading-relaxed">
+              Track symptoms to unlock powerful AI insights. Discover patterns, identify triggers, and correlate with treatments to optimize your health outcomes.
             </p>
             <Button 
               onClick={() => setIsAddingSymptom(true)}
-              className="bg-medical-blue text-white hover:bg-blue-700"
+              className="bg-gradient-to-r from-secondary to-accent text-white hover:opacity-90 px-8 py-4 rounded-xl text-lg"
+              data-testid="button-log-first-symptom"
             >
-              <Plus className="mr-2 h-4 w-4" />
+              <Plus className="mr-2 h-5 w-5" />
               Log Your First Symptom
             </Button>
+            <div className="flex items-center justify-center space-x-6 mt-8 text-foreground-muted">
+              <div className="flex items-center space-x-2">
+                <Brain className="h-4 w-4 text-secondary" />
+                <span className="text-sm">AI Pattern Recognition</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Sparkles className="h-4 w-4 text-secondary" />
+                <span className="text-sm">Smart Correlations</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <TrendingUp className="h-4 w-4 text-secondary" />
+                <span className="text-sm">Health Optimization</span>
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -417,11 +544,17 @@ function SymptomForm({ onSubmit, onCancel, isLoading, initialData }: SymptomForm
     onSubmit(submitData);
   };
 
+  const getSeverityColor = (severity: number) => {
+    if (severity <= 3) return "text-green-400";
+    if (severity <= 6) return "text-yellow-400";
+    return "text-red-400";
+  };
+
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-professional-dark mb-2">
+          <label className="block text-sm font-medium text-foreground mb-2">
             Symptom Name *
           </label>
           <Input
@@ -429,11 +562,13 @@ function SymptomForm({ onSubmit, onCancel, isLoading, initialData }: SymptomForm
             onChange={(e) => setFormData({ ...formData, symptomName: e.target.value })}
             placeholder="e.g., Headache, Nausea, Fatigue"
             required
+            className="bg-surface-2 border-white/20 text-foreground"
+            data-testid="input-symptom-name"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-professional-dark mb-2">
+          <label className="block text-sm font-medium text-foreground mb-2">
             Date Recorded *
           </label>
           <Input
@@ -441,13 +576,18 @@ function SymptomForm({ onSubmit, onCancel, isLoading, initialData }: SymptomForm
             value={formData.dateRecorded}
             onChange={(e) => setFormData({ ...formData, dateRecorded: e.target.value })}
             required
+            className="bg-surface-2 border-white/20 text-foreground"
+            data-testid="input-date-recorded"
           />
         </div>
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-professional-dark mb-2">
-          Severity Level: {formData.severity}/10
+        <label className="block text-sm font-medium text-foreground mb-3">
+          <span className="flex items-center space-x-2">
+            <span>Severity Level:</span>
+            <span className={`font-bold ${getSeverityColor(formData.severity)}`}>{formData.severity}/10</span>
+          </span>
         </label>
         <Slider
           value={[formData.severity]}
@@ -456,35 +596,38 @@ function SymptomForm({ onSubmit, onCancel, isLoading, initialData }: SymptomForm
           min={1}
           step={1}
           className="w-full"
+          data-testid="slider-severity"
         />
-        <div className="flex justify-between text-xs text-gray-500 mt-1">
-          <span>Mild (1)</span>
-          <span>Moderate (5)</span>
-          <span>Severe (10)</span>
+        <div className="flex justify-between text-xs text-foreground-muted mt-2">
+          <span className="text-green-400">Mild (1)</span>
+          <span className="text-yellow-400">Moderate (5)</span>
+          <span className="text-red-400">Severe (10)</span>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div>
-          <label className="block text-sm font-medium text-professional-dark mb-2">
+          <label className="block text-sm font-medium text-foreground mb-2">
             Location
           </label>
           <Input
             value={formData.location}
             onChange={(e) => setFormData({ ...formData, location: e.target.value })}
             placeholder="e.g., Forehead, Left knee"
+            className="bg-surface-2 border-white/20 text-foreground"
+            data-testid="input-location"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-professional-dark mb-2">
+          <label className="block text-sm font-medium text-foreground mb-2">
             Duration
           </label>
           <Select value={formData.duration} onValueChange={(value) => setFormData({ ...formData, duration: value })}>
-            <SelectTrigger>
+            <SelectTrigger className="bg-surface-2 border-white/20 text-foreground" data-testid="select-duration">
               <SelectValue placeholder="Select duration" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="bg-surface-2 border-white/20">
               <SelectItem value="minutes">Minutes</SelectItem>
               <SelectItem value="hours">Hours</SelectItem>
               <SelectItem value="days">Days</SelectItem>
@@ -494,14 +637,14 @@ function SymptomForm({ onSubmit, onCancel, isLoading, initialData }: SymptomForm
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-professional-dark mb-2">
+          <label className="block text-sm font-medium text-foreground mb-2">
             Time of Day
           </label>
           <Select value={formData.timeOfDay} onValueChange={(value) => setFormData({ ...formData, timeOfDay: value })}>
-            <SelectTrigger>
+            <SelectTrigger className="bg-surface-2 border-white/20 text-foreground" data-testid="select-time-of-day">
               <SelectValue placeholder="Select time" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="bg-surface-2 border-white/20">
               <SelectItem value="morning">Morning</SelectItem>
               <SelectItem value="afternoon">Afternoon</SelectItem>
               <SelectItem value="evening">Evening</SelectItem>
@@ -512,7 +655,7 @@ function SymptomForm({ onSubmit, onCancel, isLoading, initialData }: SymptomForm
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-professional-dark mb-2">
+        <label className="block text-sm font-medium text-foreground mb-2">
           Description
         </label>
         <Textarea
@@ -520,35 +663,41 @@ function SymptomForm({ onSubmit, onCancel, isLoading, initialData }: SymptomForm
           onChange={(e) => setFormData({ ...formData, description: e.target.value })}
           placeholder="Describe the symptom in more detail..."
           rows={3}
+          className="bg-surface-2 border-white/20 text-foreground"
+          data-testid="textarea-description"
         />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
-          <label className="block text-sm font-medium text-professional-dark mb-2">
+          <label className="block text-sm font-medium text-foreground mb-2">
             Triggers (comma-separated)
           </label>
           <Input
             value={formData.triggers}
             onChange={(e) => setFormData({ ...formData, triggers: e.target.value })}
             placeholder="e.g., Stress, Weather, Food"
+            className="bg-surface-2 border-white/20 text-foreground"
+            data-testid="input-triggers"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-professional-dark mb-2">
+          <label className="block text-sm font-medium text-foreground mb-2">
             Medications Taken (comma-separated)
           </label>
           <Input
             value={formData.medications}
             onChange={(e) => setFormData({ ...formData, medications: e.target.value })}
             placeholder="e.g., Ibuprofen, Acetaminophen"
+            className="bg-surface-2 border-white/20 text-foreground"
+            data-testid="input-medications"
           />
         </div>
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-professional-dark mb-2">
+        <label className="block text-sm font-medium text-foreground mb-2">
           Additional Notes
         </label>
         <Textarea
@@ -556,17 +705,26 @@ function SymptomForm({ onSubmit, onCancel, isLoading, initialData }: SymptomForm
           onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
           placeholder="Any other relevant information..."
           rows={2}
+          className="bg-surface-2 border-white/20 text-foreground"
+          data-testid="textarea-notes"
         />
       </div>
 
-      <div className="flex justify-end space-x-4 pt-4">
-        <Button type="button" variant="outline" onClick={onCancel}>
+      <div className="flex justify-end space-x-4 pt-6">
+        <Button 
+          type="button" 
+          variant="outline" 
+          onClick={onCancel}
+          className="border-white/20 text-foreground hover:bg-white/5"
+          data-testid="button-cancel-symptom"
+        >
           Cancel
         </Button>
         <Button 
           type="submit" 
           disabled={isLoading || !formData.symptomName || !formData.dateRecorded}
-          className="bg-medical-blue text-white hover:bg-blue-700"
+          className="bg-gradient-to-r from-secondary to-accent text-white hover:opacity-90"
+          data-testid="button-save-symptom"
         >
           {isLoading ? "Saving..." : "Save Symptom"}
         </Button>

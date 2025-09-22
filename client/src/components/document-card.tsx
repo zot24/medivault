@@ -16,7 +16,9 @@ import {
   Eye,
   Calendar,
   User,
-  Building
+  Building,
+  ChevronRight,
+  Sparkles
 } from "lucide-react";
 import type { MedicalDocument } from "@shared/schema";
 
@@ -25,19 +27,19 @@ interface DocumentCardProps {
   onDelete: (id: number) => void;
 }
 
-export default function DocumentCard({ document, onDelete }: DocumentCardProps) {
+export default function DocumentCard({ document: medicalDocument, onDelete }: DocumentCardProps) {
   const getDocumentTypeColor = (type: string) => {
     switch (type) {
       case "lab_result":
-        return "bg-health-green bg-opacity-10 text-health-green";
+        return "from-primary to-primary/70";
       case "prescription":
-        return "bg-warm-amber bg-opacity-10 text-warm-amber";
+        return "from-secondary to-secondary/70";
       case "x_ray":
-        return "bg-trust-purple bg-opacity-10 text-trust-purple";
+        return "from-accent to-accent/70";
       case "consultation":
-        return "bg-medical-blue bg-opacity-10 text-medical-blue";
+        return "from-primary to-secondary";
       default:
-        return "bg-gray-100 text-gray-600";
+        return "from-primary/50 to-secondary/50";
     }
   };
 
@@ -47,33 +49,41 @@ export default function DocumentCard({ document, onDelete }: DocumentCardProps) 
 
   const handleDownload = () => {
     // Create a download link
-    const link = document.createElement("a");
-    link.href = `/api/files/${document.filePath.split("/").pop()}`;
-    link.download = document.fileName;
+    const link = window.document.createElement("a");
+    link.href = `/api/files/${medicalDocument.filePath.split("/").pop()}`;
+    link.download = medicalDocument.fileName;
     link.click();
   };
 
   const handleView = () => {
     // Open file in new tab
-    window.open(`/api/files/${document.filePath.split("/").pop()}`, "_blank");
+    window.open(`/api/files/${medicalDocument.filePath.split("/").pop()}`, "_blank");
   };
 
   return (
-    <Card className="hover:shadow-lg transition-all duration-200 group">
+    <Card className="bg-surface-1 border-white/10 hover:bg-surface-2 transition-all duration-300 group" data-testid={`document-card-${medicalDocument.id}`}>
       <CardContent className="p-6">
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-medical-blue bg-opacity-10 rounded-lg flex items-center justify-center">
-              <FileText className="text-medical-blue h-5 w-5" />
+          <div className="flex items-start space-x-3 flex-1">
+            <div className={`p-2.5 rounded-xl bg-gradient-to-br ${getDocumentTypeColor(medicalDocument.documentType)} group-hover:scale-105 transition-transform duration-200`}>
+              <FileText className="text-white h-5 w-5" />
             </div>
-            <div className="flex-1">
-              <h3 className="font-semibold text-professional-dark text-lg leading-tight">
-                {document.title}
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-foreground text-lg leading-tight mb-2">
+                {medicalDocument.title}
               </h3>
-              <Badge className={`mt-1 text-xs ${getDocumentTypeColor(document.documentType)}`}>
-                {getDocumentTypeLabel(document.documentType)}
-              </Badge>
+              <div className="flex items-center space-x-2">
+                <span className={`px-3 py-1 text-xs font-medium bg-gradient-to-r ${getDocumentTypeColor(medicalDocument.documentType)} text-white rounded-full`}>
+                  {getDocumentTypeLabel(medicalDocument.documentType)}
+                </span>
+                {medicalDocument.tags && medicalDocument.tags.length > 0 && (
+                  <div className="flex items-center space-x-1">
+                    <Sparkles className="h-3 w-3 text-primary" />
+                    <span className="text-xs text-foreground-muted">AI Analyzed</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           
@@ -82,23 +92,25 @@ export default function DocumentCard({ document, onDelete }: DocumentCardProps) 
               <Button 
                 variant="ghost" 
                 size="icon"
-                className="opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 h-8 w-8 hover:bg-white/10"
+                data-testid={`document-menu-${medicalDocument.id}`}
               >
                 <MoreVertical className="h-4 w-4" />
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleView}>
+            <DropdownMenuContent align="end" className="bg-surface-2 border-white/20">
+              <DropdownMenuItem onClick={handleView} className="text-foreground hover:bg-white/10" data-testid={`button-view-${medicalDocument.id}`}>
                 <Eye className="mr-2 h-4 w-4" />
                 View
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleDownload}>
+              <DropdownMenuItem onClick={handleDownload} className="text-foreground hover:bg-white/10" data-testid={`button-download-${medicalDocument.id}`}>
                 <Download className="mr-2 h-4 w-4" />
                 Download
               </DropdownMenuItem>
               <DropdownMenuItem 
-                onClick={() => onDelete(document.id)}
-                className="text-red-600"
+                onClick={() => onDelete(medicalDocument.id)}
+                className="text-destructive hover:bg-destructive/10"
+                data-testid={`button-delete-${medicalDocument.id}`}
               >
                 <Trash2 className="mr-2 h-4 w-4" />
                 Delete
@@ -108,77 +120,80 @@ export default function DocumentCard({ document, onDelete }: DocumentCardProps) 
         </div>
 
         {/* Description */}
-        {document.description && (
-          <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-            {document.description}
+        {medicalDocument.description && (
+          <p className="text-foreground-muted text-sm mb-4 line-clamp-2">
+            {medicalDocument.description}
           </p>
         )}
 
         {/* Metadata */}
         <div className="space-y-2 mb-4">
-          <div className="flex items-center text-sm text-gray-500">
+          <div className="flex items-center text-sm text-foreground-muted">
             <Calendar className="mr-2 h-4 w-4" />
             <span>
-              {format(new Date(document.documentDate), "MMM d, yyyy")}
+              {format(new Date(medicalDocument.documentDate), "MMM d, yyyy")}
             </span>
           </div>
           
-          {document.doctorName && (
-            <div className="flex items-center text-sm text-gray-500">
+          {medicalDocument.doctorName && (
+            <div className="flex items-center text-sm text-foreground-muted">
               <User className="mr-2 h-4 w-4" />
-              <span>{document.doctorName}</span>
+              <span>{medicalDocument.doctorName}</span>
             </div>
           )}
           
-          {document.facilityName && (
-            <div className="flex items-center text-sm text-gray-500">
+          {medicalDocument.facilityName && (
+            <div className="flex items-center text-sm text-foreground-muted">
               <Building className="mr-2 h-4 w-4" />
-              <span>{document.facilityName}</span>
+              <span>{medicalDocument.facilityName}</span>
             </div>
           )}
         </div>
 
         {/* Tags */}
-        {document.tags && document.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1 mb-4">
-            {document.tags.slice(0, 3).map((tag, index) => (
-              <Badge key={index} variant="secondary" className="text-xs">
+        {medicalDocument.tags && medicalDocument.tags.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {medicalDocument.tags.slice(0, 3).map((tag, index) => (
+              <span key={index} className="px-2 py-1 text-xs bg-white/10 text-foreground-muted rounded-full border border-white/10">
                 {tag}
-              </Badge>
+              </span>
             ))}
-            {document.tags.length > 3 && (
-              <Badge variant="secondary" className="text-xs">
-                +{document.tags.length - 3} more
-              </Badge>
+            {medicalDocument.tags.length > 3 && (
+              <span className="px-2 py-1 text-xs bg-white/10 text-foreground-muted rounded-full border border-white/10">
+                +{medicalDocument.tags.length - 3} more
+              </span>
             )}
           </div>
         )}
 
         {/* Footer */}
-        <div className="flex items-center justify-between text-xs text-gray-400">
-          <span>{document.fileName}</span>
-          <span>{(parseInt(document.fileSize) / 1024 / 1024).toFixed(1)} MB</span>
+        <div className="flex items-center justify-between text-xs text-foreground-muted mb-4">
+          <span className="truncate mr-2">{medicalDocument.fileName}</span>
+          <span>{(parseInt(medicalDocument.fileSize) / 1024 / 1024).toFixed(1)} MB</span>
         </div>
 
         {/* Action Buttons */}
-        <div className="flex items-center space-x-2 mt-4 pt-4 border-t border-gray-100">
+        <div className="flex items-center space-x-2 pt-4 border-t border-white/10">
           <Button 
             variant="outline" 
             size="sm" 
             onClick={handleView}
-            className="flex-1"
+            className="flex-1 border-white/20 text-foreground hover:bg-white/5 group"
+            data-testid={`button-view-primary-${medicalDocument.id}`}
           >
             <Eye className="mr-2 h-4 w-4" />
-            View
+            <span>View</span>
+            <ChevronRight className="ml-auto h-4 w-4 group-hover:translate-x-1 transition-transform duration-200" />
           </Button>
           <Button 
             variant="outline" 
             size="sm" 
             onClick={handleDownload}
-            className="flex-1"
+            className="flex-1 border-white/20 text-foreground hover:bg-white/5"
+            data-testid={`button-download-primary-${medicalDocument.id}`}
           >
             <Download className="mr-2 h-4 w-4" />
-            Download
+            <span>Download</span>
           </Button>
         </div>
       </CardContent>

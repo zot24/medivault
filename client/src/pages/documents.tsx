@@ -17,7 +17,11 @@ import {
   Search, 
   Filter,
   FileText,
-  Upload
+  Upload,
+  Brain,
+  Sparkles,
+  FileImage,
+  BarChart3
 } from "lucide-react";
 import type { MedicalDocument } from "@shared/schema";
 
@@ -83,13 +87,16 @@ export default function Documents() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-clean-white">
+      <div className="min-h-screen bg-background">
         <Navigation />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <Skeleton className="h-8 w-48 mb-6" />
+        <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8">
+          <div className="mb-8">
+            <Skeleton className="h-8 w-64 mb-4" />
+            <Skeleton className="h-4 w-96" />
+          </div>
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i}>
+              <Card key={i} className="bg-surface-1 border-white/10">
                 <CardContent className="p-6">
                   <Skeleton className="h-4 w-full mb-2" />
                   <Skeleton className="h-4 w-3/4 mb-2" />
@@ -126,23 +133,33 @@ export default function Documents() {
   };
 
   return (
-    <div className="min-h-screen bg-clean-white">
+    <div className="min-h-screen bg-background" data-testid="documents-page">
       <Navigation />
       
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-professional-dark mb-2">Medical Documents</h1>
-            <p className="text-gray-600">
-              Upload and manage documents while AI extracts key insights and tracks health patterns
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center mb-12">
+          <div className="max-w-2xl">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="p-2 rounded-xl bg-gradient-to-br from-primary to-secondary">
+                <FileText className="text-white h-5 w-5" />
+              </div>
+              <div className="inline-flex items-center space-x-2 bg-surface-1 border border-white/10 rounded-full px-3 py-1 text-xs text-foreground-muted">
+                <Brain className="h-3 w-3 text-primary" />
+                <span>AI Document Analysis</span>
+              </div>
+            </div>
+            <h1 className="text-4xl font-bold text-foreground mb-3">Medical Documents</h1>
+            <p className="text-xl text-foreground-muted">
+              Upload and organize your health records while our AI extracts key insights, tracks patterns, and builds your intelligent health profile.
             </p>
           </div>
           <Button 
             onClick={() => setIsUploadOpen(true)}
-            className="bg-medical-blue text-white hover:bg-blue-700 mt-4 sm:mt-0"
+            className="bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 mt-6 lg:mt-0 px-6 py-3 rounded-xl"
+            data-testid="button-upload-document"
           >
-            <Plus className="mr-2 h-4 w-4" />
+            <Plus className="mr-2 h-5 w-5" />
             Upload Document
           </Button>
         </div>
@@ -150,21 +167,22 @@ export default function Documents() {
         {/* Search and Filter */}
         <div className="flex flex-col sm:flex-row gap-4 mb-8">
           <div className="relative flex-1">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-3 top-3 h-4 w-4 text-foreground-muted" />
             <Input
               placeholder="Search documents, doctors, or facilities..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10"
+              className="pl-10 bg-surface-1 border-white/20 text-foreground placeholder:text-foreground-muted"
+              data-testid="input-search-documents"
             />
           </div>
-          <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-gray-400" />
+          <div className="flex items-center space-x-3">
+            <Filter className="h-4 w-4 text-foreground-muted" />
             <Select value={filterType} onValueChange={setFilterType}>
-              <SelectTrigger className="w-48">
+              <SelectTrigger className="w-48 bg-surface-1 border-white/20 text-foreground" data-testid="select-document-filter">
                 <SelectValue placeholder="Filter by type" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="bg-surface-2 border-white/20">
                 <SelectItem value="all">All Documents</SelectItem>
                 <SelectItem value="lab_result">Lab Results</SelectItem>
                 <SelectItem value="prescription">Prescriptions</SelectItem>
@@ -176,11 +194,76 @@ export default function Documents() {
           </div>
         </div>
 
+        {/* Stats Row */}
+        {documents && documents.length > 0 && (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <Card className="bg-surface-1 border-white/10">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-primary to-primary/70">
+                    <FileText className="h-4 w-4 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-foreground-muted">Total</p>
+                    <p className="text-lg font-bold text-foreground">{documents.length}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-surface-1 border-white/10">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-secondary to-secondary/70">
+                    <BarChart3 className="h-4 w-4 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-foreground-muted">Filtered</p>
+                    <p className="text-lg font-bold text-foreground">{filteredDocuments.length}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-surface-1 border-white/10">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-accent to-accent/70">
+                    <Brain className="h-4 w-4 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-foreground-muted">AI Analyzed</p>
+                    <p className="text-lg font-bold text-foreground">{documents.filter(d => d.tags && d.tags.length > 0).length}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="bg-surface-1 border-white/10">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-3">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-primary to-secondary">
+                    <Sparkles className="h-4 w-4 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-sm text-foreground-muted">This Month</p>
+                    <p className="text-lg font-bold text-foreground">
+                      {documents.filter(doc => {
+                        if (!doc.createdAt) return false;
+                        const docDate = new Date(doc.createdAt);
+                        const now = new Date();
+                        return docDate.getMonth() === now.getMonth() && docDate.getFullYear() === now.getFullYear();
+                      }).length}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
         {/* Documents Grid */}
         {documentsLoading ? (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {Array.from({ length: 6 }).map((_, i) => (
-              <Card key={i}>
+              <Card key={i} className="bg-surface-1 border-white/10">
                 <CardContent className="p-6">
                   <Skeleton className="h-4 w-full mb-2" />
                   <Skeleton className="h-4 w-3/4 mb-2" />
@@ -191,7 +274,7 @@ export default function Documents() {
             ))}
           </div>
         ) : filteredDocuments.length > 0 ? (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="documents-grid">
             {filteredDocuments.map((document) => (
               <DocumentCard
                 key={document.id}
@@ -201,11 +284,13 @@ export default function Documents() {
             ))}
           </div>
         ) : documents && documents.length > 0 ? (
-          <div className="text-center py-12">
-            <Search className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-600 mb-2">No documents found</h3>
-            <p className="text-gray-500 mb-4">
-              Try adjusting your search or filter criteria
+          <div className="text-center py-16">
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 w-fit mx-auto mb-6">
+              <Search className="w-12 h-12 text-primary mx-auto" />
+            </div>
+            <h3 className="text-xl font-semibold text-foreground mb-3">No documents found</h3>
+            <p className="text-foreground-muted mb-6 max-w-sm mx-auto">
+              Try adjusting your search or filter criteria to find what you're looking for
             </p>
             <Button 
               variant="outline"
@@ -213,25 +298,44 @@ export default function Documents() {
                 setSearchQuery("");
                 setFilterType("all");
               }}
+              className="border-white/20 text-foreground hover:bg-white/5"
+              data-testid="button-clear-filters"
             >
               Clear filters
             </Button>
           </div>
         ) : (
-          <div className="text-center py-12">
-            <Upload className="w-16 h-16 text-gray-400 mx-auto mb-6" />
-            <h3 className="text-2xl font-semibold text-gray-600 mb-4">No medical documents yet</h3>
-            <p className="text-gray-500 mb-8 max-w-md mx-auto">
-              Start building your digital health record by uploading your first medical document. 
-              Lab results, prescriptions, and medical images are all supported.
+          <div className="text-center py-16">
+            <div className="p-6 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 w-fit mx-auto mb-8">
+              <FileImage className="w-16 h-16 text-primary mx-auto" />
+            </div>
+            <h3 className="text-3xl font-bold text-foreground mb-4">Ready to unlock health insights?</h3>
+            <p className="text-xl text-foreground-muted mb-8 max-w-2xl mx-auto leading-relaxed">
+              Start building your intelligent health profile by uploading your first medical document. 
+              Our AI will analyze lab results, prescriptions, and medical images to provide personalized insights.
             </p>
             <Button 
               onClick={() => setIsUploadOpen(true)}
-              className="bg-medical-blue text-white hover:bg-blue-700"
+              className="bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 px-8 py-4 rounded-xl text-lg"
+              data-testid="button-upload-first-document"
             >
-              <Plus className="mr-2 h-4 w-4" />
+              <Plus className="mr-2 h-5 w-5" />
               Upload Your First Document
             </Button>
+            <div className="flex items-center justify-center space-x-6 mt-8 text-foreground-muted">
+              <div className="flex items-center space-x-2">
+                <Brain className="h-4 w-4 text-primary" />
+                <span className="text-sm">AI-Powered Analysis</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <span className="text-sm">Pattern Recognition</span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <FileText className="h-4 w-4 text-primary" />
+                <span className="text-sm">Secure Storage</span>
+              </div>
+            </div>
           </div>
         )}
       </div>
