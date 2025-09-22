@@ -285,34 +285,34 @@ export default function Landing() {
                   <div className="text-center">
                     <UserCheck className="w-16 h-16 text-trust-purple mx-auto mb-6" />
                     <blockquote className="text-lg mb-4" style={{ color: "hsl(215, 28%, 17%)" }}>
-                      "Now I know what's going on with my health and what questions to ask next. Everything is organized and ready."
+                      "The AI insights completely changed how I understand my health. It connected patterns I never saw and helped me have way better conversations with my doctors."
                     </blockquote>
-                    <p className="text-sm" style={{ color: "hsl(215, 15%, 45%)" }}>— Real user</p>
+                    <p className="text-sm" style={{ color: "hsl(215, 15%, 45%)" }}>— Sarah M., MediVault User</p>
                   </div>
                 </CardContent>
               </Card>
             </div>
             <div>
               <h2 className="text-3xl lg:text-4xl font-bold mb-6" style={{ color: "hsl(215, 28%, 17%)" }}>
-                Built for People,
-                <span className="text-trust-purple"> Not Paperwork</span>
+                Your Health Data
+                <span className="text-trust-purple"> Finally Makes Sense</span>
               </h2>
               <p className="text-xl mb-8 leading-relaxed" style={{ color: "hsl(215, 15%, 45%)" }}>
-                Whether you're managing a chronic condition, keeping track of family care, or just want to stay organized — MediVault is designed to make your life easier, not more complicated.
+                Stop drowning in medical jargon and scattered information. Our AI transforms your health data into clear, actionable insights that actually help you make better decisions about your care.
               </p>
               
               <div className="space-y-6">
                 {[
                   {
                     icon: Smartphone,
-                    title: "Access Anytime, Anywhere",
-                    description: "MediVault works seamlessly across all your devices — desktop, tablet, or mobile.",
+                    title: "AI That Learns You",
+                    description: "The more you use MediVault, the smarter it gets about your unique health patterns and needs.",
                     color: "trust-purple"
                   },
                   {
                     icon: Lock,
-                    title: "Privacy Comes First",
-                    description: "Your medical history is personal. We use strong encryption and never sell your data.",
+                    title: "Your Data, Your Intelligence",
+                    description: "All AI analysis happens securely with your data. We never share insights with third parties or use your information to train other models.",
                     color: "medical-blue"
                   }
                 ].map((item, index) => (
@@ -336,11 +336,10 @@ export default function Landing() {
       <section className="py-20 bg-gradient-to-r from-medical-blue to-trust-purple">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-3xl lg:text-5xl font-bold text-white mb-6">
-            Ready to Get Organized?
+            Ready for Health Insights That Actually Matter?
           </h2>
           <p className="text-xl text-blue-100 mb-10 leading-relaxed">
-            Join others who've stopped relying on memory, sticky notes, and scattered documents.
-            Start using MediVault and make your health history work for you.
+            Join thousands who've discovered what AI can reveal about their health. Get personalized insights, spot important patterns, and make smarter decisions about your care.
           </p>
           <div className="flex flex-col sm:flex-row gap-6 justify-center">
             <Button 
@@ -348,13 +347,13 @@ export default function Landing() {
               onClick={handleGetStarted}
               className="bg-health-green text-white hover:bg-emerald-600 font-semibold text-lg transform hover:scale-105 transition-all duration-200"
             >
-              Start Free Account
+              Get AI Health Analysis
             </Button>
 
           </div>
           <div className="flex items-center justify-center mt-8 text-blue-100">
             <CheckCircle className="mr-2 h-4 w-4" />
-            <span>No credit card required • Private & Secure</span>
+            <span>No credit card required • AI-Powered • 100% Private</span>
           </div>
         </div>
       </section>
@@ -377,7 +376,7 @@ export default function Landing() {
               <span className="text-xl font-semibold text-white">MediVault</span>
             </div>
             <p className="mb-6 leading-relaxed max-w-2xl mx-auto text-white">
-              Empowering patients to take control of their healthcare journey through secure, organized medical record management.
+              Transforming healthcare through AI-powered insights. We help you understand your health data like never before — making every doctor visit more productive and every health decision more informed.
             </p>
           </div>
           
@@ -385,7 +384,7 @@ export default function Landing() {
             <p className="text-white">© 2024 MediVault. All rights reserved.</p>
             <div className="flex items-center mt-4 md:mt-0">
               <Shield className="text-health-green mr-2 h-4 w-4" />
-              <span className="text-sm text-white">Secure & Private • Your Data Stays Yours</span>
+              <span className="text-sm text-white">AI-Powered Insights • 100% Private • Your Data Stays Yours</span>
             </div>
           </div>
         </div>
