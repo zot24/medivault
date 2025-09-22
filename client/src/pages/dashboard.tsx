@@ -176,7 +176,7 @@ export default function Dashboard() {
             Welcome back, {(user as any)?.firstName || 'Patient'}!
           </h1>
           <p className="text-gray-600">
-            Here's an overview of your medical records and health data.
+            Here's your personalized health intelligence dashboard with AI-powered insights from your medical data.
           </p>
         </div>
 

@@ -135,7 +135,7 @@ export default function Documents() {
           <div>
             <h1 className="text-3xl font-bold text-professional-dark mb-2">Medical Documents</h1>
             <p className="text-gray-600">
-              Manage and organize your medical records
+              Upload and manage documents while AI extracts key insights and tracks health patterns
             </p>
           </div>
           <Button 

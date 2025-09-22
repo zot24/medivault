@@ -176,7 +176,7 @@ export default function Symptoms() {
           <div>
             <h1 className="text-3xl font-bold text-professional-dark mb-2">Symptom Tracker</h1>
             <p className="text-gray-600">
-              Log and monitor your symptoms to track patterns and share with healthcare providers
+              Log symptoms and let AI analyze patterns, connections to treatments, and provide personalized health insights
             </p>
           </div>
           <Button 
