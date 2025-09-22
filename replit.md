@@ -1,10 +1,12 @@
 # Overview
 
-MediVault is a comprehensive medical records management platform that allows users to securely store, organize, and track their health information. The application enables users to upload medical documents (lab results, prescriptions, X-rays, etc.), track symptoms over time, and manage their healthcare journey in one centralized location. Built with modern web technologies, it emphasizes security, privacy, and user-friendly design for everyday healthcare management.
+MediVault is an AI-powered healthcare intelligence platform that transforms how users understand and manage their health information. The application uses artificial intelligence to analyze medical documents, track symptoms, and provide personalized health insights based on each user's complete health profile. By connecting patterns across lab results, prescriptions, symptoms, and treatments, MediVault delivers actionable health recommendations and helps users make more informed decisions about their care. Built with cutting-edge AI technology and modern web frameworks, it emphasizes intelligent analysis, security, privacy, and personalized healthcare insights.
 
 # User Preferences
 
 Preferred communication style: Simple, everyday language.
+Marketing Focus: AI-powered health insights and personalized recommendations.
+Target Audience: Health-conscious individuals seeking intelligent analysis of their medical data.
 
 # System Architecture
 
@@ -82,3 +84,21 @@ Preferred communication style: Simple, everyday language.
 - **Zod**: Runtime type validation and schema definition
 - **React Hook Form**: Form state management and validation
 - **@hookform/resolvers**: Integration between React Hook Form and Zod
+
+# Marketing Positioning
+
+MediVault positions itself as the first AI-powered personal health intelligence platform that:
+- Analyzes patterns across all medical data (documents, symptoms, treatments)
+- Provides personalized health insights and recommendations
+- Connects dots between symptoms, treatments, and outcomes
+- Helps users make more informed healthcare decisions
+- Delivers intelligent summaries for doctor visits
+- Offers predictive health planning and optimization
+
+## Key Value Propositions
+- **AI Health Analysis**: Intelligent pattern recognition across all health data
+- **Personalized Insights**: Customized recommendations based on individual health profiles
+- **Smart Document Processing**: Automatic extraction of key information from medical documents
+- **Symptom Intelligence**: AI-powered connections between symptoms and treatments
+- **Predictive Health Planning**: Proactive recommendations for optimal health management
+- **Privacy-First AI**: All analysis happens securely with user data remaining private
