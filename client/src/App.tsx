@@ -10,19 +10,12 @@ import Documents from "@/pages/documents";
 import Symptoms from "@/pages/symptoms";
 
 function Router() {
-  const { isAuthenticated, isLoading } = useAuth();
-
   return (
     <Switch>
-      {isLoading || !isAuthenticated ? (
-        <Route path="/" component={Landing} />
-      ) : (
-        <>
-          <Route path="/" component={Dashboard} />
-          <Route path="/documents" component={Documents} />
-          <Route path="/symptoms" component={Symptoms} />
-        </>
-      )}
+      <Route path="/" component={Landing} />
+      <Route path="/dashboard" component={Dashboard} />
+      <Route path="/documents" component={Documents} />
+      <Route path="/symptoms" component={Symptoms} />
       <Route component={NotFound} />
     </Switch>
   );
