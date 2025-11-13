@@ -6,6 +6,7 @@ import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { apiRequest } from "@/lib/queryClient";
 import Navigation from "@/components/navigation";
+import analytics from "@/lib/analytics/umami";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -66,6 +67,13 @@ export default function Dashboard() {
     }
   }, [isAuthenticated, isLoading, toast]);
 
+  // Track page visit
+  useEffect(() => {
+    if (isAuthenticated) {
+      analytics.pageVisited('/dashboard');
+    }
+  }, [isAuthenticated]);
+
   const { data: allDocuments, isLoading: documentsLoading } = useQuery<MedicalDocument[]>({
     queryKey: ["/api/documents"],
     enabled: isAuthenticated,
@@ -98,12 +106,17 @@ export default function Dashboard() {
       ...newAppointment
     };
 
-    const updatedAppointments = [...appointments, appointment].sort((a, b) => 
+    const updatedAppointments = [...appointments, appointment].sort((a, b) =>
       new Date(a.date).getTime() - new Date(b.date).getTime()
     );
 
     setAppointments(updatedAppointments);
     localStorage.setItem(`appointments_${(user as any)?.id}`, JSON.stringify(updatedAppointments));
+
+    // Track appointment scheduling
+    const daysUntil = Math.ceil((new Date(appointment.date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    analytics.appointmentScheduled(appointment.doctor, daysUntil);
+
     setNewAppointment({ date: "", doctor: "", description: "" });
     setAppointmentDialogOpen(false);
     toast({
@@ -116,6 +129,10 @@ export default function Dashboard() {
     const updatedAppointments = appointments.filter(apt => apt.id !== appointmentId);
     setAppointments(updatedAppointments);
     localStorage.setItem(`appointments_${(user as any)?.id}`, JSON.stringify(updatedAppointments));
+
+    // Track appointment removal
+    analytics.appointmentRemoved();
+
     toast({
       title: "Appointment Removed",
       description: "The appointment has been removed.",
@@ -302,7 +319,13 @@ export default function Dashboard() {
                     </CardTitle>
                     <p className="text-sm text-foreground-muted">AI-analyzed documents from your health journey</p>
                   </div>
-                  <Button variant="ghost" asChild className="text-primary hover:text-primary hover:bg-white/5" data-testid="button-view-all-documents">
+                  <Button
+                    variant="ghost"
+                    asChild
+                    className="text-primary hover:text-primary hover:bg-white/5"
+                    data-testid="button-view-all-documents"
+                    onClick={() => analytics.ctaClicked('view_all_documents', 'dashboard_recent_records')}
+                  >
                     <Link href="/documents" className="flex items-center space-x-2">
                       <span>View All</span>
                       <ArrowRight className="h-4 w-4" />
@@ -354,7 +377,12 @@ export default function Dashboard() {
                     </div>
                     <h3 className="text-lg font-semibold text-foreground mb-2">Ready to unlock health insights?</h3>
                     <p className="text-foreground-muted mb-6 max-w-sm mx-auto">Upload your first document and watch our AI analyze patterns in your health data</p>
-                    <Button asChild className="bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90" data-testid="button-upload-first-document">
+                    <Button
+                      asChild
+                      className="bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90"
+                      data-testid="button-upload-first-document"
+                      onClick={() => analytics.ctaClicked('upload_first_document', 'dashboard_empty_state')}
+                    >
                       <Link href="/documents" className="flex items-center space-x-2">
                         <Upload className="h-4 w-4" />
                         <span>Upload First Document</span>
@@ -504,7 +532,12 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
-                  <Button asChild className="w-full bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 justify-start group" data-testid="button-upload-document">
+                  <Button
+                    asChild
+                    className="w-full bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 justify-start group"
+                    data-testid="button-upload-document"
+                    onClick={() => analytics.ctaClicked('upload_document', 'dashboard_quick_actions')}
+                  >
                     <Link href="/documents" className="flex items-center space-x-3">
                       <div className="p-1 rounded bg-white/20">
                         <Upload className="h-4 w-4" />
@@ -513,7 +546,13 @@ export default function Dashboard() {
                       <ArrowRight className="ml-auto h-4 w-4 group-hover:translate-x-1 transition-transform" />
                     </Link>
                   </Button>
-                  <Button asChild variant="outline" className="w-full justify-start border-white/20 text-foreground hover:bg-white/5 group" data-testid="button-track-symptoms">
+                  <Button
+                    asChild
+                    variant="outline"
+                    className="w-full justify-start border-white/20 text-foreground hover:bg-white/5 group"
+                    data-testid="button-track-symptoms"
+                    onClick={() => analytics.ctaClicked('track_symptoms', 'dashboard_quick_actions')}
+                  >
                     <Link href="/symptoms" className="flex items-center space-x-3">
                       <div className="p-1 rounded border border-white/20">
                         <Activity className="h-4 w-4" />

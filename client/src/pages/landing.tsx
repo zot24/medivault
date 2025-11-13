@@ -1,7 +1,8 @@
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { 
-  Shield, 
+import {
+  Shield,
   Brain,
   Sparkles,
   ArrowRight,
@@ -15,13 +16,21 @@ import {
   Star,
   ChevronRight
 } from "lucide-react";
+import analytics from "@/lib/analytics/umami";
 
 export default function Landing() {
-  const handleGetStarted = () => {
+  // Track page visit
+  useEffect(() => {
+    analytics.pageVisited('/');
+  }, []);
+
+  const handleGetStarted = (location: string) => {
+    analytics.ctaClicked('get_started', location);
     window.location.href = "/api/login";
   };
 
   const handleSignIn = () => {
+    analytics.ctaClicked('sign_in', 'nav');
     window.location.href = "/api/login";
   };
 
@@ -47,8 +56,8 @@ export default function Landing() {
               >
                 Sign In
               </Button>
-              <Button 
-                onClick={handleGetStarted}
+              <Button
+                onClick={() => handleGetStarted('nav')}
                 className="bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 font-medium rounded-xl px-6"
               >
                 Get Started
@@ -81,9 +90,9 @@ export default function Landing() {
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
-              <Button 
+              <Button
                 size="lg"
-                onClick={handleGetStarted}
+                onClick={() => handleGetStarted('hero')}
                 className="bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 font-medium text-lg px-8 py-4 rounded-xl group"
               >
                 Start Your Health Journey
@@ -312,9 +321,9 @@ export default function Landing() {
           </p>
           
           <div className="flex flex-col sm:flex-row gap-6 justify-center items-center mb-12">
-            <Button 
+            <Button
               size="lg"
-              onClick={handleGetStarted}
+              onClick={() => handleGetStarted('cta_section')}
               className="bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 font-medium text-lg px-8 py-4 rounded-xl group"
             >
               Start Your AI Health Analysis

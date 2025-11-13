@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { apiRequest } from "@/lib/queryClient";
 import Navigation from "@/components/navigation";
+import analytics from "@/lib/analytics/umami";
 import DocumentCard from "@/components/document-card";
 import UploadDialog from "@/components/upload-dialog";
 import { Button } from "@/components/ui/button";
@@ -48,6 +49,33 @@ export default function Documents() {
       return;
     }
   }, [isAuthenticated, isLoading, toast]);
+
+  // Track page visit
+  useEffect(() => {
+    if (isAuthenticated) {
+      analytics.pageVisited('/documents');
+    }
+  }, [isAuthenticated]);
+
+  // Track search usage (debounced)
+  useEffect(() => {
+    if (searchQuery && documents) {
+      const timer = setTimeout(() => {
+        const resultsCount = filteredDocuments.length;
+        analytics.documentSearched(searchQuery, resultsCount);
+      }, 1000); // Wait 1s after user stops typing
+
+      return () => clearTimeout(timer);
+    }
+  }, [searchQuery, documents]);
+
+  // Track filter usage
+  useEffect(() => {
+    if (filterType !== "all" && documents) {
+      const resultsCount = filteredDocuments.length;
+      analytics.documentFiltered(filterType, resultsCount);
+    }
+  }, [filterType, documents]);
 
   const { data: documents, isLoading: documentsLoading } = useQuery<MedicalDocument[]>({
     queryKey: ["/api/documents"],
@@ -128,6 +156,11 @@ export default function Documents() {
 
   const handleDelete = (documentId: number) => {
     if (confirm("Are you sure you want to delete this document? This action cannot be undone.")) {
+      // Find document type for analytics
+      const document = documents?.find(doc => doc.id === documentId);
+      if (document) {
+        analytics.documentDeleted(document.documentType);
+      }
       deleteMutation.mutate(documentId);
     }
   };
@@ -154,8 +187,11 @@ export default function Documents() {
               Upload and organize your health records while our AI extracts key insights, tracks patterns, and builds your intelligent health profile.
             </p>
           </div>
-          <Button 
-            onClick={() => setIsUploadOpen(true)}
+          <Button
+            onClick={() => {
+              analytics.ctaClicked('upload_document_header', 'documents_page');
+              setIsUploadOpen(true);
+            }}
             className="bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 mt-6 lg:mt-0 px-6 py-3 rounded-xl"
             data-testid="button-upload-document"
           >
@@ -314,8 +350,11 @@ export default function Documents() {
               Start building your intelligent health profile by uploading your first medical document. 
               Our AI will analyze lab results, prescriptions, and medical images to provide personalized insights.
             </p>
-            <Button 
-              onClick={() => setIsUploadOpen(true)}
+            <Button
+              onClick={() => {
+                analytics.ctaClicked('upload_first_document', 'documents_empty_state');
+                setIsUploadOpen(true);
+              }}
               className="bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 px-8 py-4 rounded-xl text-lg"
               data-testid="button-upload-first-document"
             >

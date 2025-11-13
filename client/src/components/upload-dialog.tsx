@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { isUnauthorizedError } from "@/lib/authUtils";
+import analytics from "@/lib/analytics/umami";
 import {
   Dialog,
   DialogContent,
@@ -94,15 +95,25 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
 
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
+
+      // Track successful upload
+      analytics.documentUploaded(variables.documentType, variables.file.size);
+
       toast({
         title: "Success",
         description: "Document uploaded successfully",
       });
       handleClose();
     },
-    onError: (error) => {
+    onError: (error, variables) => {
+      // Track failed upload
+      analytics.documentUploadFailed(
+        variables.documentType,
+        error.message || "Unknown error"
+      );
+
       if (isUnauthorizedError(error)) {
         toast({
           title: "Unauthorized",
