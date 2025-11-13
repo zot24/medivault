@@ -1,11 +1,13 @@
 import type { Express } from "express";
-import { createServer, type Server } from "http";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertMedicalDocumentSchema, insertSymptomSchema } from "@shared/schema";
+import {
+  insertMedicalDocumentSchema,
+  insertSymptomSchema,
+} from "@shared/schema";
 import { z } from "zod";
 
 // Configure multer for file uploads
@@ -38,7 +40,7 @@ const upload = multer({
   },
 });
 
-export async function registerRoutes(app: Express): Promise<Server> {
+export async function registerRoutes(app: Express): Promise<void> {
   // Auth middleware
   await setupAuth(app);
 
@@ -309,98 +311,5 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Symptom tracking routes
-  app.get('/api/symptoms', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
-      const symptoms = await storage.getSymptoms(userId, limit);
-      res.json(symptoms);
-    } catch (error) {
-      console.error("Error fetching symptoms:", error);
-      res.status(500).json({ message: "Failed to fetch symptoms" });
-    }
-  });
-
-  app.post('/api/symptoms', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      
-      const symptomData = insertSymptomSchema.parse({
-        userId,
-        ...req.body,
-      });
-
-      const symptom = await storage.createSymptom(symptomData);
-      res.status(201).json(symptom);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Validation error", errors: error.errors });
-      }
-      
-      console.error("Error creating symptom:", error);
-      res.status(500).json({ message: "Failed to create symptom" });
-    }
-  });
-
-  app.get('/api/symptoms/search', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const query = req.query.q as string;
-      
-      if (!query) {
-        return res.status(400).json({ message: "Search query is required" });
-      }
-      
-      const symptoms = await storage.getSymptomsByName(userId, query);
-      res.json(symptoms);
-    } catch (error) {
-      console.error("Error searching symptoms:", error);
-      res.status(500).json({ message: "Failed to search symptoms" });
-    }
-  });
-
-  app.put('/api/symptoms/:id', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const symptomId = parseInt(req.params.id);
-      
-      const updates = insertSymptomSchema.partial().parse(req.body);
-      const symptom = await storage.updateSymptom(symptomId, userId, updates);
-      
-      if (!symptom) {
-        return res.status(404).json({ message: "Symptom not found" });
-      }
-      
-      res.json(symptom);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ message: "Validation error", errors: error.errors });
-      }
-      
-      console.error("Error updating symptom:", error);
-      res.status(500).json({ message: "Failed to update symptom" });
-    }
-  });
-
-  app.delete('/api/symptoms/:id', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const symptomId = parseInt(req.params.id);
-      
-      const deleted = await storage.deleteSymptom(symptomId, userId);
-      
-      if (deleted) {
-        res.json({ message: "Symptom deleted successfully" });
-      } else {
-        res.status(404).json({ message: "Symptom not found" });
-      }
-    } catch (error) {
-      console.error("Error deleting symptom:", error);
-      res.status(500).json({ message: "Failed to delete symptom" });
-    }
-  });
-
-  const httpServer = createServer(app);
-  return httpServer;
+  return;
 }
