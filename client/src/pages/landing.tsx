@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import WaitlistModal from "@/components/waitlist-modal";
 import {
   Shield,
   Brain,
@@ -19,6 +20,9 @@ import {
 import analytics from "@/lib/analytics/umami";
 
 export default function Landing() {
+  const [waitlistOpen, setWaitlistOpen] = useState(false);
+  const [waitlistSource, setWaitlistSource] = useState('unknown');
+
   // Track page visit
   useEffect(() => {
     analytics.pageVisited('/');
@@ -26,12 +30,8 @@ export default function Landing() {
 
   const handleGetStarted = (location: string) => {
     analytics.ctaClicked('get_started', location);
-    window.location.href = "/api/login";
-  };
-
-  const handleSignIn = () => {
-    analytics.ctaClicked('sign_in', 'nav');
-    window.location.href = "/api/login";
+    setWaitlistSource(location);
+    setWaitlistOpen(true);
   };
 
   return (
@@ -49,18 +49,11 @@ export default function Landing() {
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <Button 
-                variant="ghost" 
-                onClick={handleSignIn}
-                className="text-foreground-muted hover:text-foreground hover:bg-white/5 font-medium"
-              >
-                Sign In
-              </Button>
               <Button
                 onClick={() => handleGetStarted('nav')}
                 className="bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 font-medium rounded-xl px-6"
               >
-                Get Started
+                Join Waitlist
               </Button>
             </div>
           </div>
@@ -95,12 +88,12 @@ export default function Landing() {
                 onClick={() => handleGetStarted('hero')}
                 className="bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 font-medium text-lg px-8 py-4 rounded-xl group"
               >
-                Start Your Health Journey
+                Join the Waitlist
                 <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
               </Button>
               <div className="flex items-center space-x-2 text-foreground-muted">
                 <CheckCircle className="h-4 w-4 text-primary" />
-                <span className="text-sm">Free to start • No credit card required</span>
+                <span className="text-sm">Coming soon • Be first to know</span>
               </div>
             </div>
 
@@ -326,7 +319,7 @@ export default function Landing() {
               onClick={() => handleGetStarted('cta_section')}
               className="bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 font-medium text-lg px-8 py-4 rounded-xl group"
             >
-              Start Your AI Health Analysis
+              Reserve Your Spot
               <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
             </Button>
           </div>
@@ -373,6 +366,13 @@ export default function Landing() {
           </div>
         </div>
       </footer>
+
+      {/* Waitlist Modal */}
+      <WaitlistModal
+        open={waitlistOpen}
+        onOpenChange={setWaitlistOpen}
+        source={waitlistSource}
+      />
     </div>
   );
 }
