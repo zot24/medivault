@@ -26,11 +26,19 @@ export default async function handler(req: any, res: any) {
       });
     }
 
+    // Validate environment variables
+    if (!process.env.FROM_EMAIL) {
+      console.error('FROM_EMAIL environment variable is not set');
+      return res.status(500).json({
+        message: 'Email service is not configured. Please contact support.'
+      });
+    }
+
     const fullName = lastName ? `${firstName} ${lastName}` : firstName;
 
     // Send confirmation email to the user
     await resend.emails.send({
-      from: 'MediVault <onboarding@medivault.com>',
+      from: `MediVault <${process.env.FROM_EMAIL}>`,
       to: [email],
       subject: "You're on the MediVault Waitlist! 🎉",
       html: `
@@ -94,10 +102,10 @@ export default async function handler(req: any, res: any) {
     });
 
     // Send notification to admin
-    if (process.env.ADMIN_EMAIL) {
+    if (process.env.NOTIFICATION_EMAIL) {
       await resend.emails.send({
-        from: 'MediVault Waitlist <notifications@medivault.com>',
-        to: [process.env.ADMIN_EMAIL],
+        from: `MediVault Waitlist <${process.env.FROM_EMAIL}>`,
+        to: [process.env.NOTIFICATION_EMAIL],
         subject: `New Waitlist Signup: ${fullName}`,
         html: `
           <h2>New MediVault Waitlist Signup</h2>
