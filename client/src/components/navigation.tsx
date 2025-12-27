@@ -1,19 +1,21 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
+import { useTheme } from "@/components/theme-provider";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Shield, FileText, LayoutDashboard, LogOut, Settings, User, Activity, Brain } from "lucide-react";
+import { Shield, FileText, LayoutDashboard, LogOut, Settings, User, Activity, Brain, Sun, Moon } from "lucide-react";
 
 export default function Navigation() {
   const [location] = useLocation();
   const { user } = useAuth();
+  const { theme, toggleTheme } = useTheme();
 
   const handleLogout = () => {
     window.location.href = "/api/logout";
@@ -69,7 +71,7 @@ export default function Navigation() {
             })}
           </div>
 
-          {/* Right side: Mobile nav + User Menu */}
+          {/* Right side: Mobile nav + Theme Toggle + User Menu */}
           <div className="flex items-center space-x-2">
             {/* Mobile navigation icons */}
             <div className="md:hidden flex items-center space-x-1">
@@ -94,6 +96,21 @@ export default function Navigation() {
                 );
               })}
             </div>
+
+            {/* Theme Toggle */}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={toggleTheme}
+              className="h-9 w-9 rounded-xl hover:bg-white/10"
+              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {theme === "dark" ? (
+                <Sun className="h-4 w-4" />
+              ) : (
+                <Moon className="h-4 w-4" />
+              )}
+            </Button>
 
             {/* User Menu - always visible */}
             <DropdownMenu>
