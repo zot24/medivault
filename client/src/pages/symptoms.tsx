@@ -181,9 +181,73 @@ export default function Symptoms() {
     }
   };
 
-  const avgSeverity = symptoms && symptoms.length > 0 
+  const avgSeverity = symptoms && symptoms.length > 0
     ? (symptoms.reduce((sum, s) => sum + s.severity, 0) / symptoms.length).toFixed(1)
     : "0";
+
+  // Pattern Detection
+  const patterns = symptoms && symptoms.length >= 3 ? (() => {
+    // Count symptom occurrences
+    const symptomCounts: Record<string, { count: number; avgSeverity: number; severities: number[]; timeOfDay: Record<string, number>; triggers: Record<string, number> }> = {};
+
+    symptoms.forEach(s => {
+      const name = s.symptomName.toLowerCase();
+      if (!symptomCounts[name]) {
+        symptomCounts[name] = { count: 0, avgSeverity: 0, severities: [], timeOfDay: {}, triggers: {} };
+      }
+      symptomCounts[name].count++;
+      symptomCounts[name].severities.push(s.severity);
+
+      if (s.timeOfDay) {
+        symptomCounts[name].timeOfDay[s.timeOfDay] = (symptomCounts[name].timeOfDay[s.timeOfDay] || 0) + 1;
+      }
+
+      s.triggers?.forEach(trigger => {
+        symptomCounts[name].triggers[trigger] = (symptomCounts[name].triggers[trigger] || 0) + 1;
+      });
+    });
+
+    // Calculate averages
+    Object.keys(symptomCounts).forEach(name => {
+      const data = symptomCounts[name];
+      data.avgSeverity = data.severities.reduce((a, b) => a + b, 0) / data.severities.length;
+    });
+
+    // Find recurring symptoms (3+ occurrences)
+    const recurring = Object.entries(symptomCounts)
+      .filter(([_, data]) => data.count >= 3)
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, 3);
+
+    // Find most common time of day
+    const allTimeOfDay: Record<string, number> = {};
+    symptoms.forEach(s => {
+      if (s.timeOfDay) {
+        allTimeOfDay[s.timeOfDay] = (allTimeOfDay[s.timeOfDay] || 0) + 1;
+      }
+    });
+    const mostCommonTime = Object.entries(allTimeOfDay).length > 0
+      ? Object.entries(allTimeOfDay).sort((a, b) => b[1] - a[1])[0]
+      : null;
+
+    // Find common triggers
+    const allTriggers: Record<string, number> = {};
+    symptoms.forEach(s => {
+      s.triggers?.forEach(trigger => {
+        allTriggers[trigger] = (allTriggers[trigger] || 0) + 1;
+      });
+    });
+    const topTriggers = Object.entries(allTriggers)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3);
+
+    return {
+      recurring,
+      mostCommonTime,
+      topTriggers,
+      symptomCounts,
+    };
+  })() : null;
 
   return (
     <div className="min-h-screen bg-background" data-testid="symptoms-page">
@@ -293,6 +357,84 @@ export default function Symptoms() {
               </CardContent>
             </Card>
           </div>
+        )}
+
+        {/* Pattern Insights */}
+        {patterns && (patterns.recurring.length > 0 || patterns.mostCommonTime || patterns.topTriggers.length > 0) && (
+          <Card className="mb-8 bg-gradient-to-br from-secondary/5 to-accent/5 border-secondary/20" data-testid="pattern-insights-card">
+            <CardHeader>
+              <div className="flex items-center space-x-2">
+                <Brain className="h-5 w-5 text-secondary" />
+                <CardTitle className="text-lg font-semibold text-foreground">
+                  Pattern Insights
+                </CardTitle>
+              </div>
+              <p className="text-sm text-foreground-muted">AI-detected patterns in your symptom data</p>
+            </CardHeader>
+            <CardContent>
+              <div className="grid md:grid-cols-3 gap-4">
+                {/* Recurring Symptoms */}
+                {patterns.recurring.length > 0 && (
+                  <div className="p-4 bg-surface-1 rounded-xl border border-white/10">
+                    <div className="flex items-center space-x-2 mb-3">
+                      <TrendingUp className="h-4 w-4 text-secondary" />
+                      <h4 className="font-medium text-foreground text-sm">Recurring Symptoms</h4>
+                    </div>
+                    <div className="space-y-2">
+                      {patterns.recurring.map(([name, data]) => (
+                        <div key={name} className="flex items-center justify-between">
+                          <span className="text-sm text-foreground capitalize">{name}</span>
+                          <div className="flex items-center space-x-2">
+                            <span className="text-xs text-foreground-muted">{data.count}x</span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              data.avgSeverity >= 7 ? 'bg-red-500/20 text-red-400' :
+                              data.avgSeverity >= 4 ? 'bg-yellow-500/20 text-yellow-400' :
+                              'bg-green-500/20 text-green-400'
+                            }`}>
+                              avg {data.avgSeverity.toFixed(1)}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Time Patterns */}
+                {patterns.mostCommonTime && (
+                  <div className="p-4 bg-surface-1 rounded-xl border border-white/10">
+                    <div className="flex items-center space-x-2 mb-3">
+                      <Clock className="h-4 w-4 text-secondary" />
+                      <h4 className="font-medium text-foreground text-sm">Time Pattern</h4>
+                    </div>
+                    <p className="text-sm text-foreground mb-1">
+                      Symptoms occur most often in the <span className="font-medium text-secondary capitalize">{patterns.mostCommonTime[0]}</span>
+                    </p>
+                    <p className="text-xs text-foreground-muted">
+                      {patterns.mostCommonTime[1]} of {symptoms?.length || 0} logs ({Math.round((patterns.mostCommonTime[1] / (symptoms?.length || 1)) * 100)}%)
+                    </p>
+                  </div>
+                )}
+
+                {/* Common Triggers */}
+                {patterns.topTriggers.length > 0 && (
+                  <div className="p-4 bg-surface-1 rounded-xl border border-white/10">
+                    <div className="flex items-center space-x-2 mb-3">
+                      <Zap className="h-4 w-4 text-secondary" />
+                      <h4 className="font-medium text-foreground text-sm">Top Triggers</h4>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {patterns.topTriggers.map(([trigger, count]) => (
+                        <span key={trigger} className="px-2 py-1 text-xs bg-red-500/20 text-red-400 rounded-full border border-red-500/30">
+                          {trigger} ({count})
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         )}
 
         {/* Add Symptom Form */}
