@@ -46,12 +46,12 @@ export default function Navigation() {
             </div>
           </Link>
 
-          {/* Navigation Items */}
+          {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-1">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = location === item.href;
-              
+
               return (
                 <Link key={item.href} href={item.href}>
                   <button
@@ -69,8 +69,33 @@ export default function Navigation() {
             })}
           </div>
 
-          {/* User Menu */}
-          <div className="flex items-center space-x-4">
+          {/* Right side: Mobile nav + User Menu */}
+          <div className="flex items-center space-x-2">
+            {/* Mobile navigation icons */}
+            <div className="md:hidden flex items-center space-x-1">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const isActive = location === item.href;
+
+                return (
+                  <Link key={item.href} href={item.href}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className={`h-9 w-9 rounded-xl transition-all duration-200 ${
+                        isActive
+                          ? "bg-white/10 text-foreground border border-white/20"
+                          : "text-foreground-muted hover:text-foreground hover:bg-white/5"
+                      }`}
+                    >
+                      <Icon className="h-4 w-4" />
+                    </Button>
+                  </Link>
+                );
+              })}
+            </div>
+
+            {/* User Menu - always visible */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-10 w-10 rounded-full hover:bg-white/10">
@@ -85,7 +110,7 @@ export default function Navigation() {
               <DropdownMenuContent className="w-64 p-2 bg-surface-1 border border-white/10 rounded-2xl" align="end" forceMount>
                 <div className="flex flex-col space-y-2 p-3 rounded-xl bg-white/5">
                   <p className="text-sm font-medium text-foreground">
-                    {(user as any)?.firstName && (user as any)?.lastName 
+                    {(user as any)?.firstName && (user as any)?.lastName
                       ? `${(user as any).firstName} ${(user as any).lastName}`
                       : "User"
                     }
@@ -108,8 +133,8 @@ export default function Navigation() {
                     </Link>
                   </DropdownMenuItem>
                   <div className="h-px bg-white/10 my-2" />
-                  <DropdownMenuItem 
-                    onClick={handleLogout} 
+                  <DropdownMenuItem
+                    onClick={handleLogout}
                     className="flex items-center px-3 py-2.5 rounded-xl hover:bg-destructive/10 hover:text-destructive transition-colors duration-200 cursor-pointer"
                   >
                     <LogOut className="mr-3 h-4 w-4" />
@@ -118,30 +143,6 @@ export default function Navigation() {
                 </div>
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
-
-          {/* Mobile navigation */}
-          <div className="md:hidden flex items-center space-x-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = location === item.href;
-              
-              return (
-                <Link key={item.href} href={item.href}>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className={`h-9 w-9 rounded-xl transition-all duration-200 ${
-                      isActive 
-                        ? "bg-white/10 text-foreground border border-white/20" 
-                        : "text-foreground-muted hover:text-foreground hover:bg-white/5"
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                  </Button>
-                </Link>
-              );
-            })}
           </div>
         </div>
       </div>
