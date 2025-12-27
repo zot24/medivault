@@ -111,10 +111,10 @@ export async function setupLocalAuth(app: Express) {
     })(req, res, next);
   });
 
-  // Logout endpoint
-  app.post("/api/logout", (req, res) => {
+  // Logout endpoint (GET for browser navigation)
+  app.get("/api/logout", (req, res) => {
     req.logout(() => {
-      res.json({ message: "Logged out successfully" });
+      res.redirect("/login");
     });
   });
 
