@@ -33,7 +33,7 @@ import {
   ChevronRight
 } from "lucide-react";
 import { format } from "date-fns";
-import type { MedicalDocument } from "@shared/schema";
+import type { MedicalDocument, Symptom } from "@shared/schema";
 
 export default function Dashboard() {
   const { toast } = useToast();
@@ -79,6 +79,13 @@ export default function Dashboard() {
     enabled: isAuthenticated,
     staleTime: 5 * 60 * 1000, // 5 minutes cache
     refetchOnWindowFocus: false, // Prevent unnecessary refetches
+  });
+
+  const { data: symptoms } = useQuery<Symptom[]>({
+    queryKey: ["/api/symptoms"],
+    enabled: isAuthenticated,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   // Load stored appointments data
@@ -159,6 +166,63 @@ export default function Dashboard() {
       .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
     return sortedDocs[0]?.createdAt || null;
   }, [allDocuments]);
+
+  // Combined health activity timeline
+  const activityTimeline = React.useMemo(() => {
+    const activities: Array<{
+      id: string;
+      type: 'document' | 'symptom';
+      title: string;
+      subtitle: string;
+      date: Date;
+      severity?: number;
+      documentType?: string;
+    }> = [];
+
+    // Add documents
+    allDocuments?.forEach(doc => {
+      activities.push({
+        id: `doc-${doc.id}`,
+        type: 'document',
+        title: doc.title,
+        subtitle: doc.doctorName || doc.facilityName || 'Medical document',
+        date: new Date(doc.createdAt || doc.documentDate),
+        documentType: doc.documentType,
+      });
+    });
+
+    // Add symptoms
+    symptoms?.forEach(symptom => {
+      activities.push({
+        id: `sym-${symptom.id}`,
+        type: 'symptom',
+        title: symptom.symptomName,
+        subtitle: symptom.location || symptom.duration || 'Symptom logged',
+        date: new Date(symptom.dateRecorded),
+        severity: symptom.severity,
+      });
+    });
+
+    // Sort by date descending and take first 8
+    return activities
+      .sort((a, b) => b.date.getTime() - a.date.getTime())
+      .slice(0, 8);
+  }, [allDocuments, symptoms]);
+
+  // Symptom stats
+  const symptomStats = React.useMemo(() => {
+    if (!symptoms || symptoms.length === 0) return null;
+
+    const avgSeverity = symptoms.reduce((sum, s) => sum + s.severity, 0) / symptoms.length;
+    const highSeverityCount = symptoms.filter(s => s.severity >= 7).length;
+    const thisMonthCount = symptoms.filter(s => {
+      const date = new Date(s.dateRecorded);
+      const now = new Date();
+      return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+    }).length;
+
+    return { avgSeverity, highSeverityCount, thisMonthCount, total: symptoms.length };
+  }, [symptoms]);
 
   if (isLoading) {
     return (
@@ -306,6 +370,80 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Health Activity Timeline */}
+        {activityTimeline.length > 0 && (
+          <Card className="bg-surface-1 border-white/10 mb-8" data-testid="activity-timeline-card">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-xl font-semibold text-foreground mb-1">
+                    Health Activity Timeline
+                  </CardTitle>
+                  <p className="text-sm text-foreground-muted">Your recent health journey at a glance</p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="relative">
+                {/* Timeline line */}
+                <div className="absolute left-[17px] top-0 bottom-0 w-px bg-white/10" />
+
+                <div className="space-y-4">
+                  {activityTimeline.map((activity, index) => (
+                    <div key={activity.id} className="flex items-start gap-4 relative">
+                      {/* Timeline dot */}
+                      <div className={`relative z-10 p-2 rounded-lg ${
+                        activity.type === 'document'
+                          ? 'bg-gradient-to-br from-primary to-primary/70'
+                          : activity.severity && activity.severity >= 7
+                            ? 'bg-gradient-to-br from-red-500 to-red-600'
+                            : activity.severity && activity.severity >= 4
+                              ? 'bg-gradient-to-br from-yellow-500 to-orange-500'
+                              : 'bg-gradient-to-br from-secondary to-accent'
+                      }`}>
+                        {activity.type === 'document' ? (
+                          <FileText className="h-4 w-4 text-white" />
+                        ) : (
+                          <Activity className="h-4 w-4 text-white" />
+                        )}
+                      </div>
+
+                      {/* Content */}
+                      <div className="flex-1 pb-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium text-foreground capitalize">{activity.title}</p>
+                            <p className="text-sm text-foreground-muted">{activity.subtitle}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-xs text-foreground-muted">
+                              {format(activity.date, 'MMM d, yyyy')}
+                            </p>
+                            {activity.type === 'document' && activity.documentType && (
+                              <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-white/10 text-foreground-muted rounded-full capitalize">
+                                {activity.documentType.replace('_', ' ')}
+                              </span>
+                            )}
+                            {activity.type === 'symptom' && activity.severity && (
+                              <span className={`inline-block mt-1 px-2 py-0.5 text-xs rounded-full ${
+                                activity.severity >= 7 ? 'bg-red-500/20 text-red-400' :
+                                activity.severity >= 4 ? 'bg-yellow-500/20 text-yellow-400' :
+                                'bg-green-500/20 text-green-400'
+                              }`}>
+                                Severity {activity.severity}/10
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid lg:grid-cols-3 gap-8">
           {/* Recent Records */}
@@ -522,6 +660,67 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
+            {/* Symptom Summary */}
+            {symptomStats && (
+              <Card className="bg-surface-1 border-white/10" data-testid="symptom-summary-card">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-lg font-semibold text-foreground mb-1">
+                        Symptom Overview
+                      </CardTitle>
+                      <p className="text-xs text-foreground-muted">Patterns in your health tracking</p>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      asChild
+                      size="sm"
+                      className="text-secondary hover:text-secondary hover:bg-white/5"
+                    >
+                      <Link href="/symptoms" className="flex items-center space-x-1">
+                        <span className="text-xs">View All</span>
+                        <ArrowRight className="h-3 w-3" />
+                      </Link>
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="p-3 bg-surface-2 rounded-xl border border-white/5">
+                      <p className="text-2xl font-bold text-foreground">{symptomStats.total}</p>
+                      <p className="text-xs text-foreground-muted">Total logged</p>
+                    </div>
+                    <div className="p-3 bg-surface-2 rounded-xl border border-white/5">
+                      <p className="text-2xl font-bold text-foreground">{symptomStats.thisMonthCount}</p>
+                      <p className="text-xs text-foreground-muted">This month</p>
+                    </div>
+                    <div className="p-3 bg-surface-2 rounded-xl border border-white/5">
+                      <p className={`text-2xl font-bold ${
+                        symptomStats.avgSeverity >= 7 ? 'text-red-400' :
+                        symptomStats.avgSeverity >= 4 ? 'text-yellow-400' :
+                        'text-green-400'
+                      }`}>{symptomStats.avgSeverity.toFixed(1)}</p>
+                      <p className="text-xs text-foreground-muted">Avg severity</p>
+                    </div>
+                    <div className="p-3 bg-surface-2 rounded-xl border border-white/5">
+                      <p className={`text-2xl font-bold ${symptomStats.highSeverityCount > 0 ? 'text-red-400' : 'text-green-400'}`}>
+                        {symptomStats.highSeverityCount}
+                      </p>
+                      <p className="text-xs text-foreground-muted">High severity</p>
+                    </div>
+                  </div>
+                  {symptomStats.highSeverityCount > 0 && (
+                    <div className="mt-3 p-2 bg-red-500/10 rounded-lg border border-red-500/20">
+                      <p className="text-xs text-red-400">
+                        <Zap className="h-3 w-3 inline mr-1" />
+                        {symptomStats.highSeverityCount} symptom(s) logged with severity 7+
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+
             {/* Quick Actions */}
             <Card className="bg-surface-1 border-white/10" data-testid="quick-actions-card">
               <CardHeader>
@@ -597,6 +796,39 @@ export default function Dashboard() {
                     <p className="text-sm text-foreground-muted">Upload documents to unlock AI insights</p>
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* Health Tips / Engagement */}
+            <Card className="bg-surface-1 border-white/10" data-testid="health-tips-card">
+              <CardContent className="p-4">
+                <div className="flex items-start space-x-3">
+                  <div className="p-2 rounded-lg bg-gradient-to-br from-green-500/20 to-green-600/20 border border-green-500/30">
+                    <CheckCircle className="h-4 w-4 text-green-400" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-foreground mb-1">
+                      {totalDocuments === 0
+                        ? "Start your health journey"
+                        : symptomStats && symptomStats.thisMonthCount === 0
+                          ? "Track symptoms regularly"
+                          : lastUploadDate && (Date.now() - new Date(lastUploadDate).getTime() > 30 * 24 * 60 * 60 * 1000)
+                            ? "Keep your records updated"
+                            : "You're on track!"
+                      }
+                    </p>
+                    <p className="text-xs text-foreground-muted">
+                      {totalDocuments === 0
+                        ? "Upload your first medical document to begin building your health profile."
+                        : symptomStats && symptomStats.thisMonthCount === 0
+                          ? "Logging symptoms helps identify patterns and triggers over time."
+                          : lastUploadDate && (Date.now() - new Date(lastUploadDate).getTime() > 30 * 24 * 60 * 60 * 1000)
+                            ? "It's been over 30 days since your last upload. Have any new documents to add?"
+                            : "You're staying on top of your health tracking. Keep it up!"
+                      }
+                    </p>
+                  </div>
+                </div>
               </CardContent>
             </Card>
           </div>
