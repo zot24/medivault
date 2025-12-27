@@ -3,7 +3,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import { setupLocalAuth, isAuthenticated } from "./localAuth";
 import {
   insertMedicalDocumentSchema,
   insertSymptomSchema,
@@ -41,25 +41,13 @@ const upload = multer({
 });
 
 export async function registerRoutes(app: Express): Promise<void> {
-  // Auth middleware
-  await setupAuth(app);
-
-  // Auth routes
-  app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const user = await storage.getUser(userId);
-      res.json(user);
-    } catch (error) {
-      console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user" });
-    }
-  });
+  // Auth middleware (local auth for development)
+  await setupLocalAuth(app);
 
   // Medical documents routes
   app.get('/api/documents', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
       const documents = await storage.getMedicalDocuments(userId, limit);
       res.json(documents);
@@ -71,7 +59,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.get('/api/documents/search', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const query = req.query.q as string;
       
       if (!query) {
@@ -88,7 +76,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.get('/api/documents/type/:type', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const type = req.params.type;
       const documents = await storage.getMedicalDocumentsByType(userId, type);
       res.json(documents);
@@ -100,7 +88,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.post('/api/documents', isAuthenticated, upload.single('file'), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       
       if (!req.file) {
         return res.status(400).json({ message: "No file uploaded" });
@@ -141,7 +129,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.get('/api/documents/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const documentId = parseInt(req.params.id);
       
       const document = await storage.getMedicalDocument(documentId, userId);
@@ -159,7 +147,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.delete('/api/documents/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const documentId = parseInt(req.params.id);
       
       const document = await storage.getMedicalDocument(documentId, userId);
@@ -186,7 +174,7 @@ export async function registerRoutes(app: Express): Promise<void> {
   // Symptom tracking routes
   app.get('/api/symptoms', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
       const symptoms = await storage.getSymptoms(userId, limit);
       res.json(symptoms);
@@ -198,7 +186,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.post('/api/symptoms', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       
       const symptomData = insertSymptomSchema.parse({
         userId,
@@ -228,7 +216,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.get('/api/symptoms/search', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const query = req.query.q as string;
       
       if (!query) {
@@ -245,7 +233,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.put('/api/symptoms/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const symptomId = parseInt(req.params.id);
       
       const updates = {
@@ -283,7 +271,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   app.delete('/api/symptoms/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user.id;
       const symptomId = parseInt(req.params.id);
       
       const deleted = await storage.deleteSymptom(symptomId, userId);

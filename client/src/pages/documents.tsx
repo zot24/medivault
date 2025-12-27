@@ -35,16 +35,16 @@ export default function Documents() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
 
-  // Redirect to home if not authenticated
+  // Redirect to login if not authenticated
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       toast({
-        title: "Unauthorized",
-        description: "You are logged out. Logging in again...",
+        title: "Please log in",
+        description: "You need to be logged in to view documents.",
         variant: "destructive",
       });
       setTimeout(() => {
-        window.location.href = "/api/login";
+        window.location.href = "/login";
       }, 500);
       return;
     }
@@ -57,30 +57,41 @@ export default function Documents() {
     }
   }, [isAuthenticated]);
 
-  // Track search usage (debounced)
-  useEffect(() => {
-    if (searchQuery && documents) {
-      const timer = setTimeout(() => {
-        const resultsCount = filteredDocuments.length;
-        analytics.documentSearched(searchQuery, resultsCount);
-      }, 1000); // Wait 1s after user stops typing
-
-      return () => clearTimeout(timer);
-    }
-  }, [searchQuery, documents]);
-
-  // Track filter usage
-  useEffect(() => {
-    if (filterType !== "all" && documents) {
-      const resultsCount = filteredDocuments.length;
-      analytics.documentFiltered(filterType, resultsCount);
-    }
-  }, [filterType, documents]);
-
   const { data: documents, isLoading: documentsLoading } = useQuery<MedicalDocument[]>({
     queryKey: ["/api/documents"],
     enabled: isAuthenticated,
   });
+
+  // Compute filtered documents
+  const filteredDocuments = documents?.filter(doc => {
+    const matchesSearch = !searchQuery ||
+      doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      doc.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      doc.doctorName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      doc.facilityName?.toLowerCase().includes(searchQuery.toLowerCase());
+
+    const matchesType = filterType === "all" || doc.documentType === filterType;
+
+    return matchesSearch && matchesType;
+  }) || [];
+
+  // Track search usage (debounced)
+  useEffect(() => {
+    if (searchQuery && documents) {
+      const timer = setTimeout(() => {
+        analytics.documentSearched(searchQuery, filteredDocuments.length);
+      }, 1000); // Wait 1s after user stops typing
+
+      return () => clearTimeout(timer);
+    }
+  }, [searchQuery, documents, filteredDocuments.length]);
+
+  // Track filter usage
+  useEffect(() => {
+    if (filterType !== "all" && documents) {
+      analytics.documentFiltered(filterType, filteredDocuments.length);
+    }
+  }, [filterType, documents, filteredDocuments.length]);
 
   const deleteMutation = useMutation({
     mutationFn: async (documentId: number) => {
@@ -96,12 +107,12 @@ export default function Documents() {
     onError: (error) => {
       if (isUnauthorizedError(error)) {
         toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
+          title: "Session expired",
+          description: "Please log in again.",
           variant: "destructive",
         });
         setTimeout(() => {
-          window.location.href = "/api/login";
+          window.location.href = "/login";
         }, 500);
         return;
       }
@@ -141,18 +152,6 @@ export default function Documents() {
   if (!isAuthenticated) {
     return null;
   }
-
-  const filteredDocuments = documents?.filter(doc => {
-    const matchesSearch = !searchQuery || 
-      doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      doc.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      doc.doctorName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      doc.facilityName?.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesType = filterType === "all" || doc.documentType === filterType;
-    
-    return matchesSearch && matchesType;
-  }) || [];
 
   const handleDelete = (documentId: number) => {
     if (confirm("Are you sure you want to delete this document? This action cannot be undone.")) {

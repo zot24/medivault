@@ -116,12 +116,12 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
 
       if (isUnauthorizedError(error)) {
         toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
+          title: "Session expired",
+          description: "Please log in again.",
           variant: "destructive",
         });
         setTimeout(() => {
-          window.location.href = "/api/login";
+          window.location.href = "/login";
         }, 500);
         return;
       }
