@@ -3,21 +3,65 @@ import type { RouteComponentProps } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, Download, FileText } from "lucide-react";
-
-function fileNameFromDisposition(header: string | null): string {
-  if (!header) {
-    return "document";
-  }
-  const match = header.match(/filename="([^"]+)"/);
-  return match?.[1] || "document";
-}
+import type { FrozenSymptom, SharePacket, SharedFileMeta } from "@/lib/sdk";
 
 type SharedView =
   | { kind: "loading" }
-  | { kind: "file"; objectUrl: string; mimeType: string; fileName: string }
+  | { kind: "packet"; packet: SharePacket }
   | { kind: "not_found" }
   | { kind: "gone" }
   | { kind: "error" };
+
+function fileHref(token: string, documentId: number): string {
+  return `/api/s/${encodeURIComponent(token)}/files/${documentId}`;
+}
+
+function SnapshotList({ snapshot }: { snapshot: FrozenSymptom[] }) {
+  return (
+    <div className="space-y-2" data-testid="share-snapshot">
+      <h2 className="font-display text-foreground">Symptom snapshot</h2>
+      <ul className="space-y-2">
+        {snapshot.map((row) => (
+          <li key={row.id} className="text-sm font-body text-foreground">
+            <span className="font-medium">{row.symptomName}</span>
+            {` · ${row.severity}/10`}
+            {row.location ? ` · ${row.location}` : ""}
+            {row.dateRecorded ? ` · ${row.dateRecorded}` : ""}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function PacketPreview({
+  token,
+  file,
+}: {
+  token: string;
+  file: SharedFileMeta;
+}) {
+  const href = fileHref(token, file.id);
+  if (file.mimeType.startsWith("image/")) {
+    return (
+      <img
+        src={href}
+        alt={file.fileName}
+        className="max-h-[50vh] w-full object-contain rounded-xl"
+      />
+    );
+  }
+  if (file.mimeType === "application/pdf") {
+    return (
+      <iframe
+        src={href}
+        title={file.fileName}
+        className="w-full h-[50vh] rounded-xl border border-border bg-surface-1"
+      />
+    );
+  }
+  return null;
+}
 
 export default function SharedFile({ params }: RouteComponentProps<{ token: string }>) {
   const token = params.token;
@@ -30,7 +74,6 @@ export default function SharedFile({ params }: RouteComponentProps<{ token: stri
     }
 
     let cancelled = false;
-    let objectUrl: string | undefined;
 
     (async () => {
       try {
@@ -50,17 +93,11 @@ export default function SharedFile({ params }: RouteComponentProps<{ token: stri
           setView({ kind: "error" });
           return;
         }
-        const blob = await response.blob();
+        const packet = (await response.json()) as SharePacket;
         if (cancelled) {
           return;
         }
-        objectUrl = URL.createObjectURL(blob);
-        setView({
-          kind: "file",
-          objectUrl,
-          mimeType: response.headers.get("content-type") || blob.type,
-          fileName: fileNameFromDisposition(response.headers.get("content-disposition")),
-        });
+        setView({ kind: "packet", packet });
       } catch {
         if (!cancelled) {
           setView({ kind: "error" });
@@ -70,18 +107,17 @@ export default function SharedFile({ params }: RouteComponentProps<{ token: stri
 
     return () => {
       cancelled = true;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
     };
   }, [token]);
+
+  const preview = view.kind === "packet" ? view.packet.files[0] : undefined;
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">
       <Card className="card-vault w-full max-w-3xl">
         <CardContent className="p-6">
           {view.kind === "loading" && (
-            <p className="text-foreground-muted font-body">Loading shared file…</p>
+            <p className="text-foreground-muted font-body">Loading shared case...</p>
           )}
 
           {view.kind === "not_found" && (
@@ -112,37 +148,52 @@ export default function SharedFile({ params }: RouteComponentProps<{ token: stri
             <div className="flex gap-3">
               <AlertCircle className="h-6 w-6 text-destructive shrink-0" />
               <p className="text-sm text-foreground-muted font-body">
-                This file could not be opened.
+                This case could not be opened.
               </p>
             </div>
           )}
 
-          {view.kind === "file" && (
-            <div className="space-y-4" data-testid="share-file">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <FileText className="h-5 w-5 text-primary shrink-0" />
-                  <h1 className="font-display text-foreground truncate">{view.fileName}</h1>
-                </div>
-                <Button asChild variant="outline" className="border-border">
-                  <a href={view.objectUrl} download={view.fileName}>
-                    <Download className="mr-2 h-4 w-4" />
-                    Download
-                  </a>
-                </Button>
+          {view.kind === "packet" && token && (
+            <div className="space-y-6" data-testid="share-packet">
+              <div>
+                <h1 className="font-display text-foreground">
+                  {view.packet.label || "Shared case"}
+                </h1>
+                <p className="mt-1 text-sm text-foreground-muted font-body">
+                  Expires {new Date(view.packet.expiresAt).toLocaleString()}
+                </p>
               </div>
-              {view.mimeType.startsWith("image/") ? (
-                <img
-                  src={view.objectUrl}
-                  alt={view.fileName}
-                  className="max-h-[70vh] w-full object-contain rounded-xl"
-                />
-              ) : (
-                <iframe
-                  src={view.objectUrl}
-                  title={view.fileName}
-                  className="w-full h-[70vh] rounded-xl border border-border bg-surface-1"
-                />
+
+              <ul className="space-y-2">
+                {view.packet.files.map((file) => (
+                  <li
+                    key={file.id}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-border p-3"
+                    data-testid={`share-packet-file-${file.id}`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <FileText className="h-4 w-4 text-primary shrink-0" />
+                      <div className="min-w-0">
+                        <p className="font-body text-foreground truncate">{file.title}</p>
+                        <p className="text-xs text-foreground-muted font-body truncate">
+                          {file.fileName}
+                        </p>
+                      </div>
+                    </div>
+                    <Button asChild variant="outline" className="border-border shrink-0">
+                      <a href={fileHref(token, file.id)}>
+                        <Download className="mr-2 h-4 w-4" />
+                        Download
+                      </a>
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+
+              {preview && <PacketPreview token={token} file={preview} />}
+
+              {view.packet.snapshot && (
+                <SnapshotList snapshot={view.packet.snapshot} />
               )}
             </div>
           )}
