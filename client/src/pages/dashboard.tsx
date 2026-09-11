@@ -1,10 +1,8 @@
 import React, { useEffect, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { isUnauthorizedError } from "@/lib/authUtils";
-import { apiRequest } from "@/lib/queryClient";
+import { useDocuments, useSymptoms } from "@/lib/sdk";
 import Navigation from "@/components/navigation";
 import analytics from "@/lib/analytics/umami";
 import { Button } from "@/components/ui/button";
@@ -14,23 +12,22 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
-import { 
-  FileText, 
-  Calendar, 
-  Upload, 
+import {
+  FileText,
+  Calendar,
+  Upload,
   Plus,
-  TrendingUp,
   Clock,
-  CheckCircle,
   Activity,
-  Brain,
-  Sparkles,
   ArrowRight,
-  BarChart3,
-  Zap,
-  FileImage,
-  HeartHandshake,
-  ChevronRight
+  Leaf,
+  Heart,
+  Shield,
+  ChevronRight,
+  Sun,
+  AlertCircle,
+  ExternalLink,
+  Eye
 } from "lucide-react";
 import { format } from "date-fns";
 import type { MedicalDocument, Symptom } from "@shared/schema";
@@ -38,7 +35,7 @@ import type { MedicalDocument, Symptom } from "@shared/schema";
 export default function Dashboard() {
   const { toast } = useToast();
   const { user, isAuthenticated, isLoading } = useAuth();
-  const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
   const [appointmentDialogOpen, setAppointmentDialogOpen] = useState(false);
   const [appointments, setAppointments] = useState<Array<{
     id: string;
@@ -52,7 +49,6 @@ export default function Dashboard() {
     description: ""
   });
 
-  // Redirect to login if not authenticated
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       toast({
@@ -67,28 +63,20 @@ export default function Dashboard() {
     }
   }, [isAuthenticated, isLoading, toast]);
 
-  // Track page visit
   useEffect(() => {
     if (isAuthenticated) {
       analytics.pageVisited('/dashboard');
     }
   }, [isAuthenticated]);
 
-  const { data: allDocuments, isLoading: documentsLoading } = useQuery<MedicalDocument[]>({
-    queryKey: ["/api/documents"],
+  const { data: allDocuments, isLoading: documentsLoading } = useDocuments(undefined, {
     enabled: isAuthenticated,
-    staleTime: 5 * 60 * 1000, // 5 minutes cache
-    refetchOnWindowFocus: false, // Prevent unnecessary refetches
   });
 
-  const { data: symptoms } = useQuery<Symptom[]>({
-    queryKey: ["/api/symptoms"],
+  const { data: symptoms } = useSymptoms(undefined, {
     enabled: isAuthenticated,
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
   });
 
-  // Load stored appointments data
   useEffect(() => {
     if ((user as any)?.id) {
       const stored = localStorage.getItem(`appointments_${(user as any).id}`);
@@ -120,7 +108,6 @@ export default function Dashboard() {
     setAppointments(updatedAppointments);
     localStorage.setItem(`appointments_${(user as any)?.id}`, JSON.stringify(updatedAppointments));
 
-    // Track appointment scheduling
     const daysUntil = Math.ceil((new Date(appointment.date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
     analytics.appointmentScheduled(appointment.doctor, daysUntil);
 
@@ -132,24 +119,20 @@ export default function Dashboard() {
     });
   };
 
-  const removeAppointment = (appointmentId: string) => {
+  const removeAppointment = (e: React.MouseEvent, appointmentId: string) => {
+    e.stopPropagation();
     const updatedAppointments = appointments.filter(apt => apt.id !== appointmentId);
     setAppointments(updatedAppointments);
     localStorage.setItem(`appointments_${(user as any)?.id}`, JSON.stringify(updatedAppointments));
-
-    // Track appointment removal
     analytics.appointmentRemoved();
-
     toast({
       title: "Appointment Removed",
       description: "The appointment has been removed.",
     });
   };
 
-  // Memoize computed values for better performance
   const recentDocuments = React.useMemo(() => {
     if (!allDocuments) return undefined;
-    // Sort by createdAt descending and take first 5
     return [...allDocuments]
       .sort((a, b) => {
         const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -167,7 +150,6 @@ export default function Dashboard() {
     return sortedDocs[0]?.createdAt || null;
   }, [allDocuments]);
 
-  // Combined health activity timeline
   const activityTimeline = React.useMemo(() => {
     const activities: Array<{
       id: string;
@@ -177,9 +159,9 @@ export default function Dashboard() {
       date: Date;
       severity?: number;
       documentType?: string;
+      originalId: number;
     }> = [];
 
-    // Add documents
     allDocuments?.forEach(doc => {
       activities.push({
         id: `doc-${doc.id}`,
@@ -188,10 +170,10 @@ export default function Dashboard() {
         subtitle: doc.doctorName || doc.facilityName || 'Medical document',
         date: new Date(doc.createdAt || doc.documentDate),
         documentType: doc.documentType,
+        originalId: doc.id,
       });
     });
 
-    // Add symptoms
     symptoms?.forEach(symptom => {
       activities.push({
         id: `sym-${symptom.id}`,
@@ -200,16 +182,15 @@ export default function Dashboard() {
         subtitle: symptom.location || symptom.duration || 'Symptom logged',
         date: new Date(symptom.dateRecorded),
         severity: symptom.severity,
+        originalId: symptom.id,
       });
     });
 
-    // Sort by date descending and take first 8
     return activities
       .sort((a, b) => b.date.getTime() - a.date.getTime())
       .slice(0, 8);
   }, [allDocuments, symptoms]);
 
-  // Symptom stats
   const symptomStats = React.useMemo(() => {
     if (!symptoms || symptoms.length === 0) return null;
 
@@ -224,18 +205,35 @@ export default function Dashboard() {
     return { avgSeverity, highSeverityCount, thisMonthCount, total: symptoms.length };
   }, [symptoms]);
 
+  // Handle document click - open in new tab
+  const handleDocumentClick = (doc: MedicalDocument) => {
+    window.open(`/api/files/${doc.filePath.split("/").pop()}`, "_blank");
+  };
+
+  // Handle timeline item click
+  const handleTimelineClick = (activity: typeof activityTimeline[0]) => {
+    if (activity.type === 'document') {
+      const doc = allDocuments?.find(d => d.id === activity.originalId);
+      if (doc) {
+        window.open(`/api/files/${doc.filePath.split("/").pop()}`, "_blank");
+      }
+    } else {
+      setLocation('/symptoms');
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background">
         <Navigation />
         <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8">
           <div className="mb-8">
-            <Skeleton className="h-8 w-64 mb-4" />
-            <Skeleton className="h-4 w-96" />
+            <Skeleton className="h-10 w-64 mb-4" />
+            <Skeleton className="h-5 w-96" />
           </div>
           <div className="grid lg:grid-cols-4 gap-6 mb-8">
             {Array.from({ length: 4 }).map((_, i) => (
-              <Card key={i} className="bg-surface-1 border-white/10">
+              <Card key={i} className="card-sanctuary">
                 <CardContent className="p-6">
                   <Skeleton className="h-4 w-full mb-2" />
                   <Skeleton className="h-8 w-16" />
@@ -265,171 +263,190 @@ export default function Dashboard() {
     return acc;
   }, {} as Record<string, number>) || {};
 
-  const mostCommonType = Object.keys(documentTypes).length > 0 
-    ? Object.keys(documentTypes).reduce((a, b) => 
+  const mostCommonType = Object.keys(documentTypes).length > 0
+    ? Object.keys(documentTypes).reduce((a, b) =>
         documentTypes[a] > documentTypes[b] ? a : b
       )
     : null;
 
   const upcomingAppointments = appointments.filter(apt => new Date(apt.date) > new Date());
-  const nextAppointment = upcomingAppointments[0];
   const hasUpcomingAppointment = upcomingAppointments.length > 0;
-  const appointmentDate = hasUpcomingAppointment ? new Date(nextAppointment.date) : null;
-  const isAppointmentSoon = appointmentDate && appointmentDate.getTime() - Date.now() < 7 * 24 * 60 * 60 * 1000;
+
+  const getGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour < 12) return "Good morning";
+    if (hour < 17) return "Good afternoon";
+    return "Good evening";
+  };
 
   return (
     <div className="min-h-screen bg-background" data-testid="dashboard-page">
       <Navigation />
-      
+
       <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-12">
           <div className="flex items-center space-x-3 mb-4">
             <div className="p-2 rounded-xl bg-gradient-to-br from-primary to-secondary">
-              <Brain className="text-white h-5 w-5" />
+              <Sun className="text-white h-5 w-5" />
             </div>
-            <div className="inline-flex items-center space-x-2 bg-surface-1 border border-white/10 rounded-full px-3 py-1 text-xs text-foreground-muted">
-              <Sparkles className="h-3 w-3 text-primary" />
-              <span>AI-Powered Health Intelligence</span>
+            <div className="badge-sage">
+              <span className="font-body">Your Health Sanctuary</span>
             </div>
           </div>
-          <h1 className="text-4xl font-bold text-foreground mb-3">
-            Welcome back, {(user as any)?.firstName || 'there'}!
+          <h1 className="text-foreground mb-3 font-display">
+            {getGreeting()}, {(user as any)?.firstName || 'there'}
           </h1>
-          <p className="text-xl text-foreground-muted max-w-2xl">
-            Your personalized health dashboard analyzing patterns across all your medical data to deliver intelligent insights.
+          <p className="text-xl text-foreground-muted max-w-2xl font-body">
+            Here's an overview of your health journey. Take a moment to check in with yourself.
           </p>
         </div>
 
-        {/* Stats Cards */}
+        {/* Stats Cards - Now Clickable */}
         <div className="grid lg:grid-cols-4 gap-6 mb-12">
-          <Card className="bg-surface-1 border-white/10 hover:bg-surface-2 transition-all duration-300 group" data-testid="card-total-records">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-foreground-muted mb-1">Health Records</p>
-                  <p className="text-3xl font-bold text-foreground">{totalDocuments}</p>
-                  <p className="text-xs text-foreground-muted mt-1">Documents analyzed</p>
+          <Link href="/documents">
+            <Card className="card-sanctuary group transition-all duration-300 hover:-translate-y-1 cursor-pointer" data-testid="card-total-records">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-foreground-muted mb-1 font-body">Health Records</p>
+                    <p className="text-3xl font-bold text-foreground font-display">{totalDocuments}</p>
+                    <p className="text-xs text-foreground-subtle mt-1 font-body group-hover:text-primary transition-colors">View all documents →</p>
+                  </div>
+                  <div className="w-12 h-12 rounded-xl bg-primary-light flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                    <FileText className="text-primary h-6 w-6" />
+                  </div>
                 </div>
-                <div className="p-3 rounded-xl bg-gradient-to-br from-primary to-primary/70 group-hover:scale-110 transition-transform duration-300">
-                  <FileText className="text-white h-6 w-6" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Link>
 
-          <Card className="bg-surface-1 border-white/10 hover:bg-surface-2 transition-all duration-300 group" data-testid="card-this-month">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-foreground-muted mb-1">This Month</p>
-                  <p className="text-3xl font-bold text-foreground">{documentsThisMonth}</p>
-                  <p className="text-xs text-foreground-muted mt-1">New uploads</p>
+          <Link href="/documents">
+            <Card className="card-sanctuary group transition-all duration-300 hover:-translate-y-1 cursor-pointer" data-testid="card-this-month">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-foreground-muted mb-1 font-body">This Month</p>
+                    <p className="text-3xl font-bold text-foreground font-display">{documentsThisMonth}</p>
+                    <p className="text-xs text-foreground-subtle mt-1 font-body group-hover:text-primary transition-colors">New additions →</p>
+                  </div>
+                  <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                    <Leaf className="text-secondary h-6 w-6" />
+                  </div>
                 </div>
-                <div className="p-3 rounded-xl bg-gradient-to-br from-secondary to-secondary/70 group-hover:scale-110 transition-transform duration-300">
-                  <TrendingUp className="text-white h-6 w-6" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Link>
 
-          <Card className="bg-surface-1 border-white/10 hover:bg-surface-2 transition-all duration-300 group" data-testid="card-common-type">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-foreground-muted mb-1">Most Common</p>
-                  <p className="text-xl font-bold text-foreground capitalize">
-                    {mostCommonType ? mostCommonType.replace('_', ' ') : '—'}
-                  </p>
-                  <p className="text-xs text-foreground-muted mt-1">Document type</p>
+          <Link href="/symptoms">
+            <Card className="card-sanctuary group transition-all duration-300 hover:-translate-y-1 cursor-pointer" data-testid="card-symptoms">
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-foreground-muted mb-1 font-body">Symptoms Logged</p>
+                    <p className="text-3xl font-bold text-foreground font-display">
+                      {symptomStats?.total || 0}
+                    </p>
+                    <p className="text-xs text-foreground-subtle mt-1 font-body group-hover:text-primary transition-colors">Track symptoms →</p>
+                  </div>
+                  <div className="w-12 h-12 rounded-xl bg-primary-light flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                    <Activity className="text-primary h-6 w-6" />
+                  </div>
                 </div>
-                <div className="p-3 rounded-xl bg-gradient-to-br from-accent to-accent/70 group-hover:scale-110 transition-transform duration-300">
-                  <BarChart3 className="text-white h-6 w-6" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          </Link>
 
-          <Card className="bg-surface-1 border-white/10 hover:bg-surface-2 transition-all duration-300 group" data-testid="card-last-upload">
+          <Card className="card-sanctuary group transition-all duration-300 hover:-translate-y-1" data-testid="card-last-upload">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-foreground-muted mb-1">Last Upload</p>
-                  <p className="text-xl font-bold text-foreground">
+                  <p className="text-sm text-foreground-muted mb-1 font-body">Last Activity</p>
+                  <p className="text-xl font-bold text-foreground font-display">
                     {lastUploadDate
                       ? format(new Date(lastUploadDate), 'MMM d')
-                      : 'No uploads'
+                      : 'No activity'
                     }
                   </p>
-                  <p className="text-xs text-foreground-muted mt-1">Recent activity</p>
+                  <p className="text-xs text-foreground-subtle mt-1 font-body">Recent update</p>
                 </div>
-                <div className="p-3 rounded-xl bg-gradient-to-br from-primary to-secondary group-hover:scale-110 transition-transform duration-300">
-                  <Clock className="text-white h-6 w-6" />
+                <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                  <Clock className="text-secondary h-6 w-6" />
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Health Activity Timeline */}
+        {/* Health Activity Timeline - Clickable Items */}
         {activityTimeline.length > 0 && (
-          <Card className="bg-surface-1 border-white/10 mb-8" data-testid="activity-timeline-card">
+          <Card className="card-sanctuary mb-8" data-testid="activity-timeline-card">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle className="text-xl font-semibold text-foreground mb-1">
-                    Health Activity Timeline
+                  <CardTitle className="text-xl font-semibold text-foreground mb-1 font-display">
+                    Your Health Timeline
                   </CardTitle>
-                  <p className="text-sm text-foreground-muted">Your recent health journey at a glance</p>
+                  <p className="text-sm text-foreground-muted font-body">Click any item to view details</p>
                 </div>
               </div>
             </CardHeader>
             <CardContent>
               <div className="relative">
-                {/* Timeline line */}
-                <div className="absolute left-[17px] top-0 bottom-0 w-px bg-white/10" />
+                <div className="absolute left-[17px] top-0 bottom-0 w-px bg-border" />
 
-                <div className="space-y-4">
-                  {activityTimeline.map((activity, index) => (
-                    <div key={activity.id} className="flex items-start gap-4 relative">
-                      {/* Timeline dot */}
-                      <div className={`relative z-10 p-2 rounded-lg ${
+                <div className="space-y-2">
+                  {activityTimeline.map((activity) => (
+                    <div
+                      key={activity.id}
+                      onClick={() => handleTimelineClick(activity)}
+                      className="flex items-start gap-4 relative p-3 -ml-3 rounded-xl cursor-pointer hover:bg-surface-1 transition-all duration-200 group"
+                    >
+                      <div className={`relative z-10 w-9 h-9 rounded-lg flex items-center justify-center transition-transform duration-200 group-hover:scale-110 ${
                         activity.type === 'document'
-                          ? 'bg-gradient-to-br from-primary to-primary/70'
+                          ? 'bg-primary-light'
                           : activity.severity && activity.severity >= 7
-                            ? 'bg-gradient-to-br from-red-500 to-red-600'
+                            ? 'bg-rose-100 dark:bg-rose-900/30'
                             : activity.severity && activity.severity >= 4
-                              ? 'bg-gradient-to-br from-yellow-500 to-orange-500'
-                              : 'bg-gradient-to-br from-secondary to-accent'
+                              ? 'bg-amber-100 dark:bg-amber-900/30'
+                              : 'bg-secondary/10'
                       }`}>
                         {activity.type === 'document' ? (
-                          <FileText className="h-4 w-4 text-white" />
+                          <FileText className="h-4 w-4 text-primary" />
                         ) : (
-                          <Activity className="h-4 w-4 text-white" />
+                          <Activity className={`h-4 w-4 ${
+                            activity.severity && activity.severity >= 7 ? 'text-rose-500' :
+                            activity.severity && activity.severity >= 4 ? 'text-amber-500' :
+                            'text-secondary'
+                          }`} />
                         )}
                       </div>
 
-                      {/* Content */}
-                      <div className="flex-1 pb-4">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="font-medium text-foreground capitalize">{activity.title}</p>
-                            <p className="text-sm text-foreground-muted">{activity.subtitle}</p>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium text-foreground capitalize font-body truncate">{activity.title}</p>
+                              {activity.type === 'document' && (
+                                <ExternalLink className="h-3 w-3 text-foreground-subtle opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                              )}
+                            </div>
+                            <p className="text-sm text-foreground-muted font-body truncate">{activity.subtitle}</p>
                           </div>
-                          <div className="text-right">
-                            <p className="text-xs text-foreground-muted">
+                          <div className="text-right flex-shrink-0">
+                            <p className="text-xs text-foreground-subtle font-body">
                               {format(activity.date, 'MMM d, yyyy')}
                             </p>
                             {activity.type === 'document' && activity.documentType && (
-                              <span className="inline-block mt-1 px-2 py-0.5 text-xs bg-white/10 text-foreground-muted rounded-full capitalize">
+                              <span className="badge-sage mt-1 inline-block capitalize text-xs">
                                 {activity.documentType.replace('_', ' ')}
                               </span>
                             )}
                             {activity.type === 'symptom' && activity.severity && (
-                              <span className={`inline-block mt-1 px-2 py-0.5 text-xs rounded-full ${
-                                activity.severity >= 7 ? 'bg-red-500/20 text-red-400' :
-                                activity.severity >= 4 ? 'bg-yellow-500/20 text-yellow-400' :
-                                'bg-green-500/20 text-green-400'
+                              <span className={`inline-block mt-1 px-2 py-0.5 text-xs rounded-full font-body ${
+                                activity.severity >= 7 ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400' :
+                                activity.severity >= 4 ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' :
+                                'bg-primary-light text-primary'
                               }`}>
                                 Severity {activity.severity}/10
                               </span>
@@ -437,6 +454,8 @@ export default function Dashboard() {
                           </div>
                         </div>
                       </div>
+
+                      <ChevronRight className="h-4 w-4 text-foreground-subtle opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all duration-200 flex-shrink-0 mt-2.5" />
                     </div>
                   ))}
                 </div>
@@ -446,25 +465,25 @@ export default function Dashboard() {
         )}
 
         <div className="grid lg:grid-cols-3 gap-8">
-          {/* Recent Records */}
+          {/* Recent Records - Clickable Rows */}
           <div className="lg:col-span-2">
-            <Card className="bg-surface-1 border-white/10" data-testid="recent-records-card">
+            <Card className="card-sanctuary" data-testid="recent-records-card">
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle className="text-xl font-semibold text-foreground mb-1">
+                    <CardTitle className="text-xl font-semibold text-foreground mb-1 font-display">
                       Recent Health Records
                     </CardTitle>
-                    <p className="text-sm text-foreground-muted">AI-analyzed documents from your health journey</p>
+                    <p className="text-sm text-foreground-muted font-body">Click to view document</p>
                   </div>
                   <Button
                     variant="ghost"
                     asChild
-                    className="text-primary hover:text-primary hover:bg-white/5"
+                    className="text-primary hover:text-primary hover:bg-primary-light"
                     data-testid="button-view-all-documents"
                     onClick={() => analytics.ctaClicked('view_all_documents', 'dashboard_recent_records')}
                   >
-                    <Link href="/documents" className="flex items-center space-x-2">
+                    <Link href="/documents" className="flex items-center space-x-2 font-body">
                       <span>View All</span>
                       <ArrowRight className="h-4 w-4" />
                     </Link>
@@ -475,7 +494,7 @@ export default function Dashboard() {
                 {documentsLoading ? (
                   <div className="space-y-4">
                     {Array.from({ length: 3 }).map((_, i) => (
-                      <div key={i} className="flex items-center space-x-4 p-4 bg-surface-2 rounded-xl">
+                      <div key={i} className="flex items-center space-x-4 p-4 bg-surface-1 rounded-xl">
                         <Skeleton className="w-12 h-12 rounded-xl" />
                         <div className="flex-1">
                           <Skeleton className="h-4 w-3/4 mb-2" />
@@ -488,42 +507,54 @@ export default function Dashboard() {
                 ) : recentDocuments && recentDocuments.length > 0 ? (
                   <div className="space-y-3">
                     {recentDocuments.map((document) => (
-                      <div key={document.id} className="flex items-center p-4 bg-surface-2 rounded-xl border border-white/5 hover:bg-surface-3 transition-all duration-200 group" data-testid={`document-${document.id}`}>
-                        <div className="p-2.5 rounded-xl bg-gradient-to-br from-primary to-primary/70 mr-4 group-hover:scale-105 transition-transform duration-200">
-                          <FileText className="text-white h-5 w-5" />
+                      <div
+                        key={document.id}
+                        onClick={() => handleDocumentClick(document)}
+                        className="flex items-center p-4 bg-surface-1 rounded-xl border border-border hover:border-primary hover:bg-primary-light/30 transition-all duration-200 cursor-pointer group"
+                        data-testid={`document-${document.id}`}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => e.key === 'Enter' && handleDocumentClick(document)}
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-primary-light flex items-center justify-center mr-4 group-hover:scale-110 transition-transform duration-200">
+                          <FileText className="text-primary h-5 w-5" />
                         </div>
-                        <div className="flex-1">
-                          <h5 className="font-medium text-foreground mb-1">{document.title}</h5>
-                          <p className="text-sm text-foreground-muted">
+                        <div className="flex-1 min-w-0">
+                          <h5 className="font-medium text-foreground mb-1 font-body truncate">{document.title}</h5>
+                          <p className="text-sm text-foreground-muted font-body truncate">
                             {document.doctorName ? `${document.doctorName} • ` : ''}
                             {format(new Date(document.documentDate), 'MMM d, yyyy')}
                           </p>
                         </div>
-                        <div className="flex items-center space-x-3">
-                          <span className="px-3 py-1 text-xs font-medium bg-white/10 text-foreground-muted rounded-full capitalize border border-white/10">
+                        <div className="flex items-center space-x-3 flex-shrink-0">
+                          <span className="badge-sage capitalize hidden sm:inline-block">
                             {document.documentType.replace('_', ' ')}
                           </span>
-                          <ChevronRight className="h-4 w-4 text-foreground-muted group-hover:translate-x-1 transition-transform duration-200" />
+                          <div className="flex items-center space-x-1 text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Eye className="h-4 w-4" />
+                            <span className="text-xs font-medium font-body">View</span>
+                          </div>
+                          <ChevronRight className="h-4 w-4 text-foreground-subtle group-hover:text-primary group-hover:translate-x-1 transition-all duration-200" />
                         </div>
                       </div>
                     ))}
                   </div>
                 ) : (
                   <div className="text-center py-12">
-                    <div className="p-4 rounded-2xl bg-gradient-to-br from-primary/10 to-secondary/10 w-fit mx-auto mb-6">
-                      <FileImage className="w-12 h-12 text-primary mx-auto" />
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary-light to-secondary/10 flex items-center justify-center mx-auto mb-6">
+                      <FileText className="w-8 h-8 text-primary" />
                     </div>
-                    <h3 className="text-lg font-semibold text-foreground mb-2">Ready to unlock health insights?</h3>
-                    <p className="text-foreground-muted mb-6 max-w-sm mx-auto">Upload your first document and watch our AI analyze patterns in your health data</p>
+                    <h3 className="text-lg font-semibold text-foreground mb-2 font-display">Start your health journey</h3>
+                    <p className="text-foreground-muted mb-6 max-w-sm mx-auto font-body">Upload your first document to begin building your personal health sanctuary</p>
                     <Button
                       asChild
-                      className="bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90"
+                      className="btn-sanctuary"
                       data-testid="button-upload-first-document"
                       onClick={() => analytics.ctaClicked('upload_first_document', 'dashboard_empty_state')}
                     >
                       <Link href="/documents" className="flex items-center space-x-2">
                         <Upload className="h-4 w-4" />
-                        <span>Upload First Document</span>
+                        <span className="font-body">Upload First Document</span>
                       </Link>
                     </Button>
                   </div>
@@ -534,62 +565,62 @@ export default function Dashboard() {
 
           {/* Right Column */}
           <div className="space-y-6">
-            {/* Next Appointment */}
-            <Card className="bg-surface-1 border-white/10" data-testid="appointments-card">
+            {/* Appointments */}
+            <Card className="card-sanctuary" data-testid="appointments-card">
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <div>
-                    <CardTitle className="text-lg font-semibold text-foreground mb-1">
-                      Upcoming Appointments
+                    <CardTitle className="text-lg font-semibold text-foreground mb-1 font-display">
+                      Upcoming Care
                     </CardTitle>
-                    <p className="text-xs text-foreground-muted">Stay on track with your care plan</p>
+                    <p className="text-xs text-foreground-muted font-body">Your scheduled appointments</p>
                   </div>
                   <Dialog open={appointmentDialogOpen} onOpenChange={setAppointmentDialogOpen}>
                     <DialogTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-8 w-8 rounded-xl hover:bg-white/10" data-testid="button-add-appointment">
-                        <Plus className="h-4 w-4" />
+                      <Button variant="ghost" size="sm" className="h-8 w-8 rounded-xl hover:bg-primary-light" data-testid="button-add-appointment">
+                        <Plus className="h-4 w-4 text-primary" />
                       </Button>
                     </DialogTrigger>
-                    <DialogContent className="bg-surface-1 border-white/20">
+                    <DialogContent className="bg-card border-border">
                       <DialogHeader>
-                        <DialogTitle className="text-foreground">Schedule Appointment</DialogTitle>
+                        <DialogTitle className="text-foreground font-display">Schedule Appointment</DialogTitle>
                       </DialogHeader>
                       <div className="space-y-4">
                         <div>
-                          <Label htmlFor="appointment-date" className="text-foreground">Date & Time</Label>
+                          <Label htmlFor="appointment-date" className="text-foreground font-body">Date & Time</Label>
                           <Input
                             id="appointment-date"
                             type="datetime-local"
                             value={newAppointment.date}
                             onChange={(e) => setNewAppointment(prev => ({ ...prev, date: e.target.value }))}
-                            className="bg-surface-2 border-white/20 text-foreground"
+                            className="input-sanctuary"
                           />
                         </div>
                         <div>
-                          <Label htmlFor="doctor-name" className="text-foreground">Doctor Name</Label>
+                          <Label htmlFor="doctor-name" className="text-foreground font-body">Doctor Name</Label>
                           <Input
                             id="doctor-name"
                             placeholder="Dr. Smith"
                             value={newAppointment.doctor}
                             onChange={(e) => setNewAppointment(prev => ({ ...prev, doctor: e.target.value }))}
-                            className="bg-surface-2 border-white/20 text-foreground"
+                            className="input-sanctuary"
                           />
                         </div>
                         <div>
-                          <Label htmlFor="appointment-description" className="text-foreground">Description (Optional)</Label>
+                          <Label htmlFor="appointment-description" className="text-foreground font-body">Notes (Optional)</Label>
                           <Textarea
                             id="appointment-description"
                             placeholder="Annual checkup, follow-up visit, etc."
                             value={newAppointment.description}
                             onChange={(e) => setNewAppointment(prev => ({ ...prev, description: e.target.value }))}
-                            className="bg-surface-2 border-white/20 text-foreground"
+                            className="input-sanctuary resize-none"
                           />
                         </div>
                         <div className="flex gap-3 pt-2">
-                          <Button onClick={saveAppointment} className="bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 flex-1" data-testid="button-save-appointment">
+                          <Button onClick={saveAppointment} className="btn-sanctuary flex-1" data-testid="button-save-appointment">
                             Save Appointment
                           </Button>
-                          <Button variant="outline" onClick={() => setAppointmentDialogOpen(false)} className="border-white/20 text-foreground hover:bg-white/5" data-testid="button-cancel-appointment">
+                          <Button variant="outline" onClick={() => setAppointmentDialogOpen(false)} className="border-border text-foreground hover:bg-surface-1" data-testid="button-cancel-appointment">
                             Cancel
                           </Button>
                         </div>
@@ -605,34 +636,34 @@ export default function Dashboard() {
                       const aptDate = new Date(appointment.date);
                       const isAptSoon = aptDate.getTime() - Date.now() < 7 * 24 * 60 * 60 * 1000;
                       return (
-                        <div key={appointment.id} className={`p-4 rounded-xl border-l-4 ${
-                          isAptSoon 
-                            ? 'bg-gradient-to-r from-orange-500/10 to-transparent border-orange-400' 
-                            : 'bg-gradient-to-r from-primary/10 to-transparent border-primary'
+                        <div key={appointment.id} className={`p-4 rounded-xl border-l-4 transition-all duration-200 hover:shadow-md ${
+                          isAptSoon
+                            ? 'bg-amber-50 border-amber-400 dark:bg-amber-900/10 hover:bg-amber-100 dark:hover:bg-amber-900/20'
+                            : 'bg-primary-light border-primary hover:bg-primary-light/70'
                         }`} data-testid={`appointment-${appointment.id}`}>
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
-                              <h6 className="font-medium text-foreground mb-1">{appointment.doctor}</h6>
-                              <p className="text-sm text-foreground-muted mb-1">
+                              <h6 className="font-medium text-foreground mb-1 font-body">{appointment.doctor}</h6>
+                              <p className="text-sm text-foreground-muted mb-1 font-body">
                                 {format(aptDate, 'MMM d, yyyy • h:mm a')}
                               </p>
                               {appointment.description && (
-                                <p className="text-sm text-foreground mt-1">{appointment.description}</p>
+                                <p className="text-sm text-foreground mt-1 font-body">{appointment.description}</p>
                               )}
                               {isAptSoon && (
                                 <div className="flex items-center space-x-1 mt-2">
-                                  <Zap className="h-3 w-3 text-orange-400" />
-                                  <p className="text-xs text-orange-400 font-medium">Upcoming within 7 days</p>
+                                  <AlertCircle className="h-3 w-3 text-amber-500" />
+                                  <p className="text-xs text-amber-600 font-medium font-body">Coming up soon</p>
                                 </div>
                               )}
                             </div>
                             <div className="flex items-center space-x-2">
-                              <Calendar className={`h-4 w-4 ${isAptSoon ? 'text-orange-400' : 'text-primary'}`} />
-                              <Button 
-                                variant="ghost" 
-                                size="sm" 
-                                onClick={() => removeAppointment(appointment.id)}
-                                className="h-6 w-6 p-0 text-foreground-muted hover:text-destructive hover:bg-destructive/10"
+                              <Calendar className={`h-4 w-4 ${isAptSoon ? 'text-amber-500' : 'text-primary'}`} />
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={(e) => removeAppointment(e, appointment.id)}
+                                className="h-6 w-6 p-0 text-foreground-muted hover:text-destructive hover:bg-destructive/10 rounded-full"
                                 data-testid={`button-remove-appointment-${appointment.id}`}
                               >
                                 ×
@@ -643,120 +674,130 @@ export default function Dashboard() {
                       );
                     })}
                     {upcomingAppointments.length > 3 && (
-                      <p className="text-xs text-foreground-muted text-center pt-2">
+                      <p className="text-xs text-foreground-muted text-center pt-2 font-body">
                         +{upcomingAppointments.length - 3} more appointments
                       </p>
                     )}
                   </div>
                 ) : (
                   <div className="text-center py-8">
-                    <div className="p-3 rounded-xl bg-gradient-to-br from-secondary/10 to-accent/10 w-fit mx-auto mb-4">
-                      <Calendar className="w-8 h-8 text-secondary mx-auto" />
+                    <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center mx-auto mb-4">
+                      <Calendar className="w-6 h-6 text-secondary" />
                     </div>
-                    <p className="text-sm text-foreground mb-2">No upcoming appointments</p>
-                    <p className="text-xs text-foreground-muted">Schedule your next visit to stay on track</p>
+                    <p className="text-sm text-foreground mb-2 font-body">No upcoming appointments</p>
+                    <p className="text-xs text-foreground-muted mb-4 font-body">Schedule your next visit to stay on track</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAppointmentDialogOpen(true)}
+                      className="border-border text-foreground hover:bg-surface-1"
+                    >
+                      <Plus className="h-3 w-3 mr-1" />
+                      <span className="font-body">Add Appointment</span>
+                    </Button>
                   </div>
                 )}
               </CardContent>
             </Card>
 
-            {/* Symptom Summary */}
-            {symptomStats && (
-              <Card className="bg-surface-1 border-white/10" data-testid="symptom-summary-card">
+            {/* Symptom Summary - Clickable */}
+            <Link href="/symptoms">
+              <Card className="card-sanctuary cursor-pointer hover:border-primary transition-all duration-200 group" data-testid="symptom-summary-card">
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <div>
-                      <CardTitle className="text-lg font-semibold text-foreground mb-1">
+                      <CardTitle className="text-lg font-semibold text-foreground mb-1 font-display">
                         Symptom Overview
                       </CardTitle>
-                      <p className="text-xs text-foreground-muted">Patterns in your health tracking</p>
+                      <p className="text-xs text-foreground-muted font-body group-hover:text-primary transition-colors">Click to manage symptoms →</p>
                     </div>
-                    <Button
-                      variant="ghost"
-                      asChild
-                      size="sm"
-                      className="text-secondary hover:text-secondary hover:bg-white/5"
-                    >
-                      <Link href="/symptoms" className="flex items-center space-x-1">
-                        <span className="text-xs">View All</span>
-                        <ArrowRight className="h-3 w-3" />
-                      </Link>
-                    </Button>
+                    <div className="w-8 h-8 rounded-lg bg-secondary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <Activity className="h-4 w-4 text-secondary" />
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3 bg-surface-2 rounded-xl border border-white/5">
-                      <p className="text-2xl font-bold text-foreground">{symptomStats.total}</p>
-                      <p className="text-xs text-foreground-muted">Total logged</p>
-                    </div>
-                    <div className="p-3 bg-surface-2 rounded-xl border border-white/5">
-                      <p className="text-2xl font-bold text-foreground">{symptomStats.thisMonthCount}</p>
-                      <p className="text-xs text-foreground-muted">This month</p>
-                    </div>
-                    <div className="p-3 bg-surface-2 rounded-xl border border-white/5">
-                      <p className={`text-2xl font-bold ${
-                        symptomStats.avgSeverity >= 7 ? 'text-red-400' :
-                        symptomStats.avgSeverity >= 4 ? 'text-yellow-400' :
-                        'text-green-400'
-                      }`}>{symptomStats.avgSeverity.toFixed(1)}</p>
-                      <p className="text-xs text-foreground-muted">Avg severity</p>
-                    </div>
-                    <div className="p-3 bg-surface-2 rounded-xl border border-white/5">
-                      <p className={`text-2xl font-bold ${symptomStats.highSeverityCount > 0 ? 'text-red-400' : 'text-green-400'}`}>
-                        {symptomStats.highSeverityCount}
-                      </p>
-                      <p className="text-xs text-foreground-muted">High severity</p>
-                    </div>
-                  </div>
-                  {symptomStats.highSeverityCount > 0 && (
-                    <div className="mt-3 p-2 bg-red-500/10 rounded-lg border border-red-500/20">
-                      <p className="text-xs text-red-400">
-                        <Zap className="h-3 w-3 inline mr-1" />
-                        {symptomStats.highSeverityCount} symptom(s) logged with severity 7+
-                      </p>
+                  {symptomStats ? (
+                    <>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="p-3 bg-surface-1 rounded-xl border border-border group-hover:border-primary/30 transition-colors">
+                          <p className="text-2xl font-bold text-foreground font-display">{symptomStats.total}</p>
+                          <p className="text-xs text-foreground-muted font-body">Total logged</p>
+                        </div>
+                        <div className="p-3 bg-surface-1 rounded-xl border border-border group-hover:border-primary/30 transition-colors">
+                          <p className="text-2xl font-bold text-foreground font-display">{symptomStats.thisMonthCount}</p>
+                          <p className="text-xs text-foreground-muted font-body">This month</p>
+                        </div>
+                        <div className="p-3 bg-surface-1 rounded-xl border border-border group-hover:border-primary/30 transition-colors">
+                          <p className={`text-2xl font-bold font-display ${
+                            symptomStats.avgSeverity >= 7 ? 'text-rose-500' :
+                            symptomStats.avgSeverity >= 4 ? 'text-amber-500' :
+                            'text-primary'
+                          }`}>{symptomStats.avgSeverity.toFixed(1)}</p>
+                          <p className="text-xs text-foreground-muted font-body">Avg severity</p>
+                        </div>
+                        <div className="p-3 bg-surface-1 rounded-xl border border-border group-hover:border-primary/30 transition-colors">
+                          <p className={`text-2xl font-bold font-display ${symptomStats.highSeverityCount > 0 ? 'text-rose-500' : 'text-primary'}`}>
+                            {symptomStats.highSeverityCount}
+                          </p>
+                          <p className="text-xs text-foreground-muted font-body">High severity</p>
+                        </div>
+                      </div>
+                      {symptomStats.highSeverityCount > 0 && (
+                        <div className="mt-3 p-2 bg-rose-50 rounded-lg border border-rose-200 dark:bg-rose-900/10 dark:border-rose-800">
+                          <p className="text-xs text-rose-600 dark:text-rose-400 font-body">
+                            <AlertCircle className="h-3 w-3 inline mr-1" />
+                            {symptomStats.highSeverityCount} symptom(s) with severity 7+
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="text-center py-4">
+                      <p className="text-sm text-foreground-muted font-body">No symptoms logged yet</p>
+                      <p className="text-xs text-foreground-subtle font-body mt-1">Start tracking to see patterns</p>
                     </div>
                   )}
                 </CardContent>
               </Card>
-            )}
+            </Link>
 
             {/* Quick Actions */}
-            <Card className="bg-surface-1 border-white/10" data-testid="quick-actions-card">
+            <Card className="card-sanctuary" data-testid="quick-actions-card">
               <CardHeader>
-                <CardTitle className="text-lg font-semibold text-foreground">
+                <CardTitle className="text-lg font-semibold text-foreground font-display">
                   Quick Actions
                 </CardTitle>
-                <p className="text-xs text-foreground-muted">Fast access to key features</p>
+                <p className="text-xs text-foreground-muted font-body">Fast access to key features</p>
               </CardHeader>
               <CardContent>
                 <div className="space-y-3">
                   <Button
                     asChild
-                    className="w-full bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 justify-start group"
+                    className="w-full btn-sanctuary justify-start group"
                     data-testid="button-upload-document"
                     onClick={() => analytics.ctaClicked('upload_document', 'dashboard_quick_actions')}
                   >
                     <Link href="/documents" className="flex items-center space-x-3">
-                      <div className="p-1 rounded bg-white/20">
+                      <div className="p-1.5 rounded-lg bg-white/20">
                         <Upload className="h-4 w-4" />
                       </div>
-                      <span>Upload Document</span>
+                      <span className="font-body">Upload Document</span>
                       <ArrowRight className="ml-auto h-4 w-4 group-hover:translate-x-1 transition-transform" />
                     </Link>
                   </Button>
                   <Button
                     asChild
                     variant="outline"
-                    className="w-full justify-start border-white/20 text-foreground hover:bg-white/5 group"
+                    className="w-full justify-start border-border text-foreground hover:bg-surface-1 hover:border-primary group"
                     data-testid="button-track-symptoms"
                     onClick={() => analytics.ctaClicked('track_symptoms', 'dashboard_quick_actions')}
                   >
                     <Link href="/symptoms" className="flex items-center space-x-3">
-                      <div className="p-1 rounded border border-white/20">
-                        <Activity className="h-4 w-4" />
+                      <div className="p-1.5 rounded-lg border border-border group-hover:border-primary/50 transition-colors">
+                        <Activity className="h-4 w-4 text-secondary" />
                       </div>
-                      <span>Track Symptoms</span>
+                      <span className="font-body">Track Symptoms</span>
                       <ArrowRight className="ml-auto h-4 w-4 group-hover:translate-x-1 transition-transform" />
                     </Link>
                   </Button>
@@ -764,50 +805,15 @@ export default function Dashboard() {
               </CardContent>
             </Card>
 
-            {/* AI Insights Preview */}
-            <Card className="bg-gradient-to-br from-primary/5 to-secondary/5 border-primary/20" data-testid="ai-insights-card">
-              <CardHeader>
-                <div className="flex items-center space-x-2">
-                  <Brain className="h-5 w-5 text-primary" />
-                  <CardTitle className="text-lg font-semibold text-foreground">
-                    AI Health Insights
-                  </CardTitle>
-                </div>
-                <p className="text-xs text-foreground-muted">Unlock patterns in your health data</p>
-              </CardHeader>
-              <CardContent>
-                {totalDocuments > 0 ? (
-                  <div className="space-y-3">
-                    <div className="p-3 bg-white/5 rounded-xl border border-white/10">
-                      <div className="flex items-center space-x-2 mb-2">
-                        <Sparkles className="h-3 w-3 text-primary" />
-                        <p className="text-xs font-medium text-primary">Pattern Analysis Ready</p>
-                      </div>
-                      <p className="text-sm text-foreground">Your health data can reveal trends across {totalDocuments} documents</p>
-                    </div>
-                    <Button variant="outline" className="w-full border-primary/30 text-primary hover:bg-primary/10" data-testid="button-view-insights">
-                      <Brain className="mr-2 h-4 w-4" />
-                      View AI Insights
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="text-center py-4">
-                    <HeartHandshake className="h-8 w-8 text-primary mx-auto mb-2" />
-                    <p className="text-sm text-foreground-muted">Upload documents to unlock AI insights</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Health Tips / Engagement */}
-            <Card className="bg-surface-1 border-white/10" data-testid="health-tips-card">
+            {/* Wellness Tip */}
+            <Card className="card-vault" data-testid="health-tips-card">
               <CardContent className="p-4">
                 <div className="flex items-start space-x-3">
-                  <div className="p-2 rounded-lg bg-gradient-to-br from-green-500/20 to-green-600/20 border border-green-500/30">
-                    <CheckCircle className="h-4 w-4 text-green-400" />
+                  <div className="w-10 h-10 rounded-xl bg-primary-light flex items-center justify-center flex-shrink-0">
+                    <Heart className="h-5 w-5 text-primary" />
                   </div>
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-foreground mb-1">
+                    <p className="text-sm font-medium text-foreground mb-1 font-body">
                       {totalDocuments === 0
                         ? "Start your health journey"
                         : symptomStats && symptomStats.thisMonthCount === 0
@@ -817,7 +823,7 @@ export default function Dashboard() {
                             : "You're on track!"
                       }
                     </p>
-                    <p className="text-xs text-foreground-muted">
+                    <p className="text-xs text-foreground-muted font-body">
                       {totalDocuments === 0
                         ? "Upload your first medical document to begin building your health profile."
                         : symptomStats && symptomStats.thisMonthCount === 0

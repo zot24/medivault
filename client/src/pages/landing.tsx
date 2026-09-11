@@ -4,18 +4,15 @@ import { Card, CardContent } from "@/components/ui/card";
 import WaitlistModal from "@/components/waitlist-modal";
 import {
   Shield,
-  Brain,
-  Sparkles,
+  Lock,
   ArrowRight,
   CheckCircle,
-  Zap,
-  TrendingUp,
   FileText,
   Activity,
-  Calendar,
-  Lock,
-  Star,
-  ChevronRight
+  Heart,
+  Leaf,
+  Eye,
+  Fingerprint
 } from "lucide-react";
 import analytics from "@/lib/analytics/umami";
 
@@ -23,7 +20,6 @@ export default function Landing() {
   const [waitlistOpen, setWaitlistOpen] = useState(false);
   const [waitlistSource, setWaitlistSource] = useState('unknown');
 
-  // Track page visit
   useEffect(() => {
     analytics.pageVisited('/');
   }, []);
@@ -37,86 +33,108 @@ export default function Landing() {
   return (
     <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
       {/* Navigation */}
-      <nav className="nav-blur sticky top-0 z-50">
+      <nav className="nav-sanctuary sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <div className="flex items-center group">
+            <div className="flex items-center group cursor-pointer">
               <div className="flex items-center space-x-3">
-                <div className="p-2 rounded-xl bg-gradient-to-br from-primary to-secondary group-hover:scale-105 transition-all duration-200">
-                  <Brain className="text-white h-5 w-5" />
+                <div className="relative">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/20">
+                    <Shield className="text-white h-5 w-5" />
+                  </div>
+                  <div className="absolute -inset-1 rounded-xl bg-gradient-to-br from-primary to-secondary opacity-20 blur-sm group-hover:opacity-30 transition-opacity"></div>
                 </div>
-                <span className="text-xl font-semibold text-foreground">MediVault</span>
+                <span className="text-xl font-semibold text-foreground font-display">MediVault</span>
               </div>
             </div>
             <div className="flex items-center space-x-4">
-              <Button
-                onClick={() => handleGetStarted('nav')}
-                className="bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 font-medium rounded-xl px-6"
+              <a
+                href="/login"
+                className="text-foreground-muted hover:text-foreground transition-colors font-medium font-body"
               >
-                Join Waitlist
-              </Button>
+                Log in
+              </a>
+              <a
+                href="/register"
+                className="btn-sanctuary inline-flex items-center"
+              >
+                Get Started
+              </a>
             </div>
           </div>
         </div>
       </nav>
 
       {/* Hero Section */}
-      <section className="relative pt-20 pb-32 overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-secondary/5"></div>
+      <section className="relative pt-24 pb-32 overflow-hidden">
+        {/* Organic background blobs */}
+        <div className="absolute top-20 -left-32 w-96 h-96 blob-bg bg-primary/30"></div>
+        <div className="absolute top-40 -right-32 w-80 h-80 blob-bg bg-secondary/20"></div>
+        <div className="absolute bottom-0 left-1/3 w-64 h-64 blob-bg bg-primary/10"></div>
+
+        {/* Subtle vault ring decorations */}
+        <div className="vault-ring w-[600px] h-[600px] -top-64 -right-64 opacity-30"></div>
+        <div className="vault-ring w-[400px] h-[400px] -bottom-32 -left-32 opacity-20"></div>
+
         <div className="relative max-w-7xl mx-auto px-6 lg:px-8">
           <div className="text-center max-w-4xl mx-auto">
-            <div className="inline-flex items-center space-x-2 bg-surface-1 border border-white/10 rounded-full px-4 py-2 mb-8 text-sm text-foreground-muted">
-              <Sparkles className="h-4 w-4 text-primary" />
-              <span>AI-Powered Health Intelligence</span>
+            {/* Pill badge */}
+            <div className="animate-fade-in inline-flex items-center space-x-2 bg-primary-light border border-primary/20 rounded-full px-4 py-2 mb-8">
+              <Leaf className="h-4 w-4 text-primary" />
+              <span className="text-sm font-medium text-primary">Your Health Sanctuary</span>
             </div>
-            
-            <h1 className="text-5xl lg:text-7xl font-bold mb-8 leading-tight">
-              <span className="text-foreground">Your Health Data,</span>
+
+            <h1 className="animate-slide-up text-foreground mb-8">
+              A Safe Place for Your
               <br />
               <span className="bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-                Finally Intelligent
+                Health Story
               </span>
             </h1>
-            
-            <p className="text-xl lg:text-2xl text-foreground-muted mb-12 leading-relaxed max-w-3xl mx-auto">
-              Stop drowning in medical paperwork. Our AI analyzes your documents, tracks patterns, and delivers personalized insights that actually help you understand your health.
+
+            <p className="animate-slide-up delay-100 text-xl lg:text-2xl text-foreground-muted mb-12 leading-relaxed max-w-3xl mx-auto font-body">
+              MediVault is your personal health sanctuary. Securely store medical documents, track symptoms, and gain meaningful insights - all in one calm, protected space.
             </p>
-            
-            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
+
+            <div className="animate-slide-up delay-200 flex flex-col sm:flex-row gap-4 justify-center items-center mb-16">
               <Button
                 size="lg"
                 onClick={() => handleGetStarted('hero')}
-                className="bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 font-medium text-lg px-8 py-4 rounded-xl group"
+                className="btn-sanctuary text-lg px-8 py-6 group"
               >
-                Join the Waitlist
+                Start Your Health Journey
                 <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
               </Button>
               <div className="flex items-center space-x-2 text-foreground-muted">
-                <CheckCircle className="h-4 w-4 text-primary" />
-                <span className="text-sm">Coming soon • Be first to know</span>
+                <Lock className="h-4 w-4 text-primary" />
+                <span className="text-sm font-body">100% Private & Secure</span>
               </div>
             </div>
 
-            {/* Demo Cards */}
-            <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
-              {/* Health Timeline Card */}
-              <Card className="bg-surface-1 border-white/10 hover:bg-surface-2 transition-all duration-300 group">
+            {/* Feature preview cards */}
+            <div className="animate-slide-up delay-300 grid md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+              {/* Secure Storage Card */}
+              <Card className="card-vault group transition-all duration-300 hover:-translate-y-1">
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between mb-4">
-                    <span className="text-sm font-medium text-foreground-muted">Health Timeline</span>
-                    <div className="w-2 h-2 bg-primary rounded-full"></div>
+                    <span className="text-sm font-medium text-foreground-muted font-body">Secure Storage</span>
+                    <div className="w-8 h-8 rounded-lg bg-primary-light flex items-center justify-center">
+                      <Lock className="w-4 h-4 text-primary" />
+                    </div>
                   </div>
                   <div className="space-y-3">
                     {[
-                      { event: "Annual Physical", date: "Dec 15", color: "bg-primary" },
-                      { event: "Lab Results", date: "Nov 28", color: "bg-secondary" },
-                      { event: "Specialist Visit", date: "Nov 12", color: "bg-accent" }
+                      { name: "Blood Work Results", date: "Dec 15", icon: "pdf" },
+                      { name: "Annual Physical", date: "Nov 28", icon: "doc" },
+                      { name: "Vaccination Record", date: "Oct 12", icon: "pdf" }
                     ].map((item, index) => (
-                      <div key={index} className="flex items-center space-x-3">
-                        <div className={`w-2 h-2 ${item.color} rounded-full`}></div>
-                        <div className="flex-1 flex justify-between items-center">
-                          <span className="text-sm text-foreground font-medium">{item.event}</span>
-                          <span className="text-xs text-foreground-muted">{item.date}</span>
+                      <div key={index} className="flex items-center space-x-3 p-2 rounded-lg bg-surface-1 group-hover:bg-surface-2 transition-colors">
+                        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+                          <FileText className="w-4 h-4 text-primary" />
+                        </div>
+                        <div className="flex-1">
+                          <span className="text-sm text-foreground font-medium font-body">{item.name}</span>
+                          <p className="text-xs text-foreground-subtle">{item.date}</p>
                         </div>
                       </div>
                     ))}
@@ -124,45 +142,60 @@ export default function Landing() {
                 </CardContent>
               </Card>
 
-              {/* AI Insights Card */}
-              <Card className="bg-surface-1 border-white/10 hover:bg-surface-2 transition-all duration-300 group">
+              {/* Symptom Tracking Card */}
+              <Card className="card-vault group transition-all duration-300 hover:-translate-y-1">
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between mb-4">
-                    <span className="text-sm font-medium text-foreground-muted">AI Insights</span>
-                    <Brain className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-medium text-foreground-muted font-body">Symptom Tracking</span>
+                    <div className="w-8 h-8 rounded-lg bg-secondary/10 flex items-center justify-center">
+                      <Activity className="w-4 h-4 text-secondary" />
+                    </div>
                   </div>
                   <div className="space-y-3">
-                    <div className="p-3 bg-primary/10 rounded-lg border border-primary/20">
-                      <p className="text-xs text-foreground-muted mb-1">Pattern Detected</p>
-                      <p className="text-sm text-foreground">Blood pressure trending upward over 3 months</p>
+                    <div className="p-3 bg-surface-1 rounded-xl border border-border">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-foreground font-body">This Week</span>
+                        <span className="text-xs text-primary font-medium">Improving</span>
+                      </div>
+                      <div className="flex items-end space-x-1 h-12">
+                        {[40, 55, 35, 60, 45, 30, 25].map((height, i) => (
+                          <div
+                            key={i}
+                            className="flex-1 rounded-t bg-gradient-to-t from-primary to-primary/60"
+                            style={{ height: `${height}%` }}
+                          ></div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="p-3 bg-secondary/10 rounded-lg border border-secondary/20">
-                      <p className="text-xs text-foreground-muted mb-1">Recommendation</p>
-                      <p className="text-sm text-foreground">Consider cardiology follow-up</p>
+                    <div className="flex items-center space-x-2 text-sm text-foreground-muted">
+                      <Heart className="w-4 h-4 text-rose-400" />
+                      <span className="font-body">3 patterns identified</span>
                     </div>
                   </div>
                 </CardContent>
               </Card>
 
-              {/* Documents Card */}
-              <Card className="bg-surface-1 border-white/10 hover:bg-surface-2 transition-all duration-300 group">
+              {/* Privacy Card */}
+              <Card className="card-vault group transition-all duration-300 hover:-translate-y-1">
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between mb-4">
-                    <span className="text-sm font-medium text-foreground-muted">Documents</span>
-                    <FileText className="w-4 h-4 text-primary" />
+                    <span className="text-sm font-medium text-foreground-muted font-body">Your Privacy</span>
+                    <div className="w-8 h-8 rounded-lg bg-primary-light flex items-center justify-center">
+                      <Fingerprint className="w-4 h-4 text-primary" />
+                    </div>
                   </div>
                   <div className="space-y-3">
                     {[
-                      { name: "Blood Test Results", type: "Lab", color: "bg-primary" },
-                      { name: "Cardiac Assessment", type: "Specialist", color: "bg-secondary" },
-                      { name: "MRI Scan", type: "Imaging", color: "bg-accent" }
-                    ].map((doc, index) => (
-                      <div key={index} className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div className={`w-2 h-2 ${doc.color} rounded-full`}></div>
-                          <span className="text-sm text-foreground font-medium">{doc.name}</span>
+                      { label: "End-to-end encryption", checked: true },
+                      { label: "You own your data", checked: true },
+                      { label: "No data selling", checked: true },
+                      { label: "HIPAA compliant", checked: true }
+                    ].map((item, index) => (
+                      <div key={index} className="flex items-center space-x-3">
+                        <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center">
+                          <CheckCircle className="w-3 h-3 text-primary" />
                         </div>
-                        <span className="text-xs text-foreground-muted">{doc.type}</span>
+                        <span className="text-sm text-foreground font-body">{item.label}</span>
                       </div>
                     ))}
                   </div>
@@ -174,70 +207,81 @@ export default function Landing() {
       </section>
 
       {/* Features Section */}
-      <section className="py-24 relative">
+      <section className="py-24 bg-surface-1 relative">
         <div className="max-w-7xl mx-auto px-6 lg:px-8">
           <div className="text-center mb-16">
-            <h2 className="text-4xl lg:text-5xl font-bold mb-6 text-foreground">
-              Health Intelligence That
-              <span className="bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent"> Actually Works</span>
+            <div className="inline-flex items-center space-x-2 bg-card border border-border rounded-full px-4 py-2 mb-6">
+              <Eye className="h-4 w-4 text-primary" />
+              <span className="text-sm font-medium text-foreground-muted font-body">Thoughtfully Designed</span>
+            </div>
+            <h2 className="text-foreground mb-6">
+              Health Management,
+              <span className="bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent"> Reimagined</span>
             </h2>
-            <p className="text-xl text-foreground-muted max-w-3xl mx-auto leading-relaxed">
-              Our AI doesn't just store your data — it understands it, connects patterns, and delivers insights that transform how you manage your health.
+            <p className="text-xl text-foreground-muted max-w-3xl mx-auto leading-relaxed font-body">
+              We believe managing your health should feel calming, not overwhelming. Every feature is designed with your wellbeing in mind.
             </p>
           </div>
 
           <div className="grid lg:grid-cols-3 gap-8">
             {[
               {
-                icon: Brain,
-                title: "Smart Document Analysis",
-                description: "Upload any medical document and watch our AI instantly extract key insights, track trends, and flag important changes in real-time.",
-                gradient: "from-primary to-primary/70"
-              },
-              {
-                icon: TrendingUp,
-                title: "Pattern Recognition",
-                description: "AI connects your symptoms, treatments, and results to reveal patterns you'd never notice, helping you understand your health journey.",
-                gradient: "from-secondary to-secondary/70"
-              },
-              {
-                icon: Zap,
-                title: "Predictive Insights",
-                description: "Get AI-powered recommendations for optimal care timing, treatment adjustments, and preventive measures based on your unique profile.",
-                gradient: "from-accent to-accent/70"
+                icon: FileText,
+                title: "Organized Records",
+                description: "Upload and categorize medical documents with ease. Lab results, prescriptions, imaging - everything in its place, easy to find when you need it.",
+                color: "primary"
               },
               {
                 icon: Activity,
-                title: "Symptom Intelligence",
-                description: "Track symptoms and let AI correlate them with your medical history, treatments, and lifestyle for personalized health insights.",
-                gradient: "from-primary to-secondary"
+                title: "Gentle Tracking",
+                description: "Log symptoms and health notes at your own pace. Track patterns over time with visual insights that help you understand your body better.",
+                color: "secondary"
               },
               {
-                icon: FileText,
-                title: "Unified Health Records",
-                description: "All your medical documents, test results, and health data organized intelligently in one secure, searchable platform.",
-                gradient: "from-secondary to-accent"
+                icon: Shield,
+                title: "Protected Always",
+                description: "Your health data deserves the highest protection. Bank-level encryption ensures your information stays private and secure.",
+                color: "primary"
               },
               {
-                icon: Calendar,
-                title: "Proactive Care Planning",
-                description: "AI analyzes your health patterns to suggest optimal timing for checkups, reminders, and follow-up care.",
-                gradient: "from-accent to-primary"
+                icon: Heart,
+                title: "Personal Insights",
+                description: "Discover connections in your health data. Understand how symptoms relate to lifestyle, and prepare better for doctor visits.",
+                color: "rose"
+              },
+              {
+                icon: Lock,
+                title: "Privacy First",
+                description: "We never sell your data. You maintain complete ownership and control over your health information, always.",
+                color: "primary"
+              },
+              {
+                icon: Leaf,
+                title: "Calm Experience",
+                description: "No overwhelming dashboards or anxiety-inducing alerts. Just a peaceful space to manage your health journey mindfully.",
+                color: "secondary"
               }
             ].map((feature, index) => (
-              <Card key={index} className="bg-surface-1 border-white/10 hover:bg-surface-2 transition-all duration-300 group p-8">
+              <Card
+                key={index}
+                className="card-sanctuary group p-8 transition-all duration-300 hover:-translate-y-1"
+              >
                 <CardContent className="p-0">
-                  <div className={`p-3 rounded-xl bg-gradient-to-br ${feature.gradient} w-fit mb-6 group-hover:scale-110 transition-transform duration-300`}>
-                    <feature.icon className="w-6 h-6 text-white" />
+                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-6 transition-transform duration-300 group-hover:scale-110 ${
+                    feature.color === 'primary' ? 'bg-primary-light' :
+                    feature.color === 'secondary' ? 'bg-secondary/10' :
+                    'bg-rose-50 dark:bg-rose-900/20'
+                  }`}>
+                    <feature.icon className={`w-6 h-6 ${
+                      feature.color === 'primary' ? 'text-primary' :
+                      feature.color === 'secondary' ? 'text-secondary' :
+                      'text-rose-500'
+                    }`} />
                   </div>
                   <h3 className="text-xl font-semibold mb-4 text-foreground">{feature.title}</h3>
-                  <p className="text-foreground-muted leading-relaxed">
+                  <p className="text-foreground-muted leading-relaxed font-body">
                     {feature.description}
                   </p>
-                  <div className="flex items-center mt-4 text-primary group-hover:translate-x-1 transition-transform duration-300">
-                    <span className="text-sm font-medium">Learn more</span>
-                    <ChevronRight className="ml-1 h-4 w-4" />
-                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -245,57 +289,46 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* Social Proof Section */}
-      <section className="py-24 bg-surface-1 relative">
-        <div className="max-w-7xl mx-auto px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-4xl font-bold mb-6 text-foreground">
-              Trusted by Health-Conscious Individuals
+      {/* Trust Section */}
+      <section className="py-24 relative overflow-hidden">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px] blob-bg bg-primary/5"></div>
+
+        <div className="relative max-w-7xl mx-auto px-6 lg:px-8">
+          <div className="max-w-3xl mx-auto text-center mb-16">
+            <h2 className="text-foreground mb-6">
+              Built on
+              <span className="bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent"> Trust</span>
             </h2>
-            <div className="flex items-center justify-center space-x-1 mb-8">
-              {[...Array(5)].map((_, i) => (
-                <Star key={i} className="w-5 h-5 text-amber-400 fill-current" />
-              ))}
-              <span className="ml-2 text-foreground-muted">4.9/5 from 2,000+ users</span>
-            </div>
+            <p className="text-xl text-foreground-muted leading-relaxed font-body">
+              Your health information is precious. We treat it with the care and respect it deserves.
+            </p>
           </div>
 
           <div className="grid md:grid-cols-3 gap-8">
             {[
               {
-                quote: "The AI insights completely changed how I understand my health. It connected patterns I never saw and helped me have much better conversations with my doctors.",
-                author: "Sarah M.",
-                title: "Chronic Care Patient"
+                stat: "256-bit",
+                label: "AES Encryption",
+                description: "Bank-level security protects every piece of your health data"
               },
               {
-                quote: "Finally, all my medical records make sense. The AI summaries before doctor visits have been a game-changer for getting better care.",
-                author: "David R.",
-                title: "Health Enthusiast"
+                stat: "Zero",
+                label: "Data Selling",
+                description: "We will never sell, share, or monetize your personal health information"
               },
               {
-                quote: "I caught a trend in my lab results that my doctor missed. The AI flagged it months before it became a problem. This platform saved my health.",
-                author: "Maria L.",
-                title: "Preventive Care Advocate"
+                stat: "100%",
+                label: "Your Control",
+                description: "Export or delete your data anytime. You own it, completely"
               }
-            ].map((testimonial, index) => (
-              <Card key={index} className="bg-surface-2 border-white/10 p-8">
-                <CardContent className="p-0">
-                  <blockquote className="text-foreground mb-6 italic">
-                    "{testimonial.quote}"
-                  </blockquote>
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-primary to-secondary rounded-full flex items-center justify-center">
-                      <span className="text-white text-sm font-semibold">
-                        {testimonial.author.split(' ').map(n => n[0]).join('')}
-                      </span>
-                    </div>
-                    <div>
-                      <p className="text-foreground font-semibold">{testimonial.author}</p>
-                      <p className="text-foreground-muted text-sm">{testimonial.title}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+            ].map((item, index) => (
+              <div key={index} className="text-center p-8">
+                <p className="text-5xl font-bold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent mb-2 font-display">
+                  {item.stat}
+                </p>
+                <p className="text-lg font-semibold text-foreground mb-3 font-display">{item.label}</p>
+                <p className="text-foreground-muted font-body">{item.description}</p>
+              </div>
             ))}
           </div>
         </div>
@@ -303,64 +336,77 @@ export default function Landing() {
 
       {/* CTA Section */}
       <section className="py-24 relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-secondary/10"></div>
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-secondary/5"></div>
+        <div className="vault-ring w-[500px] h-[500px] top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"></div>
+
         <div className="relative max-w-4xl mx-auto px-6 lg:px-8 text-center">
-          <h2 className="text-4xl lg:text-6xl font-bold text-foreground mb-8">
-            Ready to Transform Your
-            <span className="bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent"> Health Intelligence?</span>
+          <div className="inline-flex items-center space-x-2 bg-primary-light border border-primary/20 rounded-full px-4 py-2 mb-8">
+            <Heart className="h-4 w-4 text-primary" />
+            <span className="text-sm font-medium text-primary font-body">Join the Waitlist</span>
+          </div>
+
+          <h2 className="text-foreground mb-8">
+            Ready to Take Control of
+            <br />
+            <span className="bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+              Your Health Journey?
+            </span>
           </h2>
-          <p className="text-xl text-foreground-muted mb-12 leading-relaxed max-w-2xl mx-auto">
-            Join thousands who've discovered what AI can reveal about their health. Get personalized insights and make smarter healthcare decisions.
+
+          <p className="text-xl text-foreground-muted mb-12 leading-relaxed max-w-2xl mx-auto font-body">
+            Be among the first to experience a calmer, more organized approach to managing your health. Join our waitlist today.
           </p>
-          
+
           <div className="flex flex-col sm:flex-row gap-6 justify-center items-center mb-12">
             <Button
               size="lg"
               onClick={() => handleGetStarted('cta_section')}
-              className="bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90 font-medium text-lg px-8 py-4 rounded-xl group"
+              className="btn-sanctuary text-lg px-10 py-6 group"
             >
               Reserve Your Spot
               <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
             </Button>
           </div>
 
-          <div className="flex items-center justify-center space-x-8 text-foreground-muted">
+          <div className="flex items-center justify-center flex-wrap gap-6 text-foreground-muted">
             <div className="flex items-center space-x-2">
               <CheckCircle className="h-4 w-4 text-primary" />
-              <span className="text-sm">Free to start</span>
+              <span className="text-sm font-body">Free to start</span>
             </div>
             <div className="flex items-center space-x-2">
               <Lock className="h-4 w-4 text-primary" />
-              <span className="text-sm">100% Private</span>
+              <span className="text-sm font-body">Privacy guaranteed</span>
             </div>
             <div className="flex items-center space-x-2">
-              <Brain className="h-4 w-4 text-primary" />
-              <span className="text-sm">AI-Powered</span>
+              <Heart className="h-4 w-4 text-primary" />
+              <span className="text-sm font-body">Made with care</span>
             </div>
           </div>
         </div>
       </section>
 
       {/* Footer */}
-      <footer className="py-16 bg-surface-1 border-t border-white/10">
+      <footer className="py-16 bg-surface-1 border-t border-border">
         <div className="max-w-7xl mx-auto px-6 lg:px-8">
           <div className="text-center">
             <div className="flex items-center justify-center mb-6">
-              <div className="p-2 rounded-xl bg-gradient-to-br from-primary to-secondary">
-                <Brain className="text-white h-5 w-5" />
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-secondary flex items-center justify-center shadow-lg shadow-primary/20">
+                <Shield className="text-white h-5 w-5" />
               </div>
-              <span className="ml-3 text-xl font-semibold text-foreground">MediVault</span>
+              <span className="ml-3 text-xl font-semibold text-foreground font-display">MediVault</span>
             </div>
-            <p className="mb-8 leading-relaxed max-w-2xl mx-auto text-foreground-muted">
-              Transforming healthcare through AI-powered insights. Making every health decision smarter and every doctor visit more productive.
+            <p className="mb-8 leading-relaxed max-w-xl mx-auto text-foreground-muted font-body">
+              A calm, secure sanctuary for your health information. Organize your medical journey with peace of mind.
             </p>
-            
-            <div className="flex flex-col md:flex-row justify-between items-center pt-8 border-t border-white/10">
-              <p className="text-foreground-muted">© 2024 MediVault. All rights reserved.</p>
-              <div className="flex items-center mt-4 md:mt-0 space-x-6 text-sm text-foreground-muted">
-                <span>Privacy Policy</span>
-                <span>Terms of Service</span>
-                <span>Contact</span>
+
+            <div className="flex flex-col md:flex-row justify-between items-center pt-8 border-t border-border">
+              <p className="text-foreground-subtle text-sm font-body">
+                &copy; {new Date().getFullYear()} MediVault. All rights reserved.
+              </p>
+              <div className="flex items-center mt-4 md:mt-0 space-x-6 text-sm text-foreground-muted font-body">
+                <a href="#" className="hover:text-primary transition-colors">Privacy Policy</a>
+                <a href="#" className="hover:text-primary transition-colors">Terms of Service</a>
+                <a href="#" className="hover:text-primary transition-colors">Contact</a>
               </div>
             </div>
           </div>

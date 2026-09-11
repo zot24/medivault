@@ -1,9 +1,7 @@
 import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { isUnauthorizedError } from "@/lib/authUtils";
-import { apiRequest } from "@/lib/queryClient";
+import { useSymptoms, useCreateSymptom, useDeleteSymptom } from "@/lib/sdk";
 import Navigation from "@/components/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -36,8 +34,7 @@ import type { Symptom } from "@shared/schema";
 export default function Symptoms() {
   const { toast } = useToast();
   const { isAuthenticated, isLoading } = useAuth();
-  const queryClient = useQueryClient();
-  
+
   const [isAddingSymptom, setIsAddingSymptom] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [editingSymptom, setEditingSymptom] = useState<Symptom | null>(null);
@@ -57,17 +54,12 @@ export default function Symptoms() {
     }
   }, [isAuthenticated, isLoading, toast]);
 
-  const { data: symptoms, isLoading: symptomsLoading } = useQuery<Symptom[]>({
-    queryKey: ["/api/symptoms"],
+  const { data: symptoms, isLoading: symptomsLoading } = useSymptoms(undefined, {
     enabled: isAuthenticated,
   });
 
-  const createSymptomMutation = useMutation({
-    mutationFn: async (symptomData: any) => {
-      await apiRequest("POST", "/api/symptoms", symptomData);
-    },
+  const createSymptomMutation = useCreateSymptom({
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/symptoms"] });
       toast({
         title: "Success",
         description: "Symptom logged successfully",
@@ -75,7 +67,7 @@ export default function Symptoms() {
       setIsAddingSymptom(false);
     },
     onError: (error) => {
-      if (isUnauthorizedError(error)) {
+      if (error.message.includes("401") || error.message.includes("Unauthorized")) {
         toast({
           title: "Session expired",
           description: "Please log in again.",
@@ -94,19 +86,15 @@ export default function Symptoms() {
     },
   });
 
-  const deleteSymptomMutation = useMutation({
-    mutationFn: async (symptomId: number) => {
-      await apiRequest("DELETE", `/api/symptoms/${symptomId}`);
-    },
+  const deleteSymptomMutation = useDeleteSymptom({
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/symptoms"] });
       toast({
         title: "Success",
         description: "Symptom deleted successfully",
       });
     },
     onError: (error) => {
-      if (isUnauthorizedError(error)) {
+      if (error.message.includes("401") || error.message.includes("Unauthorized")) {
         toast({
           title: "Session expired",
           description: "Please log in again.",

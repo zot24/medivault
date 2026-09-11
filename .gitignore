@@ -10,3 +10,10 @@ vite.config.ts.*
 .env.local
 .env.*.local
 Mediqux/
+
+# Expo / beads runtime
+.expo/
+**/.expo/
+.beads/daemon.lock
+.beads/daemon.log
+.beads/daemon.pid

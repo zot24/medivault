@@ -1,78 +1,110 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&family=Outfit:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  /* Modern Dark Theme - Primary Palette */
-  --background: hsl(240, 10%, 4%);
-  --surface-1: hsl(240, 8%, 9%);
-  --surface-2: hsl(240, 6%, 12%);
-  --surface-3: hsl(240, 5%, 15%);
-  
-  /* Text Colors */
-  --foreground: hsl(0, 0%, 98%);
-  --foreground-muted: hsl(220, 10%, 65%);
-  --foreground-subtle: hsl(220, 10%, 45%);
-  
-  /* UI Elements */
-  --border: hsl(240, 6%, 20%);
-  --border-subtle: hsl(240, 6%, 15%);
-  --input: hsl(240, 6%, 12%);
-  
-  /* Brand Colors */
-  --primary: hsl(262, 83%, 58%);
+  /* Sanctuary Modern - Warm, Trustworthy Health Aesthetic */
+
+  /* Sage Green - Primary (healing, calming, natural) */
+  --primary: hsl(152, 32%, 42%);
+  --primary-hover: hsl(152, 32%, 36%);
+  --primary-light: hsl(152, 35%, 92%);
   --primary-foreground: hsl(0, 0%, 100%);
-  --primary-hover: hsl(262, 83%, 65%);
-  
-  --secondary: hsl(199, 89%, 48%);
+
+  /* Deep Teal - Secondary (depth, security) */
+  --secondary: hsl(175, 40%, 32%);
   --secondary-foreground: hsl(0, 0%, 100%);
-  
-  /* Status Colors */
-  --accent: hsl(142, 71%, 45%);
+
+  /* Warm Neutrals */
+  --background: hsl(40, 33%, 98%);
+  --surface-1: hsl(40, 25%, 96%);
+  --surface-2: hsl(40, 20%, 94%);
+  --surface-3: hsl(40, 15%, 91%);
+
+  /* Text - Warm Charcoal (not cold black) */
+  --foreground: hsl(30, 10%, 15%);
+  --foreground-muted: hsl(30, 8%, 45%);
+  --foreground-subtle: hsl(30, 6%, 60%);
+
+  /* Borders - Warm */
+  --border: hsl(35, 15%, 88%);
+  --border-subtle: hsl(35, 12%, 92%);
+  --input: hsl(40, 20%, 96%);
+
+  /* Accent Colors */
+  --accent: hsl(175, 45%, 38%);
   --accent-foreground: hsl(0, 0%, 100%);
-  --warning: hsl(38, 92%, 50%);
-  --warning-foreground: hsl(0, 0%, 100%);
-  --destructive: hsl(0, 84%, 60%);
+
+  /* Status Colors - Muted, warm versions */
+  --warning: hsl(38, 70%, 50%);
+  --warning-foreground: hsl(30, 10%, 15%);
+  --destructive: hsl(0, 55%, 55%);
   --destructive-foreground: hsl(0, 0%, 100%);
-  
+  --success: hsl(152, 45%, 42%);
+  --success-foreground: hsl(0, 0%, 100%);
+
+  /* Rose accent for gentle alerts */
+  --rose: hsl(350, 45%, 65%);
+  --rose-light: hsl(350, 50%, 95%);
+
   /* Component Specific */
-  --card: hsl(240, 8%, 9%);
-  --card-foreground: hsl(0, 0%, 98%);
-  --popover: hsl(240, 8%, 9%);
-  --popover-foreground: hsl(0, 0%, 98%);
-  --muted: hsl(240, 6%, 12%);
-  --muted-foreground: hsl(220, 10%, 65%);
-  
-  --ring: hsl(262, 83%, 58%);
+  --card: hsl(0, 0%, 100%);
+  --card-foreground: hsl(30, 10%, 15%);
+  --popover: hsl(0, 0%, 100%);
+  --popover-foreground: hsl(30, 10%, 15%);
+  --muted: hsl(40, 20%, 94%);
+  --muted-foreground: hsl(30, 8%, 45%);
+
+  --ring: hsl(152, 32%, 42%);
   --radius: 1rem;
-  
-  /* Legacy Support */
-  --medical-blue: hsl(262, 83%, 58%);
-  --health-green: hsl(142, 71%, 45%);
-  --trust-purple: hsl(262, 83%, 58%);
-  --warm-amber: hsl(38, 92%, 50%);
+
+  /* Shadow Colors - Warm */
+  --shadow-color: 30 15% 30%;
+
+  /* Chart Colors */
+  --chart-1: hsl(152, 32%, 42%);
+  --chart-2: hsl(175, 40%, 32%);
+  --chart-3: hsl(38, 70%, 50%);
+  --chart-4: hsl(350, 45%, 65%);
+  --chart-5: hsl(200, 35%, 55%);
 }
 
-.light {
-  --background: hsl(0, 0%, 100%);
-  --surface-1: hsl(0, 0%, 98%);
-  --surface-2: hsl(0, 0%, 96%);
-  --surface-3: hsl(0, 0%, 94%);
-  
-  --foreground: hsl(240, 10%, 4%);
-  --foreground-muted: hsl(220, 10%, 35%);
-  --foreground-subtle: hsl(220, 10%, 55%);
-  
-  --border: hsl(240, 6%, 90%);
-  --border-subtle: hsl(240, 6%, 95%);
-  --input: hsl(240, 6%, 96%);
-  
-  --card: hsl(0, 0%, 100%);
-  --card-foreground: hsl(240, 10%, 4%);
-  --popover: hsl(0, 0%, 100%);
-  --popover-foreground: hsl(240, 10%, 4%);
-  --muted: hsl(240, 6%, 96%);
-  --muted-foreground: hsl(220, 10%, 35%);
+/* Dark Mode - Deep Forest Theme */
+.dark {
+  --primary: hsl(152, 35%, 55%);
+  --primary-hover: hsl(152, 35%, 62%);
+  --primary-light: hsl(152, 30%, 15%);
+  --primary-foreground: hsl(30, 10%, 10%);
+
+  --secondary: hsl(175, 35%, 50%);
+  --secondary-foreground: hsl(30, 10%, 10%);
+
+  --background: hsl(160, 15%, 8%);
+  --surface-1: hsl(158, 12%, 11%);
+  --surface-2: hsl(156, 10%, 14%);
+  --surface-3: hsl(154, 8%, 18%);
+
+  --foreground: hsl(40, 20%, 95%);
+  --foreground-muted: hsl(40, 12%, 65%);
+  --foreground-subtle: hsl(40, 8%, 50%);
+
+  --border: hsl(155, 10%, 20%);
+  --border-subtle: hsl(155, 8%, 16%);
+  --input: hsl(156, 10%, 14%);
+
+  --accent: hsl(175, 40%, 55%);
+  --accent-foreground: hsl(30, 10%, 10%);
+
+  --card: hsl(158, 12%, 11%);
+  --card-foreground: hsl(40, 20%, 95%);
+  --popover: hsl(158, 12%, 11%);
+  --popover-foreground: hsl(40, 20%, 95%);
+  --muted: hsl(156, 10%, 14%);
+  --muted-foreground: hsl(40, 12%, 65%);
+
+  --shadow-color: 160 20% 5%;
 }
 
 @layer base {
@@ -82,54 +114,60 @@
 
   html {
     @apply bg-background text-foreground;
+    scroll-behavior: smooth;
   }
 
   html.dark {
     color-scheme: dark;
   }
 
-  html.light {
+  html.light, html:not(.dark) {
     color-scheme: light;
   }
 
   body {
-    @apply bg-background text-foreground font-sans antialiased;
-    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Outfit', system-ui, -apple-system, sans-serif;
     font-feature-settings: "rlig" 1, "calt" 1;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Modern Typography Scale */
+  /* Sanctuary Typography Scale */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Fraunces', Georgia, serif;
+    font-optical-sizing: auto;
+  }
+
   h1 {
-    @apply text-4xl md:text-6xl font-semibold tracking-tight leading-tight;
-    color: var(--foreground);
+    @apply text-4xl md:text-6xl font-semibold tracking-tight leading-[1.1];
+    font-variation-settings: "opsz" 72;
   }
 
   h2 {
     @apply text-3xl md:text-5xl font-semibold tracking-tight leading-tight;
-    color: var(--foreground);
+    font-variation-settings: "opsz" 48;
   }
 
   h3 {
     @apply text-2xl md:text-3xl font-semibold tracking-tight;
-    color: var(--foreground);
+    font-variation-settings: "opsz" 32;
   }
 
   h4 {
     @apply text-xl font-semibold;
-    color: var(--foreground);
+    font-variation-settings: "opsz" 24;
   }
 
   h5 {
     @apply text-lg font-semibold;
-    color: var(--foreground);
+    font-variation-settings: "opsz" 18;
   }
 
   h6 {
     @apply text-base font-semibold;
-    color: var(--foreground);
+    font-variation-settings: "opsz" 14;
   }
 
   p {
@@ -137,52 +175,105 @@
     color: var(--foreground-muted);
   }
 
-  /* Focus styles */
+  /* Focus styles - Warm ring */
   button:focus-visible,
   input:focus-visible,
   textarea:focus-visible,
-  select:focus-visible {
-    @apply outline-none ring-2;
-    ring-color: hsl(262, 83%, 58%, 0.5);
+  select:focus-visible,
+  a:focus-visible {
+    @apply outline-none ring-2 ring-offset-2;
+    ring-color: var(--primary);
+    ring-offset-color: var(--background);
   }
 
-  /* Selection styles */
+  /* Selection - Sage tint */
   ::selection {
-    background: hsl(262, 83%, 58%, 0.2);
+    background: hsl(152, 35%, 42%, 0.2);
     color: var(--foreground);
   }
 }
 
 @layer components {
-  /* Modern Card Component */
-  .card-modern {
-    @apply bg-white/5 border border-white/10 rounded-2xl backdrop-blur-sm;
-    @apply hover:border-white/20 transition-all duration-200;
+  /* Sanctuary Card - Warm shadows, soft edges */
+  .card-sanctuary {
+    @apply bg-card rounded-2xl;
+    box-shadow:
+      0 1px 2px hsl(var(--shadow-color) / 0.04),
+      0 4px 8px hsl(var(--shadow-color) / 0.04),
+      0 8px 16px hsl(var(--shadow-color) / 0.02);
+    border: 1px solid var(--border);
   }
 
-  /* Modern Button Variants */
-  .btn-primary {
-    @apply bg-primary hover:bg-primary-hover text-primary-foreground;
-    @apply px-6 py-2.5 rounded-xl font-medium transition-all duration-200;
-    @apply hover:scale-[1.02] active:scale-[0.98];
+  .card-sanctuary:hover {
+    box-shadow:
+      0 2px 4px hsl(var(--shadow-color) / 0.06),
+      0 8px 16px hsl(var(--shadow-color) / 0.06),
+      0 16px 32px hsl(var(--shadow-color) / 0.04);
   }
 
+  /* Vault Card - Layered protection aesthetic */
+  .card-vault {
+    @apply bg-card rounded-2xl relative overflow-hidden;
+    box-shadow:
+      0 1px 3px hsl(var(--shadow-color) / 0.05),
+      0 6px 16px hsl(var(--shadow-color) / 0.05);
+    border: 1px solid var(--border);
+  }
+
+  .card-vault::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--primary), var(--secondary));
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .card-vault:hover::before {
+    opacity: 1;
+  }
+
+  /* Primary Button - Sage gradient */
+  .btn-sanctuary {
+    @apply px-6 py-3 rounded-xl font-medium transition-all duration-200;
+    background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+    color: white;
+    box-shadow:
+      0 2px 8px hsl(152, 32%, 42%, 0.3),
+      inset 0 1px 0 hsl(0, 0%, 100%, 0.1);
+  }
+
+  .btn-sanctuary:hover {
+    transform: translateY(-1px);
+    box-shadow:
+      0 4px 16px hsl(152, 32%, 42%, 0.4),
+      inset 0 1px 0 hsl(0, 0%, 100%, 0.15);
+  }
+
+  .btn-sanctuary:active {
+    transform: translateY(0);
+  }
+
+  /* Ghost Button */
   .btn-ghost {
-    @apply bg-white/5 hover:bg-white/10 border border-white/10;
-    @apply px-6 py-2.5 rounded-xl font-medium transition-all duration-200;
-    @apply hover:border-white/20;
+    @apply px-6 py-3 rounded-xl font-medium transition-all duration-200;
+    @apply bg-transparent border border-border;
   }
 
-  .btn-minimal {
-    @apply hover:bg-white/5 px-4 py-2 rounded-lg;
-    @apply transition-all duration-200;
+  .btn-ghost:hover {
+    background-color: var(--surface-1);
+    border-color: hsl(152, 32%, 42%, 0.3);
   }
 
-  /* Modern Input */
-  .input-modern {
-    @apply bg-white/5 border border-white/10 rounded-xl px-4 py-3;
-    @apply placeholder:text-white/40 transition-all duration-200;
-    @apply focus:border-primary/50 focus:bg-white/8;
+  /* Input - Warm styling */
+  .input-sanctuary {
+    @apply bg-surface-1 border border-border rounded-xl px-4 py-3;
+    @apply placeholder:text-foreground-subtle transition-all duration-200;
+    @apply focus:border-primary focus:bg-card;
+    box-shadow: inset 0 1px 2px hsl(var(--shadow-color) / 0.03);
   }
 
   /* Surface layers */
@@ -198,16 +289,55 @@
     background-color: var(--surface-3);
   }
 
-  /* Navigation */
-  .nav-blur {
+  /* Navigation - Frosted glass with warmth */
+  .nav-sanctuary {
     @apply backdrop-blur-xl border-b;
-    background: hsla(240, 10%, 4%, 0.8);
-    border-color: rgba(255, 255, 255, 0.1);
+    background: hsl(40, 33%, 98%, 0.85);
+    border-color: var(--border);
   }
 
-  .light .nav-blur {
-    background: hsla(0, 0%, 100%, 0.9);
-    border-color: rgba(0, 0, 0, 0.1);
+  .dark .nav-sanctuary {
+    background: hsl(160, 15%, 8%, 0.9);
+    border-color: var(--border);
+  }
+
+  /* Badge styles */
+  .badge-sage {
+    @apply px-3 py-1 rounded-full text-xs font-medium;
+    background: var(--primary-light);
+    color: var(--primary);
+  }
+
+  .badge-teal {
+    @apply px-3 py-1 rounded-full text-xs font-medium;
+    background: hsl(175, 45%, 92%);
+    color: var(--secondary);
+  }
+
+  .dark .badge-sage {
+    background: hsl(152, 30%, 15%);
+    color: hsl(152, 35%, 60%);
+  }
+
+  .dark .badge-teal {
+    background: hsl(175, 30%, 15%);
+    color: hsl(175, 40%, 60%);
+  }
+
+  /* Vault door decorative element */
+  .vault-ring {
+    @apply absolute rounded-full;
+    border: 2px solid hsl(152, 32%, 42%, 0.1);
+    pointer-events: none;
+  }
+
+  /* Organic blob background */
+  .blob-bg {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.4;
+    pointer-events: none;
   }
 }
 
@@ -225,39 +355,64 @@
     border-color: var(--border-subtle);
   }
 
-  /* Modern gradients */
-  .gradient-radial {
-    background: radial-gradient(circle at center, hsl(262, 83%, 58%) 0%, hsl(240, 10%, 4%) 100%);
+  /* Sanctuary gradients */
+  .gradient-sanctuary {
+    background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
   }
 
-  .gradient-primary {
-    background: linear-gradient(135deg, hsl(262, 83%, 58%) 0%, hsl(199, 89%, 48%) 100%);
+  .gradient-sanctuary-light {
+    background: linear-gradient(135deg, var(--primary-light) 0%, hsl(175, 45%, 92%) 100%);
   }
 
-  .gradient-surface {
-    background: linear-gradient(135deg, var(--surface-1) 0%, var(--surface-2) 100%);
+  .gradient-warm {
+    background: linear-gradient(135deg, hsl(40, 33%, 98%) 0%, hsl(45, 30%, 95%) 100%);
   }
 
-  /* Glass effect */
-  .glass {
-    @apply bg-white/5 backdrop-blur-md border border-white/10;
+  /* Warm shadows */
+  .shadow-sanctuary {
+    box-shadow:
+      0 1px 2px hsl(var(--shadow-color) / 0.04),
+      0 4px 8px hsl(var(--shadow-color) / 0.04),
+      0 8px 16px hsl(var(--shadow-color) / 0.02);
   }
 
-  .glass-strong {
-    @apply bg-white/10 backdrop-blur-xl border border-white/20;
+  .shadow-sanctuary-lg {
+    box-shadow:
+      0 2px 4px hsl(var(--shadow-color) / 0.05),
+      0 8px 16px hsl(var(--shadow-color) / 0.05),
+      0 24px 48px hsl(var(--shadow-color) / 0.05);
+  }
+
+  /* Subtle grain texture overlay */
+  .grain-overlay {
+    position: relative;
+  }
+
+  .grain-overlay::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    opacity: 0.015;
+    pointer-events: none;
+    mix-blend-mode: overlay;
   }
 
   /* Animations */
   .animate-fade-in {
-    animation: fade-in 0.5s ease-out forwards;
+    animation: fade-in 0.6s ease-out forwards;
   }
 
   .animate-slide-up {
-    animation: slide-up 0.6s ease-out forwards;
+    animation: slide-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   }
 
   .animate-scale-in {
-    animation: scale-in 0.4s ease-out forwards;
+    animation: scale-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
   }
 
   @keyframes fade-in {
@@ -266,45 +421,59 @@
   }
 
   @keyframes slide-up {
-    from { 
-      opacity: 0; 
-      transform: translateY(20px); 
+    from {
+      opacity: 0;
+      transform: translateY(24px);
     }
-    to { 
-      opacity: 1; 
-      transform: translateY(0); 
+    to {
+      opacity: 1;
+      transform: translateY(0);
     }
   }
 
   @keyframes scale-in {
-    from { 
-      opacity: 0; 
-      transform: scale(0.95); 
+    from {
+      opacity: 0;
+      transform: scale(0.96);
     }
-    to { 
-      opacity: 1; 
-      transform: scale(1); 
+    to {
+      opacity: 1;
+      transform: scale(1);
     }
   }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-12px); }
+  }
+
+  /* Staggered animation delays */
+  .delay-100 { animation-delay: 100ms; }
+  .delay-200 { animation-delay: 200ms; }
+  .delay-300 { animation-delay: 300ms; }
+  .delay-400 { animation-delay: 400ms; }
+  .delay-500 { animation-delay: 500ms; }
 }
 
-/* Modern Scrollbar */
+/* Warm Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
   background: var(--surface-1);
+  border-radius: 5px;
 }
 
 ::-webkit-scrollbar-thumb {
   background: var(--border);
-  border-radius: 4px;
+  border-radius: 5px;
+  border: 2px solid var(--surface-1);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--border);
-  opacity: 0.8;
+  background: var(--foreground-subtle);
 }
 
 /* Firefox scrollbar */
@@ -333,4 +502,14 @@ html {
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* Fraunces font variable settings */
+.font-display {
+  font-family: 'Fraunces', Georgia, serif;
+  font-optical-sizing: auto;
+}
+
+.font-body {
+  font-family: 'Outfit', system-ui, sans-serif;
 }
