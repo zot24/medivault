@@ -10,6 +10,9 @@ import type {
   InsertSymptom,
   LoginResponse,
   RegisterData,
+  ShareTtl,
+  MintedShare,
+  ListedShare,
 } from './types';
 
 export interface SDKConfig {
@@ -254,6 +257,26 @@ export class MediVaultClient {
      */
     getFileUrl: (filename: string): string => {
       return `${this.baseUrl}/api/files/${filename}`;
+    },
+
+    createShare: async (
+      id: number,
+      body: { ttl: ShareTtl; label?: string },
+    ): Promise<ApiResult<MintedShare>> => {
+      return this.request<MintedShare>('POST', `/api/documents/${id}/shares`, {
+        body,
+      });
+    },
+
+    listShares: async (id: number): Promise<ApiResult<ListedShare[]>> => {
+      return this.request<ListedShare[]>('GET', `/api/documents/${id}/shares`);
+    },
+
+    revokeShare: async (
+      id: number,
+      shareId: number,
+    ): Promise<ApiResult<void>> => {
+      return this.request<void>('DELETE', `/api/documents/${id}/shares/${shareId}`);
     },
   };
 

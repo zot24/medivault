@@ -92,6 +92,45 @@ export interface RegisterData {
 
 export type DocumentType = 'lab_result' | 'prescription' | 'x_ray' | 'consultation' | 'other';
 
+export type ShareTtl = '1h' | '24h' | '7d';
+
+export type MintedShare = {
+  id: number;
+  documentId: number;
+  label: string | null;
+  createdAt: string;
+  expiresAt: string;
+  token: string;
+  path: string;
+};
+
+export type ListedShare =
+  | {
+      id: number;
+      documentId: number;
+      label: string | null;
+      createdAt: string;
+      expiresAt: string;
+      life: 'live';
+    }
+  | {
+      id: number;
+      documentId: number;
+      label: string | null;
+      createdAt: string;
+      expiresAt: string;
+      life: 'expired';
+    }
+  | {
+      id: number;
+      documentId: number;
+      label: string | null;
+      createdAt: string;
+      expiresAt: string;
+      revokedAt: string;
+      life: 'revoked';
+    };
+
 export const DOCUMENT_TYPES: { value: DocumentType; label: string }[] = [
   { value: 'lab_result', label: 'Lab Result' },
   { value: 'prescription', label: 'Prescription' },
