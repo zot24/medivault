@@ -18,7 +18,10 @@ import { setupVite, serveStatic, log } from "./vite";
     res.on("finish", () => {
       const duration = Date.now() - start;
       if (path.startsWith("/api")) {
-        let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+        const loggedPath = path.startsWith("/api/s/")
+          ? "/api/s/[redacted]"
+          : path;
+        let logLine = `${req.method} ${loggedPath} ${res.statusCode} in ${duration}ms`;
         if (capturedJsonResponse) {
           logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
         }

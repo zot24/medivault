@@ -2,15 +2,22 @@ import {
   users,
   medicalDocuments,
   symptoms,
+  shareLinks,
   type User,
   type UpsertUser,
   type MedicalDocument,
   type InsertMedicalDocument,
+  type ShareLink,
   type Symptom,
   type InsertSymptom,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, ilike, or } from "drizzle-orm";
+import type {
+  RevokeResult,
+  ShareLinkRow,
+  TokenHash,
+} from "./share-links";
 
 // Interface for storage operations
 export interface IStorage {
@@ -27,6 +34,15 @@ export interface IStorage {
   searchMedicalDocuments(userId: string, query: string): Promise<MedicalDocument[]>;
   getMedicalDocumentsByType(userId: string, type: string): Promise<MedicalDocument[]>;
   deleteMedicalDocument(id: number, userId: string): Promise<boolean>;
+
+  insertShareLink(row: Omit<ShareLinkRow, "id" | "createdAt">): Promise<ShareLinkRow>;
+  listShareLinksByDocument(createdBy: string, documentId: number): Promise<ShareLinkRow[]>;
+  getShareLinkByTokenHash(tokenHash: TokenHash): Promise<ShareLinkRow | undefined>;
+  revokeShareLink(input: {
+    createdBy: string;
+    documentId: number;
+    shareId: number;
+  }): Promise<RevokeResult>;
   
   // Symptom tracking operations
   createSymptom(symptom: InsertSymptom): Promise<Symptom>;
@@ -35,6 +51,19 @@ export interface IStorage {
   getSymptomsByName(userId: string, symptomName: string): Promise<Symptom[]>;
   updateSymptom(id: number, userId: string, updates: Partial<InsertSymptom>): Promise<Symptom | undefined>;
   deleteSymptom(id: number, userId: string): Promise<boolean>;
+}
+
+function asShareLinkRow(row: ShareLink): ShareLinkRow {
+  return {
+    id: row.id,
+    tokenHash: row.tokenHash as TokenHash,
+    documentId: row.documentId,
+    createdBy: row.createdBy,
+    expiresAt: row.expiresAt,
+    revokedAt: row.revokedAt,
+    label: row.label,
+    createdAt: row.createdAt ?? new Date(),
+  };
 }
 
 export class DatabaseStorage implements IStorage {
@@ -141,6 +170,77 @@ export class DatabaseStorage implements IStorage {
         eq(medicalDocuments.userId, userId)
       ));
     return (result.rowCount || 0) > 0;
+  }
+
+  async insertShareLink(
+    row: Omit<ShareLinkRow, "id" | "createdAt">,
+  ): Promise<ShareLinkRow> {
+    const [created] = await db
+      .insert(shareLinks)
+      .values({
+        tokenHash: row.tokenHash,
+        documentId: row.documentId,
+        createdBy: row.createdBy,
+        expiresAt: row.expiresAt,
+        revokedAt: row.revokedAt,
+        label: row.label,
+      })
+      .returning();
+    return asShareLinkRow(created);
+  }
+
+  async listShareLinksByDocument(
+    createdBy: string,
+    documentId: number,
+  ): Promise<ShareLinkRow[]> {
+    const rows = await db
+      .select()
+      .from(shareLinks)
+      .where(
+        and(
+          eq(shareLinks.createdBy, createdBy),
+          eq(shareLinks.documentId, documentId),
+        ),
+      )
+      .orderBy(desc(shareLinks.createdAt));
+    return rows.map(asShareLinkRow);
+  }
+
+  async getShareLinkByTokenHash(
+    tokenHash: TokenHash,
+  ): Promise<ShareLinkRow | undefined> {
+    const [row] = await db
+      .select()
+      .from(shareLinks)
+      .where(eq(shareLinks.tokenHash, tokenHash));
+    return row ? asShareLinkRow(row) : undefined;
+  }
+
+  async revokeShareLink(input: {
+    createdBy: string;
+    documentId: number;
+    shareId: number;
+  }): Promise<RevokeResult> {
+    const [row] = await db
+      .select()
+      .from(shareLinks)
+      .where(
+        and(
+          eq(shareLinks.id, input.shareId),
+          eq(shareLinks.documentId, input.documentId),
+          eq(shareLinks.createdBy, input.createdBy),
+        ),
+      );
+    if (!row) {
+      return "not_found";
+    }
+    if (row.revokedAt == null) {
+      await db
+        .update(shareLinks)
+        .set({ revokedAt: new Date() })
+        .where(eq(shareLinks.id, row.id));
+    }
+    return "revoked";
   }
 
   // Symptom tracking operations

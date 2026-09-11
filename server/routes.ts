@@ -6,7 +6,13 @@ import { createDocumentFiles } from "./document-files";
 import {
   createObjectStoreFromEnv,
   ObjectStoreConfigError,
+  type ObjectStore,
 } from "./object-store";
+import {
+  createShareLinks,
+  createShareBodySchema,
+  parseRawToken,
+} from "./share-links";
 import { insertSymptomSchema } from "@shared/schema";
 import { z } from "zod";
 
@@ -33,14 +39,25 @@ const upload = multer({
   },
 });
 
+let objectStore: ObjectStore | undefined;
 let documentFiles:
   | ReturnType<typeof createDocumentFiles>
   | undefined;
+let shareLinks:
+  | ReturnType<typeof createShareLinks>
+  | undefined;
+
+function getObjectStore() {
+  if (!objectStore) {
+    objectStore = createObjectStoreFromEnv(process.env);
+  }
+  return objectStore;
+}
 
 function getDocumentFiles() {
   if (!documentFiles) {
     documentFiles = createDocumentFiles({
-      objects: createObjectStoreFromEnv(process.env),
+      objects: getObjectStore(),
       documents: {
         create: (document) => storage.createMedicalDocument(document),
         findByFilePath: (userId, filePath) =>
@@ -51,6 +68,26 @@ function getDocumentFiles() {
     });
   }
   return documentFiles;
+}
+
+function getShareLinks() {
+  if (!shareLinks) {
+    shareLinks = createShareLinks({
+      objects: getObjectStore(),
+      documents: {
+        get: (id, userId) => storage.getMedicalDocument(id, userId),
+      },
+      shares: {
+        insert: (row) => storage.insertShareLink(row),
+        listByDocument: (createdBy, documentId) =>
+          storage.listShareLinksByDocument(createdBy, documentId),
+        findByTokenHash: (tokenHash) =>
+          storage.getShareLinkByTokenHash(tokenHash),
+        revoke: (input) => storage.revokeShareLink(input),
+      },
+    });
+  }
+  return shareLinks;
 }
 
 export async function registerRoutes(app: Express): Promise<void> {
@@ -170,6 +207,94 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
       console.error("Error deleting document:", error);
       res.status(500).json({ message: "Failed to delete document" });
+    }
+  });
+
+  app.post("/api/documents/:id/shares", isAuthenticated, async (req: any, res) => {
+    try {
+      const body = createShareBodySchema.safeParse(req.body);
+      if (!body.success) {
+        return res.status(400).json({ message: "Validation error" });
+      }
+      const minted = await getShareLinks().mint({
+        userId: req.user.id,
+        documentId: parseInt(req.params.id, 10),
+        ttl: body.data.ttl,
+        label: body.data.label ?? null,
+      });
+      if (minted.kind === "not_owner") {
+        return res.status(404).json({ message: "Document not found" });
+      }
+      return res.status(201).json(minted.share);
+    } catch (error) {
+      console.error("Error creating share:", error);
+      res.status(500).json({ message: "Failed to create share" });
+    }
+  });
+
+  app.get("/api/documents/:id/shares", isAuthenticated, async (req: any, res) => {
+    try {
+      const listed = await getShareLinks().list({
+        userId: req.user.id,
+        documentId: parseInt(req.params.id, 10),
+      });
+      if (listed === "not_owner") {
+        return res.status(404).json({ message: "Document not found" });
+      }
+      return res.json(listed);
+    } catch (error) {
+      console.error("Error listing shares:", error);
+      res.status(500).json({ message: "Failed to list shares" });
+    }
+  });
+
+  app.delete(
+    "/api/documents/:id/shares/:shareId",
+    isAuthenticated,
+    async (req: any, res) => {
+      try {
+        const result = await getShareLinks().revoke({
+          userId: req.user.id,
+          documentId: parseInt(req.params.id, 10),
+          shareId: parseInt(req.params.shareId, 10),
+        });
+        if (result === "not_found") {
+          return res.status(404).json({ message: "Share not found" });
+        }
+        return res.status(204).end();
+      } catch (error) {
+        console.error("Error revoking share:", error);
+        res.status(500).json({ message: "Failed to revoke share" });
+      }
+    },
+  );
+
+  app.get("/api/s/:token", async (req, res) => {
+    try {
+      const token = parseRawToken(req.params.token);
+      if (!token) {
+        return res.status(404).json({ message: "Not found" });
+      }
+      const opened = await getShareLinks().openByToken(token);
+      if (opened.kind === "unknown") {
+        return res.status(404).json({ message: "Not found" });
+      }
+      if (opened.kind === "dead") {
+        return res.status(410).json({ message: "Gone" });
+      }
+      res.setHeader("Content-Type", opened.file.mimeType);
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="${opened.file.fileName.replace(/"/g, "")}"`,
+      );
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.send(opened.file.bytes);
+    } catch (error) {
+      if (error instanceof ObjectStoreConfigError) {
+        return res.status(503).json({ message: error.message });
+      }
+      console.error("Error opening share:", error);
+      res.status(500).json({ message: "Failed to open share" });
     }
   });
 
