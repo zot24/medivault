@@ -227,7 +227,7 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
             Upload Medical Document
           </DialogTitle>
           <DialogDescription>
-            Upload and organize your medical records securely. All files are encrypted and HIPAA compliant.
+            Upload and organize your medical records. Only your account can open the files you add.
           </DialogDescription>
         </DialogHeader>
 

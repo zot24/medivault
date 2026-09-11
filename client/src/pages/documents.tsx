@@ -355,7 +355,7 @@ export default function Documents() {
             <div className="flex items-center justify-center flex-wrap gap-6 mt-8 text-foreground-muted">
               <div className="flex items-center space-x-2">
                 <Shield className="h-4 w-4 text-primary" />
-                <span className="text-sm font-body">End-to-end encrypted</span>
+                <span className="text-sm font-body">Private to your account</span>
               </div>
               <div className="flex items-center space-x-2">
                 <Leaf className="h-4 w-4 text-primary" />

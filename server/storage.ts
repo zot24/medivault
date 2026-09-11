@@ -23,6 +23,7 @@ export interface IStorage {
   createMedicalDocument(document: InsertMedicalDocument): Promise<MedicalDocument>;
   getMedicalDocuments(userId: string, limit?: number): Promise<MedicalDocument[]>;
   getMedicalDocument(id: number, userId: string): Promise<MedicalDocument | undefined>;
+  getMedicalDocumentByFilePath(userId: string, filePath: string): Promise<MedicalDocument | undefined>;
   searchMedicalDocuments(userId: string, query: string): Promise<MedicalDocument[]>;
   getMedicalDocumentsByType(userId: string, type: string): Promise<MedicalDocument[]>;
   deleteMedicalDocument(id: number, userId: string): Promise<boolean>;
@@ -90,6 +91,17 @@ export class DatabaseStorage implements IStorage {
       .where(and(
         eq(medicalDocuments.id, id),
         eq(medicalDocuments.userId, userId)
+      ));
+    return document;
+  }
+
+  async getMedicalDocumentByFilePath(userId: string, filePath: string): Promise<MedicalDocument | undefined> {
+    const [document] = await db
+      .select()
+      .from(medicalDocuments)
+      .where(and(
+        eq(medicalDocuments.userId, userId),
+        eq(medicalDocuments.filePath, filePath)
       ));
     return document;
   }

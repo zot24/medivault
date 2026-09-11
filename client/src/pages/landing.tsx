@@ -186,10 +186,9 @@ export default function Landing() {
                   </div>
                   <div className="space-y-3">
                     {[
-                      { label: "End-to-end encryption", checked: true },
+                      { label: "Sign-in required to open files", checked: true },
                       { label: "You own your data", checked: true },
-                      { label: "No data selling", checked: true },
-                      { label: "HIPAA compliant", checked: true }
+                      { label: "No data selling", checked: true }
                     ].map((item, index) => (
                       <div key={index} className="flex items-center space-x-3">
                         <div className="w-5 h-5 rounded-full bg-primary/10 flex items-center justify-center">
@@ -240,7 +239,7 @@ export default function Landing() {
               {
                 icon: Shield,
                 title: "Protected Always",
-                description: "Your health data deserves the highest protection. Bank-level encryption ensures your information stays private and secure.",
+                description: "Your files stay in your account. Opening a file checks that the document belongs to you.",
                 color: "primary"
               },
               {
@@ -307,9 +306,9 @@ export default function Landing() {
           <div className="grid md:grid-cols-3 gap-8">
             {[
               {
-                stat: "256-bit",
-                label: "AES Encryption",
-                description: "Bank-level security protects every piece of your health data"
+                stat: "Owner",
+                label: "Checked downloads",
+                description: "Opening a file succeeds only if the document belongs to your account"
               },
               {
                 stat: "Zero",

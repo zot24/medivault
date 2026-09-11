@@ -125,7 +125,7 @@ export default function Login() {
         </Card>
 
         <p className="text-center text-xs text-foreground-muted mt-6">
-          Your health data is encrypted and secure
+          Sign in to open records in your account
         </p>
       </div>
     </div>
