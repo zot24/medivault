@@ -1,4 +1,5 @@
 import { format } from "date-fns";
+import { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,9 +18,11 @@ import {
   User,
   Building,
   ChevronRight,
-  Shield
+  Shield,
+  Share2
 } from "lucide-react";
 import type { MedicalDocument } from "@shared/schema";
+import ShareDialog from "@/components/share-dialog";
 
 interface DocumentCardProps {
   document: MedicalDocument;
@@ -27,6 +30,7 @@ interface DocumentCardProps {
 }
 
 export default function DocumentCard({ document: medicalDocument, onDelete }: DocumentCardProps) {
+  const [shareOpen, setShareOpen] = useState(false);
   const getDocumentTypeStyle = (type: string) => {
     switch (type) {
       case "lab_result":
@@ -105,6 +109,14 @@ export default function DocumentCard({ document: medicalDocument, onDelete }: Do
               <DropdownMenuItem onClick={handleDownload} className="text-foreground hover:bg-surface-1 rounded-lg" data-testid={`button-download-${medicalDocument.id}`}>
                 <Download className="mr-2 h-4 w-4" />
                 <span className="font-body">Download</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setShareOpen(true)}
+                className="text-foreground hover:bg-surface-1 rounded-lg"
+                data-testid={`button-share-${medicalDocument.id}`}
+              >
+                <Share2 className="mr-2 h-4 w-4" />
+                <span className="font-body">Share</span>
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => onDelete(medicalDocument.id)}
@@ -196,6 +208,11 @@ export default function DocumentCard({ document: medicalDocument, onDelete }: Do
           </Button>
         </div>
       </CardContent>
+      <ShareDialog
+        documentId={medicalDocument.id}
+        open={shareOpen}
+        onOpenChange={setShareOpen}
+      />
     </Card>
   );
 }
