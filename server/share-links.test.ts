@@ -1,0 +1,400 @@
+import { describe, expect, it } from "vitest";
+import { createDocumentFiles } from "./document-files";
+import { MemoryObjectStore } from "./object-store";
+import type { InsertMedicalDocument, MedicalDocument } from "@shared/schema";
+import {
+  createShareLinks,
+  parseRawToken,
+  type ShareLinkRecords,
+  type TokenHash,
+} from "./share-links";
+
+function fakeDocument(
+  overrides: Partial<MedicalDocument> & Pick<MedicalDocument, "userId" | "filePath">,
+): MedicalDocument {
+  return {
+    id: 1,
+    title: "Lab Results",
+    description: null,
+    documentType: "lab_result",
+    fileName: "labs.pdf",
+    fileSize: "4",
+    mimeType: "application/pdf",
+    documentDate: "2026-09-11",
+    doctorName: null,
+    facilityName: null,
+    tags: [],
+    createdAt: new Date("2026-09-11T00:00:00.000Z"),
+    updatedAt: new Date("2026-09-11T00:00:00.000Z"),
+    ...overrides,
+  };
+}
+
+function memoryDocuments(rows: MedicalDocument[] = []) {
+  const documents = [...rows];
+  let nextId = documents.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+
+  return {
+    documents,
+    records: {
+      async create(input: InsertMedicalDocument): Promise<MedicalDocument> {
+        const row = fakeDocument({
+          id: nextId++,
+          userId: input.userId,
+          title: input.title,
+          description: input.description ?? null,
+          documentType: input.documentType,
+          fileName: input.fileName,
+          filePath: input.filePath,
+          fileSize: input.fileSize,
+          mimeType: input.mimeType,
+          documentDate: input.documentDate,
+          doctorName: input.doctorName ?? null,
+          facilityName: input.facilityName ?? null,
+          tags: input.tags ?? [],
+        });
+        documents.push(row);
+        return row;
+      },
+      async findByFilePath(userId: string, filePath: string) {
+        return documents.find(
+          (row) => row.userId === userId && row.filePath === filePath,
+        );
+      },
+      async get(id: number, userId: string) {
+        return documents.find((row) => row.id === id && row.userId === userId);
+      },
+      async delete(id: number, userId: string) {
+        const index = documents.findIndex(
+          (row) => row.id === id && row.userId === userId,
+        );
+        if (index === -1) {
+          return false;
+        }
+        documents.splice(index, 1);
+        return true;
+      },
+    },
+  };
+}
+
+function memoryShareRecords() {
+  const rows: Array<{
+    id: number;
+    tokenHash: TokenHash;
+    documentId: number;
+    createdBy: string;
+    expiresAt: Date;
+    revokedAt: Date | null;
+    label: string | null;
+    createdAt: Date;
+  }> = [];
+  let nextId = 1;
+
+  const records: ShareLinkRecords = {
+    async insert(row) {
+      const created = {
+        id: nextId++,
+        createdAt: new Date("2026-09-11T00:00:00.000Z"),
+        ...row,
+      };
+      rows.push(created);
+      return created;
+    },
+    async listByDocument(createdBy, documentId) {
+      return rows.filter(
+        (row) => row.createdBy === createdBy && row.documentId === documentId,
+      );
+    },
+    async findByTokenHash(tokenHash) {
+      return rows.find((row) => row.tokenHash === tokenHash);
+    },
+    async revoke(input) {
+      const row = rows.find(
+        (candidate) =>
+          candidate.id === input.shareId &&
+          candidate.documentId === input.documentId &&
+          candidate.createdBy === input.createdBy,
+      );
+      if (!row) {
+        return "not_found";
+      }
+      if (row.revokedAt == null) {
+        row.revokedAt = new Date();
+      }
+      return "revoked";
+    },
+  };
+
+  return { rows, records };
+}
+
+async function uploadLabs(
+  files: ReturnType<typeof createDocumentFiles>,
+  userId = "owner-1",
+) {
+  return files.uploadOwnedDocument({
+    userId,
+    bytes: Buffer.from("%PDF-1"),
+    mimeType: "application/pdf",
+    originalName: "labs.pdf",
+    title: "Lab Results",
+    documentType: "lab_result",
+    documentDate: "2026-09-11",
+    tags: [],
+  });
+}
+
+function setup(now?: () => Date) {
+  const objects = new MemoryObjectStore();
+  const { records: documents } = memoryDocuments();
+  const { rows, records: shares } = memoryShareRecords();
+  const files = createDocumentFiles({ objects, documents });
+  const shareLinks = createShareLinks({
+    objects,
+    documents,
+    shares,
+    now,
+  });
+  return { files, shareLinks, shareRows: rows, shareRecords: shares };
+}
+
+describe("parseRawToken", () => {
+  it("rejects junk", () => {
+    expect(parseRawToken("not-a-token")).toBeNull();
+  });
+});
+
+describe("createShareLinks", () => {
+  it("returns the uploaded bytes and mime through a minted token", async () => {
+    const { files, shareLinks } = setup();
+    const created = await uploadLabs(files);
+
+    const minted = await shareLinks.mint({
+      userId: "owner-1",
+      documentId: created.id,
+      ttl: "24h",
+      label: "Dr. Chen Friday",
+    });
+    expect(minted.kind).toBe("minted");
+    if (minted.kind !== "minted") {
+      return;
+    }
+    expect(minted.share.path).toBe(`/s/${minted.share.token}`);
+
+    const opened = await shareLinks.openByToken(minted.share.token);
+    expect(opened).toEqual({
+      kind: "file",
+      file: {
+        bytes: Buffer.from("%PDF-1"),
+        mimeType: "application/pdf",
+        fileName: "labs.pdf",
+      },
+    });
+  });
+
+  it("returns not_owner and inserts nothing when a second user mints", async () => {
+    const { files, shareLinks, shareRows } = setup();
+    const created = await uploadLabs(files);
+
+    const minted = await shareLinks.mint({
+      userId: "intruder-2",
+      documentId: created.id,
+      ttl: "24h",
+      label: null,
+    });
+
+    expect(minted).toEqual({ kind: "not_owner" });
+    expect(shareRows).toEqual([]);
+  });
+
+  it("stores a token hash that is not the raw token", async () => {
+    const { files, shareLinks, shareRows, shareRecords } = setup();
+    const created = await uploadLabs(files);
+
+    const minted = await shareLinks.mint({
+      userId: "owner-1",
+      documentId: created.id,
+      ttl: "1h",
+      label: null,
+    });
+    expect(minted.kind).toBe("minted");
+    if (minted.kind !== "minted") {
+      return;
+    }
+
+    expect(shareRows).toHaveLength(1);
+    expect(shareRows[0].tokenHash).not.toBe(minted.share.token);
+    expect(
+      await shareRecords.findByTokenHash(
+        minted.share.token as unknown as TokenHash,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("opens as dead after now passes expiresAt", async () => {
+    let now = new Date("2026-09-11T00:00:00.000Z");
+    const { files, shareLinks } = setup(() => now);
+    const created = await uploadLabs(files);
+
+    const minted = await shareLinks.mint({
+      userId: "owner-1",
+      documentId: created.id,
+      ttl: "1h",
+      label: null,
+    });
+    expect(minted.kind).toBe("minted");
+    if (minted.kind !== "minted") {
+      return;
+    }
+
+    now = new Date("2026-09-11T01:00:00.000Z");
+    expect(await shareLinks.openByToken(minted.share.token)).toEqual({
+      kind: "dead",
+    });
+  });
+
+  it("opens as dead after revoke", async () => {
+    const { files, shareLinks } = setup();
+    const created = await uploadLabs(files);
+
+    const minted = await shareLinks.mint({
+      userId: "owner-1",
+      documentId: created.id,
+      ttl: "7d",
+      label: null,
+    });
+    expect(minted.kind).toBe("minted");
+    if (minted.kind !== "minted") {
+      return;
+    }
+
+    expect(
+      await shareLinks.revoke({
+        userId: "owner-1",
+        documentId: created.id,
+        shareId: minted.share.id,
+      }),
+    ).toBe("revoked");
+    expect(await shareLinks.openByToken(minted.share.token)).toEqual({
+      kind: "dead",
+    });
+  });
+
+  it("opens a well-formed unused token as unknown", async () => {
+    const { shareLinks } = setup();
+    const unused = parseRawToken(`mv1_${"A".repeat(43)}`);
+    expect(unused).not.toBeNull();
+    if (!unused) {
+      return;
+    }
+    expect(await shareLinks.openByToken(unused)).toEqual({ kind: "unknown" });
+  });
+
+  it("returns revoked both times when revoke is called twice", async () => {
+    const { files, shareLinks } = setup();
+    const created = await uploadLabs(files);
+
+    const minted = await shareLinks.mint({
+      userId: "owner-1",
+      documentId: created.id,
+      ttl: "24h",
+      label: null,
+    });
+    expect(minted.kind).toBe("minted");
+    if (minted.kind !== "minted") {
+      return;
+    }
+
+    const first = await shareLinks.revoke({
+      userId: "owner-1",
+      documentId: created.id,
+      shareId: minted.share.id,
+    });
+    const second = await shareLinks.revoke({
+      userId: "owner-1",
+      documentId: created.id,
+      shareId: minted.share.id,
+    });
+    expect(first).toBe("revoked");
+    expect(second).toBe("revoked");
+  });
+
+  it("mints two working tokens for one document", async () => {
+    const { files, shareLinks, shareRows } = setup();
+    const created = await uploadLabs(files);
+
+    const first = await shareLinks.mint({
+      userId: "owner-1",
+      documentId: created.id,
+      ttl: "24h",
+      label: "one",
+    });
+    const second = await shareLinks.mint({
+      userId: "owner-1",
+      documentId: created.id,
+      ttl: "24h",
+      label: "two",
+    });
+    expect(first.kind).toBe("minted");
+    expect(second.kind).toBe("minted");
+    if (first.kind !== "minted" || second.kind !== "minted") {
+      return;
+    }
+
+    expect(shareRows).toHaveLength(2);
+    expect(first.share.token).not.toBe(second.share.token);
+    expect(await shareLinks.openByToken(first.share.token)).toEqual({
+      kind: "file",
+      file: {
+        bytes: Buffer.from("%PDF-1"),
+        mimeType: "application/pdf",
+        fileName: "labs.pdf",
+      },
+    });
+    expect(await shareLinks.openByToken(second.share.token)).toEqual({
+      kind: "file",
+      file: {
+        bytes: Buffer.from("%PDF-1"),
+        mimeType: "application/pdf",
+        fileName: "labs.pdf",
+      },
+    });
+  });
+
+  it("lists rows without a token field", async () => {
+    const { files, shareLinks } = setup();
+    const created = await uploadLabs(files);
+
+    const minted = await shareLinks.mint({
+      userId: "owner-1",
+      documentId: created.id,
+      ttl: "24h",
+      label: "Dr. Chen Friday",
+    });
+    expect(minted.kind).toBe("minted");
+    if (minted.kind !== "minted") {
+      return;
+    }
+
+    const listed = await shareLinks.list({
+      userId: "owner-1",
+      documentId: created.id,
+    });
+    expect(listed).not.toBe("not_owner");
+    if (listed === "not_owner") {
+      return;
+    }
+    expect(listed).toEqual([
+      {
+        id: minted.share.id,
+        documentId: created.id,
+        label: "Dr. Chen Friday",
+        createdAt: minted.share.createdAt,
+        expiresAt: minted.share.expiresAt,
+        life: "live",
+      },
+    ]);
+    expect("token" in listed[0]).toBe(false);
+  });
+});
