@@ -15,27 +15,28 @@ import {
   parseRawToken,
 } from "./share-links";
 import { insertSymptomSchema } from "@shared/schema";
+import { classifyUpload, MAX_UPLOAD_BYTES } from "@shared/upload-kinds";
 import { z } from "zod";
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024,
+    fileSize: MAX_UPLOAD_BYTES,
   },
   fileFilter: (_req, file, cb) => {
-    const allowedMimes = [
-      "application/pdf",
-      "image/jpeg",
-      "image/jpg",
-      "image/png",
-      "image/gif",
-      "image/webp",
-    ];
-
-    if (allowedMimes.includes(file.mimetype)) {
+    const classified = classifyUpload({
+      mimeType: file.mimetype,
+      originalName: file.originalname,
+    });
+    if (classified) {
+      file.mimetype = classified.mimeType;
       cb(null, true);
     } else {
-      cb(new Error("Invalid file type. Only PDF and image files are allowed."));
+      cb(
+        new Error(
+          "Invalid file type. Only PDF, image, and DICOM files are allowed.",
+        ),
+      );
     }
   },
 });

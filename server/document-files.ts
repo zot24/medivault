@@ -5,21 +5,15 @@ import {
   type MedicalDocument,
 } from "@shared/schema";
 import {
+  acceptedExtensions,
+  classifyUpload,
+  fitsUploadCap,
+} from "@shared/upload-kinds";
+import {
   asObjectKey,
   type ObjectKey,
   type ObjectStore,
 } from "./object-store";
-
-const MAX_BYTES = 10 * 1024 * 1024;
-
-const MIME_EXT: Record<string, string> = {
-  "application/pdf": ".pdf",
-  "image/jpeg": ".jpg",
-  "image/jpg": ".jpg",
-  "image/png": ".png",
-  "image/gif": ".gif",
-  "image/webp": ".webp",
-};
 
 export type DocumentRecords = {
   create(document: InsertMedicalDocument): Promise<MedicalDocument>;
@@ -60,7 +54,11 @@ export function parseObjectBasename(raw: string): string | null {
   if (raw.includes("/") || raw.includes("\\") || raw.includes("..")) {
     return null;
   }
-  if (!/^[\w-]+\.(pdf|jpe?g|png|gif|webp)$/i.test(raw)) {
+  const extension = raw.includes(".")
+    ? `.${raw.split(".").pop()!.toLowerCase()}`
+    : "";
+  const allowed = new Set([...acceptedExtensions(), ".jpeg"]);
+  if (!allowed.has(extension) || !/^[\w-]+\.[a-z0-9]+$/i.test(raw)) {
     return null;
   }
   return raw;
@@ -70,12 +68,17 @@ export function objectKeyFor(userId: string, basename: string): ObjectKey {
   return asObjectKey(`${userId}/${basename}`);
 }
 
-export function newObjectBasename(mimeType: string): string {
-  const ext = MIME_EXT[mimeType];
-  if (!ext) {
-    throw new Error("Invalid file type. Only PDF and image files are allowed.");
+export function newObjectBasename(
+  mimeType: string,
+  originalName = "",
+): string {
+  const classified = classifyUpload({ mimeType, originalName });
+  if (!classified) {
+    throw new Error(
+      "Invalid file type. Only PDF, image, and DICOM files are allowed.",
+    );
   }
-  return `${randomUUID()}${ext}`;
+  return `${randomUUID()}${classified.extension}`;
 }
 
 export function createDocumentFiles(deps: {
@@ -86,11 +89,24 @@ export function createDocumentFiles(deps: {
     async uploadOwnedDocument(
       input: UploadDocumentInput,
     ): Promise<MedicalDocument> {
-      if (input.bytes.length > MAX_BYTES) {
+      if (!fitsUploadCap(input.bytes.length)) {
         throw new Error("File too large");
       }
 
-      const basename = newObjectBasename(input.mimeType);
+      const classified = classifyUpload({
+        mimeType: input.mimeType,
+        originalName: input.originalName,
+      });
+      if (!classified) {
+        throw new Error(
+          "Invalid file type. Only PDF, image, and DICOM files are allowed.",
+        );
+      }
+
+      const basename = newObjectBasename(
+        classified.mimeType,
+        input.originalName,
+      );
       const key = objectKeyFor(input.userId, basename);
       const documentData = insertMedicalDocumentSchema.parse({
         userId: input.userId,
@@ -100,7 +116,7 @@ export function createDocumentFiles(deps: {
         fileName: input.originalName,
         filePath: key,
         fileSize: input.bytes.length.toString(),
-        mimeType: input.mimeType,
+        mimeType: classified.mimeType,
         documentDate: input.documentDate,
         doctorName: input.doctorName,
         facilityName: input.facilityName,
