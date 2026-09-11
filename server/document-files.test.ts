@@ -87,6 +87,12 @@ describe("parseObjectBasename", () => {
     expect(parseObjectBasename("../secret.pdf")).toBeNull();
     expect(parseObjectBasename("a/b.pdf")).toBeNull();
   });
+
+  it("accepts a stored dicom basename", () => {
+    expect(
+      parseObjectBasename("a1b2c3d4-e5f6-7890-abcd-ef1234567890.dcm"),
+    ).toBe("a1b2c3d4-e5f6-7890-abcd-ef1234567890.dcm");
+  });
 });
 
 describe("createDocumentFiles", () => {
@@ -169,5 +175,34 @@ describe("createDocumentFiles", () => {
     expect(
       await files.openOwnedFile("owner-1", created.filePath.split("/").pop()!),
     ).toBeNull();
+  });
+
+  it("stores dicom bytes and returns them only to the owning user", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+
+    const created = await files.uploadOwnedDocument({
+      userId: "owner-1",
+      bytes: Buffer.from("DICM"),
+      mimeType: "",
+      originalName: "slice-01.dcm",
+      title: "Chest CT",
+      documentType: "x_ray",
+      documentDate: "2026-09-11",
+      tags: ["series:11111111-2222-3333-4444-555555555555"],
+    });
+
+    expect(created.mimeType).toBe("application/dicom");
+    expect(created.filePath.endsWith(".dcm")).toBe(true);
+
+    const basename = created.filePath.split("/").pop()!;
+    const owned = await files.openOwnedFile("owner-1", basename);
+    expect(owned).toEqual({
+      bytes: Buffer.from("DICM"),
+      mimeType: "application/dicom",
+      fileName: "slice-01.dcm",
+    });
+    expect(await files.openOwnedFile("intruder-2", basename)).toBeNull();
   });
 });

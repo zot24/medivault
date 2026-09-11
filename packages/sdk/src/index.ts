@@ -33,6 +33,12 @@ export type {
   LoginResponse,
   RegisterData,
   DocumentType,
+  ShareTtl,
+  MintedShare,
+  ListedShare,
+  FrozenSymptom,
+  SharedFileMeta,
+  SharePacket,
 } from './types';
 export { DOCUMENT_TYPES } from './types';
 
@@ -50,6 +56,12 @@ export {
   useDocumentsByType,
   useCreateDocument,
   useDeleteDocument,
+  useDocumentShares,
+  useCreateShare,
+  useRevokeShare,
+  useShares,
+  useCreateCaseShare,
+  useRevokeCaseShare,
 } from './hooks';
 
 // Symptoms hooks

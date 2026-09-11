@@ -92,6 +92,63 @@ export interface RegisterData {
 
 export type DocumentType = 'lab_result' | 'prescription' | 'x_ray' | 'consultation' | 'other';
 
+export type ShareTtl = '1h' | '24h' | '7d';
+
+export type FrozenSymptom = {
+  id: number;
+  symptomName: string;
+  severity: number;
+  description: string | null;
+  location: string | null;
+  duration: string | null;
+  triggers: string[] | null;
+  medications: string[] | null;
+  notes: string | null;
+  dateRecorded: string;
+  timeOfDay: string | null;
+};
+
+export type SharedFileMeta = {
+  id: number;
+  title: string;
+  fileName: string;
+  mimeType: string;
+};
+
+export type SharePacket = {
+  label: string | null;
+  expiresAt: string;
+  files: SharedFileMeta[];
+  snapshot: FrozenSymptom[] | null;
+};
+
+export type MintedShare = {
+  id: number;
+  documentId: number;
+  documentIds: number[];
+  label: string | null;
+  createdAt: string;
+  expiresAt: string;
+  token: string;
+  path: string;
+  symptomSnapshot: FrozenSymptom[] | null;
+};
+
+type ListedShareBase = {
+  id: number;
+  documentId: number;
+  documentIds: number[];
+  label: string | null;
+  createdAt: string;
+  expiresAt: string;
+  symptomSnapshot: FrozenSymptom[] | null;
+};
+
+export type ListedShare =
+  | (ListedShareBase & { life: 'live' })
+  | (ListedShareBase & { life: 'expired' })
+  | (ListedShareBase & { life: 'revoked'; revokedAt: string });
+
 export const DOCUMENT_TYPES: { value: DocumentType; label: string }[] = [
   { value: 'lab_result', label: 'Lab Result' },
   { value: 'prescription', label: 'Prescription' },

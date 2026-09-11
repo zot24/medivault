@@ -12,7 +12,7 @@ import {
   type UseMutationOptions,
 } from '@tanstack/react-query';
 import type { MediVaultClient } from './client';
-import type { MedicalDocument, Symptom, InsertSymptom, User, LoginResponse } from './types';
+import type { MedicalDocument, Symptom, InsertSymptom, User, LoginResponse, ShareTtl, MintedShare, ListedShare } from './types';
 
 // ============================================
 // SDK Context
@@ -250,6 +250,158 @@ export function useDeleteDocument(
       return result.data;
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['documents'] });
+    },
+    ...options,
+  });
+}
+
+export function useDocumentShares(
+  documentId: number,
+  options?: Omit<UseQueryOptions<ListedShare[], Error>, 'queryKey' | 'queryFn'>
+) {
+  const sdk = useSDK();
+
+  return useQuery<ListedShare[], Error>({
+    queryKey: ['documents', documentId, 'shares'],
+    queryFn: async () => {
+      const result = await sdk.documents.listShares(documentId);
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+      return result.data;
+    },
+    enabled: !!documentId,
+    ...options,
+  });
+}
+
+export function useCreateShare(
+  options?: Omit<
+    UseMutationOptions<
+      MintedShare,
+      Error,
+      { documentId: number; ttl: ShareTtl; label?: string }
+    >,
+    'mutationFn'
+  >
+) {
+  const sdk = useSDK();
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    MintedShare,
+    Error,
+    { documentId: number; ttl: ShareTtl; label?: string }
+  >({
+    mutationFn: async ({ documentId, ttl, label }) => {
+      const result = await sdk.documents.createShare(documentId, { ttl, label });
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+      return result.data;
+    },
+    onSuccess: (_data, { documentId }) => {
+      queryClient.invalidateQueries({ queryKey: ['documents', documentId, 'shares'] });
+      queryClient.invalidateQueries({ queryKey: ['shares'] });
+    },
+    ...options,
+  });
+}
+
+export function useRevokeShare(
+  options?: Omit<
+    UseMutationOptions<void, Error, { documentId: number; shareId: number }>,
+    'mutationFn'
+  >
+) {
+  const sdk = useSDK();
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, { documentId: number; shareId: number }>({
+    mutationFn: async ({ documentId, shareId }) => {
+      const result = await sdk.documents.revokeShare(documentId, shareId);
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+    },
+    onSuccess: (_data, { documentId }) => {
+      queryClient.invalidateQueries({ queryKey: ['documents', documentId, 'shares'] });
+      queryClient.invalidateQueries({ queryKey: ['shares'] });
+    },
+    ...options,
+  });
+}
+
+export function useShares(
+  options?: Omit<UseQueryOptions<ListedShare[], Error>, 'queryKey' | 'queryFn'>
+) {
+  const sdk = useSDK();
+
+  return useQuery<ListedShare[], Error>({
+    queryKey: ['shares'],
+    queryFn: async () => {
+      const result = await sdk.shares.list();
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+      return result.data;
+    },
+    ...options,
+  });
+}
+
+export function useCreateCaseShare(
+  options?: Omit<
+    UseMutationOptions<
+      MintedShare,
+      Error,
+      { documentIds: number[]; ttl: ShareTtl; label?: string; symptomIds?: number[] }
+    >,
+    'mutationFn'
+  >
+) {
+  const sdk = useSDK();
+  const queryClient = useQueryClient();
+
+  return useMutation<
+    MintedShare,
+    Error,
+    { documentIds: number[]; ttl: ShareTtl; label?: string; symptomIds?: number[] }
+  >({
+    mutationFn: async (input) => {
+      const result = await sdk.shares.create(input);
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+      return result.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shares'] });
+      queryClient.invalidateQueries({ queryKey: ['documents'] });
+    },
+    ...options,
+  });
+}
+
+export function useRevokeCaseShare(
+  options?: Omit<
+    UseMutationOptions<void, Error, { shareId: number }>,
+    'mutationFn'
+  >
+) {
+  const sdk = useSDK();
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, { shareId: number }>({
+    mutationFn: async ({ shareId }) => {
+      const result = await sdk.shares.revoke(shareId);
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shares'] });
       queryClient.invalidateQueries({ queryKey: ['documents'] });
     },
     ...options,
