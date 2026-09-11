@@ -6,6 +6,7 @@ import Navigation from "@/components/navigation";
 import analytics from "@/lib/analytics/umami";
 import DocumentCard from "@/components/document-card";
 import UploadDialog from "@/components/upload-dialog";
+import CaseShareDialog from "@/components/case-share-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
@@ -28,6 +29,7 @@ export default function Documents() {
   const { isAuthenticated, isLoading } = useAuth();
 
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [isCaseShareOpen, setIsCaseShareOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
 
@@ -170,17 +172,27 @@ export default function Documents() {
               Your health records, securely organized. Upload, categorize, and access your medical documents anytime.
             </p>
           </div>
-          <Button
-            onClick={() => {
-              analytics.ctaClicked('upload_document_header', 'documents_page');
-              setIsUploadOpen(true);
-            }}
-            className="btn-sanctuary mt-6 lg:mt-0"
-            data-testid="button-upload-document"
-          >
-            <Plus className="mr-2 h-5 w-5" />
-            <span className="font-body">Upload Document</span>
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-3 mt-6 lg:mt-0">
+            <Button
+              variant="outline"
+              onClick={() => setIsCaseShareOpen(true)}
+              className="border-border"
+              data-testid="button-share-case"
+            >
+              <span className="font-body">Share case</span>
+            </Button>
+            <Button
+              onClick={() => {
+                analytics.ctaClicked('upload_document_header', 'documents_page');
+                setIsUploadOpen(true);
+              }}
+              className="btn-sanctuary"
+              data-testid="button-upload-document"
+            >
+              <Plus className="mr-2 h-5 w-5" />
+              <span className="font-body">Upload Document</span>
+            </Button>
+          </div>
         </div>
 
         {/* Search and Filter */}
@@ -373,6 +385,10 @@ export default function Documents() {
       <UploadDialog
         open={isUploadOpen}
         onOpenChange={setIsUploadOpen}
+      />
+      <CaseShareDialog
+        open={isCaseShareOpen}
+        onOpenChange={setIsCaseShareOpen}
       />
     </div>
   );

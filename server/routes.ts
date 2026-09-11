@@ -11,30 +11,32 @@ import {
 import {
   createShareLinks,
   createShareBodySchema,
+  createCaseShareBodySchema,
   parseRawToken,
 } from "./share-links";
 import { insertSymptomSchema } from "@shared/schema";
+import { classifyUpload, MAX_UPLOAD_BYTES } from "@shared/upload-kinds";
 import { z } from "zod";
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024,
+    fileSize: MAX_UPLOAD_BYTES,
   },
   fileFilter: (_req, file, cb) => {
-    const allowedMimes = [
-      "application/pdf",
-      "image/jpeg",
-      "image/jpg",
-      "image/png",
-      "image/gif",
-      "image/webp",
-    ];
-
-    if (allowedMimes.includes(file.mimetype)) {
+    const classified = classifyUpload({
+      mimeType: file.mimetype,
+      originalName: file.originalname,
+    });
+    if (classified) {
+      file.mimetype = classified.mimeType;
       cb(null, true);
     } else {
-      cb(new Error("Invalid file type. Only PDF and image files are allowed."));
+      cb(
+        new Error(
+          "Invalid file type. Only PDF, image, and DICOM files are allowed.",
+        ),
+      );
     }
   },
 });
@@ -81,9 +83,14 @@ function getShareLinks() {
         insert: (row) => storage.insertShareLink(row),
         listByDocument: (createdBy, documentId) =>
           storage.listShareLinksByDocument(createdBy, documentId),
+        listByOwner: (createdBy) => storage.listShareLinksByOwner(createdBy),
         findByTokenHash: (tokenHash) =>
           storage.getShareLinkByTokenHash(tokenHash),
         revoke: (input) => storage.revokeShareLink(input),
+        revokeById: (input) => storage.revokeShareLinkById(input),
+      },
+      symptoms: {
+        getMany: (userId, ids) => storage.getSymptomsByIds(userId, ids),
       },
     });
   }
@@ -269,13 +276,87 @@ export async function registerRoutes(app: Express): Promise<void> {
     },
   );
 
+  app.post("/api/shares", isAuthenticated, async (req: any, res) => {
+    try {
+      const body = createCaseShareBodySchema.safeParse(req.body);
+      if (!body.success) {
+        return res.status(400).json({ message: "Validation error" });
+      }
+      const minted = await getShareLinks().mint({
+        userId: req.user.id,
+        documentIds: body.data.documentIds,
+        ttl: body.data.ttl,
+        label: body.data.label ?? null,
+        symptomIds: body.data.symptomIds,
+      });
+      if (minted.kind === "not_owner") {
+        return res.status(404).json({ message: "Document not found" });
+      }
+      return res.status(201).json(minted.share);
+    } catch (error) {
+      console.error("Error creating share:", error);
+      res.status(500).json({ message: "Failed to create share" });
+    }
+  });
+
+  app.get("/api/shares", isAuthenticated, async (req: any, res) => {
+    try {
+      const listed = await getShareLinks().listAll({ userId: req.user.id });
+      return res.json(listed);
+    } catch (error) {
+      console.error("Error listing shares:", error);
+      res.status(500).json({ message: "Failed to list shares" });
+    }
+  });
+
+  app.delete("/api/shares/:shareId", isAuthenticated, async (req: any, res) => {
+    try {
+      const result = await getShareLinks().revokeById({
+        userId: req.user.id,
+        shareId: parseInt(req.params.shareId, 10),
+      });
+      if (result === "not_found") {
+        return res.status(404).json({ message: "Share not found" });
+      }
+      return res.status(204).end();
+    } catch (error) {
+      console.error("Error revoking share:", error);
+      res.status(500).json({ message: "Failed to revoke share" });
+    }
+  });
+
   app.get("/api/s/:token", async (req, res) => {
     try {
       const token = parseRawToken(req.params.token);
       if (!token) {
         return res.status(404).json({ message: "Not found" });
       }
-      const opened = await getShareLinks().openByToken(token);
+      const opened = await getShareLinks().openPacket(token);
+      if (opened.kind === "unknown") {
+        return res.status(404).json({ message: "Not found" });
+      }
+      if (opened.kind === "dead") {
+        return res.status(410).json({ message: "Gone" });
+      }
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.json(opened.packet);
+    } catch (error) {
+      if (error instanceof ObjectStoreConfigError) {
+        return res.status(503).json({ message: error.message });
+      }
+      console.error("Error opening share:", error);
+      res.status(500).json({ message: "Failed to open share" });
+    }
+  });
+
+  app.get("/api/s/:token/files/:documentId", async (req, res) => {
+    try {
+      const token = parseRawToken(req.params.token);
+      const documentId = parseInt(req.params.documentId, 10);
+      if (!token || !Number.isInteger(documentId)) {
+        return res.status(404).json({ message: "Not found" });
+      }
+      const opened = await getShareLinks().openFile(token, documentId);
       if (opened.kind === "unknown") {
         return res.status(404).json({ message: "Not found" });
       }
@@ -293,7 +374,7 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (error instanceof ObjectStoreConfigError) {
         return res.status(503).json({ message: error.message });
       }
-      console.error("Error opening share:", error);
+      console.error("Error opening share file:", error);
       res.status(500).json({ message: "Failed to open share" });
     }
   });

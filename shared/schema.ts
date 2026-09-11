@@ -76,6 +76,20 @@ export const symptoms = pgTable("symptoms", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+export type FrozenSymptom = {
+  id: number;
+  symptomName: string;
+  severity: number;
+  description: string | null;
+  location: string | null;
+  duration: string | null;
+  triggers: string[] | null;
+  medications: string[] | null;
+  notes: string | null;
+  dateRecorded: string;
+  timeOfDay: string | null;
+};
+
 export const shareLinks = pgTable(
   "share_links",
   {
@@ -84,12 +98,14 @@ export const shareLinks = pgTable(
     documentId: integer("document_id")
       .notNull()
       .references(() => medicalDocuments.id, { onDelete: "cascade" }),
+    documentIds: integer("document_ids").array().notNull().default([]),
     createdBy: varchar("created_by")
       .notNull()
       .references(() => users.id),
     expiresAt: timestamp("expires_at").notNull(),
     revokedAt: timestamp("revoked_at"),
     label: varchar("label", { length: 80 }),
+    symptomSnapshot: jsonb("symptom_snapshot").$type<FrozenSymptom[] | null>(),
     createdAt: timestamp("created_at").defaultNow(),
   },
   (table) => [

@@ -31,12 +31,16 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import type { MedicalDocument, Symptom } from "@shared/schema";
+import DicomSeriesViewer from "@/components/dicom-series-viewer";
+import { ownedFileUrl } from "@/lib/owned-file";
+import { isDicomDocument } from "@shared/upload-kinds";
 
 export default function Dashboard() {
   const { toast } = useToast();
   const { user, isAuthenticated, isLoading } = useAuth();
   const [, setLocation] = useLocation();
   const [appointmentDialogOpen, setAppointmentDialogOpen] = useState(false);
+  const [dicomDocument, setDicomDocument] = useState<MedicalDocument | null>(null);
   const [appointments, setAppointments] = useState<Array<{
     id: string;
     date: string;
@@ -205,17 +209,23 @@ export default function Dashboard() {
     return { avgSeverity, highSeverityCount, thisMonthCount, total: symptoms.length };
   }, [symptoms]);
 
-  // Handle document click - open in new tab
-  const handleDocumentClick = (doc: MedicalDocument) => {
-    window.open(`/api/files/${doc.filePath.split("/").pop()}`, "_blank");
+  const openDocument = (doc: MedicalDocument) => {
+    if (isDicomDocument(doc)) {
+      setDicomDocument(doc);
+      return;
+    }
+    window.open(ownedFileUrl(doc.filePath), "_blank");
   };
 
-  // Handle timeline item click
+  const handleDocumentClick = (doc: MedicalDocument) => {
+    openDocument(doc);
+  };
+
   const handleTimelineClick = (activity: typeof activityTimeline[0]) => {
     if (activity.type === 'document') {
       const doc = allDocuments?.find(d => d.id === activity.originalId);
       if (doc) {
-        window.open(`/api/files/${doc.filePath.split("/").pop()}`, "_blank");
+        openDocument(doc);
       }
     } else {
       setLocation('/symptoms');
@@ -840,6 +850,15 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+      <DicomSeriesViewer
+        document={dicomDocument}
+        open={dicomDocument !== null}
+        onOpenChange={(next) => {
+          if (!next) {
+            setDicomDocument(null);
+          }
+        }}
+      />
     </div>
   );
 }

@@ -36,6 +36,9 @@ export type {
   ShareTtl,
   MintedShare,
   ListedShare,
+  FrozenSymptom,
+  SharedFileMeta,
+  SharePacket,
 } from './types';
 export { DOCUMENT_TYPES } from './types';
 
@@ -56,6 +59,9 @@ export {
   useDocumentShares,
   useCreateShare,
   useRevokeShare,
+  useShares,
+  useCreateCaseShare,
+  useRevokeCaseShare,
 } from './hooks';
 
 // Symptoms hooks

@@ -107,8 +107,8 @@ file_size_limit = "50MiB"
 
 [storage.buckets.medical-files]
 public = false
-file_size_limit = "10MiB"
-allowed_mime_types = ["application/pdf", "image/jpeg", "image/png", "image/gif", "image/webp"]
+file_size_limit = "50MiB"
+allowed_mime_types = ["application/pdf", "image/jpeg", "image/png", "image/gif", "image/webp", "application/dicom"]
 
 # Allow connections via S3 compatible clients
 [storage.s3_protocol]

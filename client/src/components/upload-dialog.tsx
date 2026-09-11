@@ -27,6 +27,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
 import { Upload, FileText, X } from "lucide-react";
+import {
+  acceptAttribute,
+  classifyUpload,
+  fitsUploadCap,
+  isDicomDocument,
+  MAX_UPLOAD_BYTES,
+  newSeriesTag,
+  newSliceTag,
+} from "@shared/upload-kinds";
 
 const uploadSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -48,7 +57,7 @@ interface UploadDialogProps {
 export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [dragActive, setDragActive] = useState(false);
 
   const form = useForm<UploadFormData>({
@@ -65,50 +74,70 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
   });
 
   const uploadMutation = useMutation({
-    mutationFn: async (data: UploadFormData & { file: File }) => {
-      const formData = new FormData();
-      
-      // Append file
-      formData.append("file", data.file);
-      
-      // Append other data
-      Object.entries(data).forEach(([key, value]) => {
-        if (key !== "file") {
-          if (key === "tags") {
-            formData.append(key, JSON.stringify(value));
-          } else {
-            formData.append(key, value as string);
-          }
+    mutationFn: async (data: UploadFormData & { files: File[] }) => {
+      const dicomCount = data.files.filter((file) =>
+        isDicomDocument({ mimeType: file.type, fileName: file.name }),
+      ).length;
+      const seriesTag =
+        dicomCount > 1 ? newSeriesTag() : null;
+
+      for (let index = 0; index < data.files.length; index += 1) {
+        const file = data.files[index];
+        const tags = [...data.tags];
+        if (
+          seriesTag &&
+          isDicomDocument({ mimeType: file.type, fileName: file.name })
+        ) {
+          tags.push(seriesTag, newSliceTag(index));
         }
-      });
 
-      const response = await fetch("/api/documents", {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      });
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("title", data.title);
+        if (data.description) {
+          formData.append("description", data.description);
+        }
+        formData.append("documentType", data.documentType);
+        formData.append("documentDate", data.documentDate);
+        if (data.doctorName) {
+          formData.append("doctorName", data.doctorName);
+        }
+        if (data.facilityName) {
+          formData.append("facilityName", data.facilityName);
+        }
+        formData.append("tags", JSON.stringify(tags));
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`${response.status}: ${errorText}`);
+        const response = await fetch("/api/documents", {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`${response.status}: ${errorText}`);
+        }
       }
-
-      return response.json();
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
+      queryClient.invalidateQueries({ queryKey: ["documents"] });
 
-      // Track successful upload
-      analytics.documentUploaded(variables.documentType, variables.file.size);
+      analytics.documentUploaded(
+        variables.documentType,
+        variables.files.reduce((sum, file) => sum + file.size, 0),
+      );
 
       toast({
         title: "Success",
-        description: "Document uploaded successfully",
+        description:
+          variables.files.length === 1
+            ? "Document uploaded successfully"
+            : `${variables.files.length} files uploaded successfully`,
       });
       handleClose();
     },
     onError: (error, variables) => {
-      // Track failed upload
       analytics.documentUploadFailed(
         variables.documentType,
         error.message || "Unknown error"
@@ -134,46 +163,54 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
   });
 
   const handleClose = () => {
-    setSelectedFile(null);
+    setSelectedFiles([]);
     form.reset();
     onOpenChange(false);
   };
 
-  const handleFileSelect = (file: File) => {
-    // Validate file type
-    const allowedTypes = [
-      'application/pdf',
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'image/gif',
-      'image/webp'
-    ];
+  const handleFilesSelect = (incoming: File[]) => {
+    const accepted: File[] = [];
+    for (const file of incoming) {
+      if (
+        !classifyUpload({
+          mimeType: file.type,
+          originalName: file.name,
+        })
+      ) {
+        toast({
+          title: "Invalid file type",
+          description: "Only PDF, image, and DICOM (.dcm) files are allowed",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (!fitsUploadCap(file.size)) {
+        toast({
+          title: "File too large",
+          description: `Maximum file size is ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB`,
+          variant: "destructive",
+        });
+        return;
+      }
+      accepted.push(file);
+    }
 
-    if (!allowedTypes.includes(file.type)) {
+    const dicomCount = accepted.filter((file) =>
+      isDicomDocument({ mimeType: file.type, fileName: file.name }),
+    ).length;
+    if (accepted.length > 1 && dicomCount !== accepted.length) {
       toast({
-        title: "Invalid file type",
-        description: "Only PDF and image files are allowed",
+        title: "Mixed files",
+        description: "A multi-file upload must be all DICOM slices or a single document.",
         variant: "destructive",
       });
       return;
     }
 
-    // Validate file size (10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      toast({
-        title: "File too large",
-        description: "Maximum file size is 10MB",
-        variant: "destructive",
-      });
-      return;
-    }
+    setSelectedFiles(accepted);
 
-    setSelectedFile(file);
-    
-    // Auto-fill title if empty
-    if (!form.getValues("title")) {
-      const nameWithoutExtension = file.name.replace(/\.[^/.]+$/, "");
+    if (!form.getValues("title") && accepted[0]) {
+      const nameWithoutExtension = accepted[0].name.replace(/\.[^/.]+$/, "");
       form.setValue("title", nameWithoutExtension);
     }
   };
@@ -193,13 +230,13 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
     e.stopPropagation();
     setDragActive(false);
 
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFileSelect(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFilesSelect(Array.from(e.dataTransfer.files));
     }
   };
 
   const onSubmit = (data: UploadFormData) => {
-    if (!selectedFile) {
+    if (selectedFiles.length === 0) {
       toast({
         title: "No file selected",
         description: "Please select a file to upload",
@@ -208,7 +245,7 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
       return;
     }
 
-    uploadMutation.mutate({ ...data, file: selectedFile });
+    uploadMutation.mutate({ ...data, files: selectedFiles });
   };
 
   const documentTypeOptions = [
@@ -239,30 +276,34 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
                 Document File
               </label>
               
-              {selectedFile ? (
+              {selectedFiles.length > 0 ? (
                 <Card>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 bg-medical-blue bg-opacity-10 rounded-lg flex items-center justify-center">
-                          <FileText className="text-medical-blue h-5 w-5" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-professional-dark">{selectedFile.name}</p>
-                          <p className="text-sm text-gray-600">
-                            {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
-                          </p>
+                  <CardContent className="p-4 space-y-3">
+                    {selectedFiles.map((file) => (
+                      <div key={file.name} className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 bg-medical-blue bg-opacity-10 rounded-lg flex items-center justify-center">
+                            <FileText className="text-medical-blue h-5 w-5" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-professional-dark">{file.name}</p>
+                            <p className="text-sm text-gray-600">
+                              {(file.size / 1024 / 1024).toFixed(2)} MB
+                            </p>
+                          </div>
                         </div>
                       </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setSelectedFile(null)}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedFiles([])}
+                      data-testid="button-clear-upload-files"
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      Clear files
+                    </Button>
                   </CardContent>
                 </Card>
               ) : (
@@ -279,21 +320,25 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
                 >
                   <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <p className="text-lg font-medium text-gray-600 mb-2">
-                    Drop your file here, or click to browse
+                    Drop your files here, or click to browse
                   </p>
                   <p className="text-sm text-gray-500 mb-4">
-                    Supports PDF, JPEG, PNG files up to 10MB
+                    PDF, JPEG, PNG, or DICOM (.dcm). 50MB per file. Multiple .dcm files become one scrollable series.
                   </p>
                   <Button
                     type="button"
                     variant="outline"
+                    data-testid="button-choose-upload-files"
                     onClick={() => {
                       const input = document.createElement("input");
                       input.type = "file";
-                      input.accept = ".pdf,.jpg,.jpeg,.png,.gif,.webp";
+                      input.accept = acceptAttribute();
+                      input.multiple = true;
                       input.onchange = (e) => {
-                        const file = (e.target as HTMLInputElement).files?.[0];
-                        if (file) handleFileSelect(file);
+                        const files = Array.from(
+                          (e.target as HTMLInputElement).files ?? [],
+                        );
+                        if (files.length > 0) handleFilesSelect(files);
                       };
                       input.click();
                     }}
@@ -417,7 +462,7 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
               </Button>
               <Button 
                 type="submit" 
-                disabled={uploadMutation.isPending || !selectedFile}
+                disabled={uploadMutation.isPending || selectedFiles.length === 0}
                 className="bg-medical-blue text-white hover:bg-blue-700"
               >
                 {uploadMutation.isPending ? "Uploading..." : "Upload Document"}
