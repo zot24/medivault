@@ -23,6 +23,9 @@ import {
 } from "lucide-react";
 import type { MedicalDocument } from "@shared/schema";
 import ShareDialog from "@/components/share-dialog";
+import DicomSeriesViewer from "@/components/dicom-series-viewer";
+import { ownedFileUrl } from "@/lib/owned-file";
+import { isDicomDocument } from "@shared/upload-kinds";
 
 interface DocumentCardProps {
   document: MedicalDocument;
@@ -31,6 +34,7 @@ interface DocumentCardProps {
 
 export default function DocumentCard({ document: medicalDocument, onDelete }: DocumentCardProps) {
   const [shareOpen, setShareOpen] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
   const getDocumentTypeStyle = (type: string) => {
     switch (type) {
       case "lab_result":
@@ -54,13 +58,17 @@ export default function DocumentCard({ document: medicalDocument, onDelete }: Do
 
   const handleDownload = () => {
     const link = window.document.createElement("a");
-    link.href = `/api/files/${medicalDocument.filePath.split("/").pop()}`;
+    link.href = ownedFileUrl(medicalDocument.filePath);
     link.download = medicalDocument.fileName;
     link.click();
   };
 
   const handleView = () => {
-    window.open(`/api/files/${medicalDocument.filePath.split("/").pop()}`, "_blank");
+    if (isDicomDocument(medicalDocument)) {
+      setViewerOpen(true);
+      return;
+    }
+    window.open(ownedFileUrl(medicalDocument.filePath), "_blank");
   };
 
   return (
@@ -212,6 +220,11 @@ export default function DocumentCard({ document: medicalDocument, onDelete }: Do
         documentId={medicalDocument.id}
         open={shareOpen}
         onOpenChange={setShareOpen}
+      />
+      <DicomSeriesViewer
+        document={medicalDocument}
+        open={viewerOpen}
+        onOpenChange={setViewerOpen}
       />
     </Card>
   );
