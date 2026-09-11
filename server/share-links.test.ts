@@ -181,6 +181,7 @@ describe("createShareLinks", () => {
       return;
     }
     expect(minted.share.path).toBe(`/s/${minted.share.token}`);
+    expect(parseRawToken(minted.share.token)).toBe(minted.share.token);
 
     const opened = await shareLinks.openByToken(minted.share.token);
     expect(opened).toEqual({
