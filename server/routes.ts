@@ -1,44 +1,57 @@
 import type { Express } from "express";
 import multer from "multer";
-import path from "path";
-import fs from "fs";
 import { storage } from "./storage";
 import { setupLocalAuth, isAuthenticated } from "./localAuth";
+import { createDocumentFiles } from "./document-files";
 import {
-  insertMedicalDocumentSchema,
-  insertSymptomSchema,
-} from "@shared/schema";
+  createObjectStoreFromEnv,
+  ObjectStoreConfigError,
+} from "./object-store";
+import { insertSymptomSchema } from "@shared/schema";
 import { z } from "zod";
 
-// Configure multer for file uploads
-const uploadDir = path.resolve(process.cwd(), "uploads");
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
 const upload = multer({
-  dest: uploadDir,
+  storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB limit
+    fileSize: 10 * 1024 * 1024,
   },
-  fileFilter: (req, file, cb) => {
-    // Allow PDFs and images
+  fileFilter: (_req, file, cb) => {
     const allowedMimes = [
-      'application/pdf',
-      'image/jpeg',
-      'image/jpg',
-      'image/png',
-      'image/gif',
-      'image/webp'
+      "application/pdf",
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "image/gif",
+      "image/webp",
     ];
-    
+
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true);
     } else {
-      cb(new Error('Invalid file type. Only PDF and image files are allowed.'));
+      cb(new Error("Invalid file type. Only PDF and image files are allowed."));
     }
   },
 });
+
+let documentFiles:
+  | ReturnType<typeof createDocumentFiles>
+  | undefined;
+
+function getDocumentFiles() {
+  if (!documentFiles) {
+    documentFiles = createDocumentFiles({
+      objects: createObjectStoreFromEnv(process.env),
+      documents: {
+        create: (document) => storage.createMedicalDocument(document),
+        findByFilePath: (userId, filePath) =>
+          storage.getMedicalDocumentByFilePath(userId, filePath),
+        get: (id, userId) => storage.getMedicalDocument(id, userId),
+        delete: (id, userId) => storage.deleteMedicalDocument(id, userId),
+      },
+    });
+  }
+  return documentFiles;
+}
 
 export async function registerRoutes(app: Express): Promise<void> {
   // Auth middleware (local auth for development)
@@ -94,32 +107,27 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(400).json({ message: "No file uploaded" });
       }
 
-      // Validate request body
-      const documentData = insertMedicalDocumentSchema.parse({
+      const document = await getDocumentFiles().uploadOwnedDocument({
         userId,
+        bytes: req.file.buffer,
+        mimeType: req.file.mimetype,
+        originalName: req.file.originalname,
         title: req.body.title,
         description: req.body.description,
         documentType: req.body.documentType,
-        fileName: req.file.originalname,
-        filePath: req.file.path,
-        fileSize: req.file.size.toString(),
-        mimeType: req.file.mimetype,
         documentDate: req.body.documentDate,
         doctorName: req.body.doctorName,
         facilityName: req.body.facilityName,
         tags: req.body.tags ? JSON.parse(req.body.tags) : [],
       });
 
-      const document = await storage.createMedicalDocument(documentData);
       res.status(201).json(document);
     } catch (error) {
-      // Clean up uploaded file on error
-      if (req.file) {
-        fs.unlink(req.file.path, () => {});
-      }
-      
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Validation error", errors: error.errors });
+      }
+      if (error instanceof ObjectStoreConfigError) {
+        return res.status(503).json({ message: error.message });
       }
       
       console.error("Error uploading document:", error);
@@ -149,23 +157,17 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const userId = req.user.id;
       const documentId = parseInt(req.params.id);
-      
-      const document = await storage.getMedicalDocument(documentId, userId);
-      
-      if (!document) {
+      const result = await getDocumentFiles().removeOwnedDocument(userId, documentId);
+
+      if (result === "not_found") {
         return res.status(404).json({ message: "Document not found" });
       }
-      
-      const deleted = await storage.deleteMedicalDocument(documentId, userId);
-      
-      if (deleted) {
-        // Clean up file
-        fs.unlink(document.filePath, () => {});
-        res.json({ message: "Document deleted successfully" });
-      } else {
-        res.status(500).json({ message: "Failed to delete document" });
-      }
+
+      res.json({ message: "Document deleted successfully" });
     } catch (error) {
+      if (error instanceof ObjectStoreConfigError) {
+        return res.status(503).json({ message: error.message });
+      }
       console.error("Error deleting document:", error);
       res.status(500).json({ message: "Failed to delete document" });
     }
@@ -287,15 +289,29 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  // Serve uploaded files
-  app.get('/api/files/:filename', isAuthenticated, (req, res) => {
-    const filename = req.params.filename;
-    const filePath = path.join(uploadDir, filename);
-    
-    if (fs.existsSync(filePath)) {
-      res.sendFile(filePath);
-    } else {
-      res.status(404).json({ message: "File not found" });
+  app.get('/api/files/:filename', isAuthenticated, async (req: any, res) => {
+    try {
+      const owned = await getDocumentFiles().openOwnedFile(
+        req.user.id,
+        req.params.filename,
+      );
+
+      if (!owned) {
+        return res.status(404).json({ message: "File not found" });
+      }
+
+      res.setHeader("Content-Type", owned.mimeType);
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="${owned.fileName.replace(/"/g, "")}"`,
+      );
+      res.send(owned.bytes);
+    } catch (error) {
+      if (error instanceof ObjectStoreConfigError) {
+        return res.status(503).json({ message: error.message });
+      }
+      console.error("Error reading file:", error);
+      res.status(500).json({ message: "Failed to read file" });
     }
   });
 
