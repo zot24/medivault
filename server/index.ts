@@ -23,7 +23,17 @@ import { setupVite, serveStatic, log } from "./vite";
           : path;
         let logLine = `${req.method} ${loggedPath} ${res.statusCode} in ${duration}ms`;
         if (capturedJsonResponse) {
-          logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+          const redacted = { ...capturedJsonResponse };
+          if ("token" in redacted) {
+            redacted.token = "[redacted]";
+          }
+          if (
+            typeof redacted.path === "string" &&
+            redacted.path.startsWith("/s/")
+          ) {
+            redacted.path = "[redacted]";
+          }
+          logLine += ` :: ${JSON.stringify(redacted)}`;
         }
 
         if (logLine.length > 80) {
