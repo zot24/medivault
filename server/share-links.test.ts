@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { createDocumentFiles } from "./document-files";
 import { MemoryObjectStore } from "./object-store";
-import type { InsertMedicalDocument, MedicalDocument } from "@shared/schema";
+import type {
+  InsertMedicalDocument,
+  MedicalDocument,
+  Symptom,
+} from "@shared/schema";
 import {
   createShareLinks,
   parseRawToken,
+  type FrozenSymptom,
   type ShareLinkRecords,
   type TokenHash,
 } from "./share-links";
@@ -78,15 +83,24 @@ function memoryDocuments(rows: MedicalDocument[] = []) {
   };
 }
 
+function packetIdsOf(row: {
+  documentId: number;
+  documentIds: number[];
+}): number[] {
+  return row.documentIds.length > 0 ? row.documentIds : [row.documentId];
+}
+
 function memoryShareRecords() {
   const rows: Array<{
     id: number;
     tokenHash: TokenHash;
     documentId: number;
+    documentIds: number[];
     createdBy: string;
     expiresAt: Date;
     revokedAt: Date | null;
     label: string | null;
+    symptomSnapshot: FrozenSymptom[] | null;
     createdAt: Date;
   }> = [];
   let nextId = 1;
@@ -96,6 +110,8 @@ function memoryShareRecords() {
       const created = {
         id: nextId++,
         createdAt: new Date("2026-09-11T00:00:00.000Z"),
+        documentIds: row.documentIds,
+        symptomSnapshot: row.symptomSnapshot,
         ...row,
       };
       rows.push(created);
@@ -103,8 +119,13 @@ function memoryShareRecords() {
     },
     async listByDocument(createdBy, documentId) {
       return rows.filter(
-        (row) => row.createdBy === createdBy && row.documentId === documentId,
+        (row) =>
+          row.createdBy === createdBy &&
+          packetIdsOf(row).includes(documentId),
       );
+    },
+    async listByOwner(createdBy) {
+      return rows.filter((row) => row.createdBy === createdBy);
     },
     async findByTokenHash(tokenHash) {
       return rows.find((row) => row.tokenHash === tokenHash);
@@ -113,7 +134,21 @@ function memoryShareRecords() {
       const row = rows.find(
         (candidate) =>
           candidate.id === input.shareId &&
-          candidate.documentId === input.documentId &&
+          candidate.createdBy === input.createdBy &&
+          packetIdsOf(candidate).includes(input.documentId),
+      );
+      if (!row) {
+        return "not_found";
+      }
+      if (row.revokedAt == null) {
+        row.revokedAt = new Date();
+      }
+      return "revoked";
+    },
+    async revokeById(input) {
+      const row = rows.find(
+        (candidate) =>
+          candidate.id === input.shareId &&
           candidate.createdBy === input.createdBy,
       );
       if (!row) {
@@ -127,6 +162,37 @@ function memoryShareRecords() {
   };
 
   return { rows, records };
+}
+
+function fakeSymptom(overrides: Partial<Symptom> & Pick<Symptom, "id" | "userId">): Symptom {
+  return {
+    symptomName: "Headache",
+    severity: 6,
+    description: null,
+    location: "temple",
+    duration: "hours",
+    triggers: ["screen"],
+    medications: ["ibuprofen"],
+    notes: null,
+    dateRecorded: "2026-09-10",
+    timeOfDay: "evening",
+    createdAt: new Date("2026-09-10T00:00:00.000Z"),
+    updatedAt: new Date("2026-09-10T00:00:00.000Z"),
+    ...overrides,
+  };
+}
+
+function memorySymptoms(rows: Symptom[] = []) {
+  return {
+    rows,
+    records: {
+      async getMany(userId: string, ids: number[]) {
+        return rows.filter(
+          (row) => row.userId === userId && ids.includes(row.id),
+        );
+      },
+    },
+  };
 }
 
 async function uploadLabs(
@@ -145,15 +211,39 @@ async function uploadLabs(
   });
 }
 
-function setup(now?: () => Date) {
+async function uploadNamed(
+  files: ReturnType<typeof createDocumentFiles>,
+  input: {
+    userId?: string;
+    bytes: Buffer;
+    originalName: string;
+    title: string;
+    mimeType?: string;
+  },
+) {
+  return files.uploadOwnedDocument({
+    userId: input.userId ?? "owner-1",
+    bytes: input.bytes,
+    mimeType: input.mimeType ?? "application/pdf",
+    originalName: input.originalName,
+    title: input.title,
+    documentType: "lab_result",
+    documentDate: "2026-09-11",
+    tags: [],
+  });
+}
+
+function setup(now?: () => Date, symptoms: Symptom[] = []) {
   const objects = new MemoryObjectStore();
   const { records: documents } = memoryDocuments();
   const { rows, records: shares } = memoryShareRecords();
+  const { records: symptomRecords } = memorySymptoms(symptoms);
   const files = createDocumentFiles({ objects, documents });
   const shareLinks = createShareLinks({
     objects,
     documents,
     shares,
+    symptoms: symptomRecords,
     now,
   });
   return { files, shareLinks, shareRows: rows, shareRecords: shares };
@@ -390,12 +480,257 @@ describe("createShareLinks", () => {
       {
         id: minted.share.id,
         documentId: created.id,
+        documentIds: [created.id],
         label: "Dr. Chen Friday",
         createdAt: minted.share.createdAt,
         expiresAt: minted.share.expiresAt,
+        symptomSnapshot: null,
         life: "live",
       },
     ]);
     expect("token" in listed[0]).toBe(false);
+  });
+
+  it("mints a packet of two owned documents and opens each file", async () => {
+    const { files, shareLinks } = setup();
+    const labs = await uploadLabs(files);
+    const scan = await uploadNamed(files, {
+      bytes: Buffer.from("scan-bytes"),
+      originalName: "scan.png",
+      title: "Chest X-Ray",
+      mimeType: "image/png",
+    });
+
+    const minted = await shareLinks.mint({
+      userId: "owner-1",
+      documentIds: [labs.id, scan.id],
+      ttl: "24h",
+      label: "Friday visit",
+    });
+    expect(minted.kind).toBe("minted");
+    if (minted.kind !== "minted") {
+      return;
+    }
+    expect(minted.share.documentIds).toEqual([labs.id, scan.id]);
+    expect(minted.share.documentId).toBe(labs.id);
+
+    expect(await shareLinks.openPacket(minted.share.token)).toEqual({
+      kind: "packet",
+      packet: {
+        label: "Friday visit",
+        expiresAt: minted.share.expiresAt,
+        snapshot: null,
+        files: [
+          {
+            id: labs.id,
+            title: "Lab Results",
+            fileName: "labs.pdf",
+            mimeType: "application/pdf",
+          },
+          {
+            id: scan.id,
+            title: "Chest X-Ray",
+            fileName: "scan.png",
+            mimeType: "image/png",
+          },
+        ],
+      },
+    });
+
+    expect(await shareLinks.openFile(minted.share.token, labs.id)).toEqual({
+      kind: "file",
+      file: {
+        bytes: Buffer.from("%PDF-1"),
+        mimeType: "application/pdf",
+        fileName: "labs.pdf",
+      },
+    });
+    expect(await shareLinks.openFile(minted.share.token, scan.id)).toEqual({
+      kind: "file",
+      file: {
+        bytes: Buffer.from("scan-bytes"),
+        mimeType: "image/png",
+        fileName: "scan.png",
+      },
+    });
+    expect(await shareLinks.openByToken(minted.share.token)).toEqual({
+      kind: "file",
+      file: {
+        bytes: Buffer.from("%PDF-1"),
+        mimeType: "application/pdf",
+        fileName: "labs.pdf",
+      },
+    });
+  });
+
+  it("returns not_owner and inserts nothing when a packet includes a foreign document", async () => {
+    const { files, shareLinks, shareRows } = setup();
+    const owned = await uploadLabs(files);
+    const foreign = await uploadNamed(files, {
+      userId: "other-9",
+      bytes: Buffer.from("nope"),
+      originalName: "secret.pdf",
+      title: "Not yours",
+    });
+
+    const minted = await shareLinks.mint({
+      userId: "owner-1",
+      documentIds: [owned.id, foreign.id],
+      ttl: "24h",
+      label: null,
+    });
+
+    expect(minted).toEqual({ kind: "not_owner" });
+    expect(shareRows).toEqual([]);
+  });
+
+  it("opens a packet as dead after expiry", async () => {
+    let now = new Date("2026-09-11T00:00:00.000Z");
+    const { files, shareLinks } = setup(() => now);
+    const labs = await uploadLabs(files);
+    const scan = await uploadNamed(files, {
+      bytes: Buffer.from("scan-bytes"),
+      originalName: "scan.png",
+      title: "Chest X-Ray",
+      mimeType: "image/png",
+    });
+
+    const minted = await shareLinks.mint({
+      userId: "owner-1",
+      documentIds: [labs.id, scan.id],
+      ttl: "1h",
+      label: null,
+    });
+    expect(minted.kind).toBe("minted");
+    if (minted.kind !== "minted") {
+      return;
+    }
+
+    now = new Date("2026-09-11T01:00:00.000Z");
+    expect(await shareLinks.openPacket(minted.share.token)).toEqual({
+      kind: "dead",
+    });
+    expect(await shareLinks.openFile(minted.share.token, labs.id)).toEqual({
+      kind: "dead",
+    });
+  });
+
+  it("opens a packet as dead after revoke", async () => {
+    const { files, shareLinks } = setup();
+    const labs = await uploadLabs(files);
+    const scan = await uploadNamed(files, {
+      bytes: Buffer.from("scan-bytes"),
+      originalName: "scan.png",
+      title: "Chest X-Ray",
+      mimeType: "image/png",
+    });
+
+    const minted = await shareLinks.mint({
+      userId: "owner-1",
+      documentIds: [labs.id, scan.id],
+      ttl: "7d",
+      label: null,
+    });
+    expect(minted.kind).toBe("minted");
+    if (minted.kind !== "minted") {
+      return;
+    }
+
+    expect(
+      await shareLinks.revoke({
+        userId: "owner-1",
+        documentId: scan.id,
+        shareId: minted.share.id,
+      }),
+    ).toBe("revoked");
+    expect(await shareLinks.openPacket(minted.share.token)).toEqual({
+      kind: "dead",
+    });
+  });
+
+  it("opens a file id that is not in the packet as unknown", async () => {
+    const { files, shareLinks } = setup();
+    const labs = await uploadLabs(files);
+    const scan = await uploadNamed(files, {
+      bytes: Buffer.from("scan-bytes"),
+      originalName: "scan.png",
+      title: "Chest X-Ray",
+      mimeType: "image/png",
+    });
+
+    const minted = await shareLinks.mint({
+      userId: "owner-1",
+      documentIds: [labs.id],
+      ttl: "24h",
+      label: null,
+    });
+    expect(minted.kind).toBe("minted");
+    if (minted.kind !== "minted") {
+      return;
+    }
+
+    expect(await shareLinks.openFile(minted.share.token, scan.id)).toEqual({
+      kind: "unknown",
+    });
+  });
+
+  it("freezes selected symptoms at mint and ignores later edits", async () => {
+    const headache = fakeSymptom({ id: 3, userId: "owner-1", severity: 4 });
+    const { files, shareLinks } = setup(undefined, [headache]);
+    const labs = await uploadLabs(files);
+
+    const minted = await shareLinks.mint({
+      userId: "owner-1",
+      documentIds: [labs.id],
+      ttl: "24h",
+      label: null,
+      symptomIds: [3],
+    });
+    expect(minted.kind).toBe("minted");
+    if (minted.kind !== "minted") {
+      return;
+    }
+
+    headache.severity = 9;
+    headache.symptomName = "Migraine";
+
+    const opened = await shareLinks.openPacket(minted.share.token);
+    expect(opened.kind).toBe("packet");
+    if (opened.kind !== "packet") {
+      return;
+    }
+    expect(opened.packet.snapshot).toEqual([
+      {
+        id: 3,
+        symptomName: "Headache",
+        severity: 4,
+        description: null,
+        location: "temple",
+        duration: "hours",
+        triggers: ["screen"],
+        medications: ["ibuprofen"],
+        notes: null,
+        dateRecorded: "2026-09-10",
+        timeOfDay: "evening",
+      },
+    ]);
+  });
+
+  it("returns not_owner when a symptom id is not owned", async () => {
+    const { files, shareLinks, shareRows } = setup(undefined, [
+      fakeSymptom({ id: 8, userId: "other-9" }),
+    ]);
+    const labs = await uploadLabs(files);
+
+    const minted = await shareLinks.mint({
+      userId: "owner-1",
+      documentIds: [labs.id],
+      ttl: "24h",
+      label: null,
+      symptomIds: [8],
+    });
+
+    expect(minted).toEqual({ kind: "not_owner" });
+    expect(shareRows).toEqual([]);
   });
 });

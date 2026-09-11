@@ -12,7 +12,7 @@ import {
   type InsertSymptom,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, ilike, or } from "drizzle-orm";
+import { eq, desc, and, ilike, or, inArray, sql } from "drizzle-orm";
 import type {
   RevokeResult,
   ShareLinkRow,
@@ -37,12 +37,18 @@ export interface IStorage {
 
   insertShareLink(row: Omit<ShareLinkRow, "id" | "createdAt">): Promise<ShareLinkRow>;
   listShareLinksByDocument(createdBy: string, documentId: number): Promise<ShareLinkRow[]>;
+  listShareLinksByOwner(createdBy: string): Promise<ShareLinkRow[]>;
   getShareLinkByTokenHash(tokenHash: TokenHash): Promise<ShareLinkRow | undefined>;
   revokeShareLink(input: {
     createdBy: string;
     documentId: number;
     shareId: number;
   }): Promise<RevokeResult>;
+  revokeShareLinkById(input: {
+    createdBy: string;
+    shareId: number;
+  }): Promise<RevokeResult>;
+  getSymptomsByIds(userId: string, ids: number[]): Promise<Symptom[]>;
   
   // Symptom tracking operations
   createSymptom(symptom: InsertSymptom): Promise<Symptom>;
@@ -54,16 +60,29 @@ export interface IStorage {
 }
 
 function asShareLinkRow(row: ShareLink): ShareLinkRow {
+  const documentIds =
+    row.documentIds && row.documentIds.length > 0
+      ? row.documentIds
+      : [row.documentId];
   return {
     id: row.id,
     tokenHash: row.tokenHash as TokenHash,
     documentId: row.documentId,
+    documentIds,
     createdBy: row.createdBy,
     expiresAt: row.expiresAt,
     revokedAt: row.revokedAt,
     label: row.label,
+    symptomSnapshot: row.symptomSnapshot ?? null,
     createdAt: row.createdAt ?? new Date(),
   };
+}
+
+function shareIncludesDocumentSql(documentId: number) {
+  return or(
+    eq(shareLinks.documentId, documentId),
+    sql`${documentId} = ANY(${shareLinks.documentIds})`,
+  );
 }
 
 export class DatabaseStorage implements IStorage {
@@ -180,10 +199,12 @@ export class DatabaseStorage implements IStorage {
       .values({
         tokenHash: row.tokenHash,
         documentId: row.documentId,
+        documentIds: row.documentIds,
         createdBy: row.createdBy,
         expiresAt: row.expiresAt,
         revokedAt: row.revokedAt,
         label: row.label,
+        symptomSnapshot: row.symptomSnapshot,
       })
       .returning();
     return asShareLinkRow(created);
@@ -199,9 +220,18 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(shareLinks.createdBy, createdBy),
-          eq(shareLinks.documentId, documentId),
+          shareIncludesDocumentSql(documentId),
         ),
       )
+      .orderBy(desc(shareLinks.createdAt));
+    return rows.map(asShareLinkRow);
+  }
+
+  async listShareLinksByOwner(createdBy: string): Promise<ShareLinkRow[]> {
+    const rows = await db
+      .select()
+      .from(shareLinks)
+      .where(eq(shareLinks.createdBy, createdBy))
       .orderBy(desc(shareLinks.createdAt));
     return rows.map(asShareLinkRow);
   }
@@ -227,7 +257,32 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(shareLinks.id, input.shareId),
-          eq(shareLinks.documentId, input.documentId),
+          eq(shareLinks.createdBy, input.createdBy),
+          shareIncludesDocumentSql(input.documentId),
+        ),
+      );
+    if (!row) {
+      return "not_found";
+    }
+    if (row.revokedAt == null) {
+      await db
+        .update(shareLinks)
+        .set({ revokedAt: new Date() })
+        .where(eq(shareLinks.id, row.id));
+    }
+    return "revoked";
+  }
+
+  async revokeShareLinkById(input: {
+    createdBy: string;
+    shareId: number;
+  }): Promise<RevokeResult> {
+    const [row] = await db
+      .select()
+      .from(shareLinks)
+      .where(
+        and(
+          eq(shareLinks.id, input.shareId),
           eq(shareLinks.createdBy, input.createdBy),
         ),
       );
@@ -241,6 +296,16 @@ export class DatabaseStorage implements IStorage {
         .where(eq(shareLinks.id, row.id));
     }
     return "revoked";
+  }
+
+  async getSymptomsByIds(userId: string, ids: number[]): Promise<Symptom[]> {
+    if (ids.length === 0) {
+      return [];
+    }
+    return db
+      .select()
+      .from(symptoms)
+      .where(and(eq(symptoms.userId, userId), inArray(symptoms.id, ids)));
   }
 
   // Symptom tracking operations
