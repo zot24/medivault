@@ -228,6 +228,9 @@ describe("createDocumentFiles", () => {
     expect(created.fileName).toBe("CT000001");
     expect(created.filePath.endsWith(".dcm")).toBe(true);
 
+    const stored = await objects.get(asObjectKey(created.filePath));
+    expect(stored?.contentType).toBe("application/dicom");
+
     const basename = created.filePath.split("/").pop()!;
     const owned = await files.openOwnedFile("owner-1", basename);
     expect(owned).toEqual({

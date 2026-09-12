@@ -127,7 +127,7 @@ export function createDocumentFiles(deps: {
       await deps.objects.put({
         key,
         bytes: input.bytes,
-        contentType: input.mimeType,
+        contentType: classified.mimeType,
       });
 
       try {
