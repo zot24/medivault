@@ -52,9 +52,29 @@ export function acceptAttribute(): string {
   ].join(",");
 }
 
+export const PART10_SNIFF_BYTES = 132;
+const PART10_MAGIC = 128;
+
+export function isPart10(bytes: Uint8Array | undefined): boolean {
+  if (!bytes || bytes.length < PART10_MAGIC + 4) {
+    return false;
+  }
+  return (
+    bytes[PART10_MAGIC] === 0x44 &&
+    bytes[PART10_MAGIC + 1] === 0x49 &&
+    bytes[PART10_MAGIC + 2] === 0x43 &&
+    bytes[PART10_MAGIC + 3] === 0x4d
+  );
+}
+
+export function isVagueUploadMime(mime: string): boolean {
+  return mime === "" || mime === "application/octet-stream";
+}
+
 export function classifyUpload(input: {
   mimeType: string;
   originalName: string;
+  bytes?: Uint8Array;
 }): ClassifiedUpload | null {
   const mime = input.mimeType.trim().toLowerCase();
   const ext = extensionOf(input.originalName);
@@ -64,10 +84,12 @@ export function classifyUpload(input: {
     return { mimeType: byMime.mimeType, extension: byMime.extension };
   }
 
-  if (
-    ext === ".dcm" &&
-    (mime === "" || mime === "application/octet-stream")
-  ) {
+  const vague = isVagueUploadMime(mime);
+  if (ext === ".dcm" && vague) {
+    return { mimeType: "application/dicom", extension: ".dcm" };
+  }
+
+  if ((vague || ext === "") && isPart10(input.bytes)) {
     return { mimeType: "application/dicom", extension: ".dcm" };
   }
 
@@ -81,11 +103,13 @@ export function fitsUploadCap(byteLength: number): boolean {
 export function isDicomDocument(input: {
   mimeType: string;
   fileName: string;
+  bytes?: Uint8Array;
 }): boolean {
   return (
     classifyUpload({
       mimeType: input.mimeType,
       originalName: input.fileName,
+      bytes: input.bytes,
     })?.mimeType === "application/dicom"
   );
 }

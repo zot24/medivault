@@ -15,7 +15,11 @@ import {
   parseRawToken,
 } from "./share-links";
 import { insertSymptomSchema } from "@shared/schema";
-import { classifyUpload, MAX_UPLOAD_BYTES } from "@shared/upload-kinds";
+import {
+  classifyUpload,
+  isVagueUploadMime,
+  MAX_UPLOAD_BYTES,
+} from "@shared/upload-kinds";
 import { z } from "zod";
 
 const upload = multer({
@@ -31,13 +35,17 @@ const upload = multer({
     if (classified) {
       file.mimetype = classified.mimeType;
       cb(null, true);
-    } else {
-      cb(
-        new Error(
-          "Invalid file type. Only PDF, image, and DICOM files are allowed.",
-        ),
-      );
+      return;
     }
+    if (isVagueUploadMime(file.mimetype.trim().toLowerCase())) {
+      cb(null, true);
+      return;
+    }
+    cb(
+      new Error(
+        "Invalid file type. Only PDF, image, and DICOM files are allowed.",
+      ),
+    );
   },
 });
 

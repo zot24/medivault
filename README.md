@@ -9,7 +9,7 @@ MediVault is a patient-controlled health history. You store documents and sympto
 - Durable files in Supabase Storage. The API serves a download only after it checks that the signed-in user owns the file.
 - Expiring share links at `/s/:token`. Each link lasts 1h, 24h, or 7d. You can revoke a link.
 - Case bundles that put more than one file in one share packet.
-- A DICOM CT viewer spike. `dicom-parser` draws uncompressed 16-bit frames on a canvas.
+- A DICOM CT viewer. `dicom-parser` plus `jpeg-lossless-decoder-js` draw uncompressed, JPEG Lossless (`1.2.840.10008.1.2.4.70` and `1.2.840.10008.1.2.4.57`), and RLE (`1.2.840.10008.1.2.5`) 16-bit frames on a canvas.
 
 ## Stack
 
@@ -63,11 +63,11 @@ Open Documents. Use **Share** or **Share case**. Copy the `/s/:token` path. Open
 
 ## Test DICOM
 
-Upload `.dcm` files. A multi-select of `.dcm` files becomes one series.
+Upload `.dcm` files, or extensionless Part-10 slices from a patient CD (`DICM` at byte 128). A multi-select of DICOM slices becomes one series.
 
-Patient CD slices often have no extension. Before you upload a slice with no extension, rename it to `.dcm`.
+Dewi-style CD data is expected to work after a `.dcm` rename or as extensionless Part-10 files. JPEG Lossless (`1.2.840.10008.1.2.4.70`) and RLE (`1.2.840.10008.1.2.5`) draw in the canvas viewer.
 
-Many clinical CTs use JPEG-lossless transfer syntax `1.2.840.10008.1.2.4.70`. The current spike renders uncompressed 16-bit frames only, so those files do not draw.
+This is not a PACS. JPEG 2000, JPEG-LS, and other transfer syntaxes still do not draw. Each file must be 50MB or smaller.
 
 The mini fixtures in `shared/fixtures/` do render.
 
