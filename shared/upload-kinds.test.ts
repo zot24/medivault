@@ -55,6 +55,40 @@ describe("classifyUpload", () => {
       }),
     ).toBeNull();
   });
+
+  it("accepts an extensionless Part-10 file declared as octet-stream", () => {
+    const bytes = new Uint8Array(132);
+    bytes.set([0x44, 0x49, 0x43, 0x4d], 128);
+    expect(
+      classifyUpload({
+        mimeType: "application/octet-stream",
+        originalName: "CT000001",
+        bytes,
+      }),
+    ).toEqual({ mimeType: "application/dicom", extension: ".dcm" });
+  });
+
+  it("accepts an extensionless Part-10 file with an empty browser mime", () => {
+    const bytes = new Uint8Array(132);
+    bytes.set([0x44, 0x49, 0x43, 0x4d], 128);
+    expect(
+      classifyUpload({
+        mimeType: "",
+        originalName: "CT000001",
+        bytes,
+      }),
+    ).toEqual({ mimeType: "application/dicom", extension: ".dcm" });
+  });
+
+  it("rejects an extensionless octet-stream that is not Part-10", () => {
+    expect(
+      classifyUpload({
+        mimeType: "application/octet-stream",
+        originalName: "CT000001",
+        bytes: new Uint8Array(132),
+      }),
+    ).toBeNull();
+  });
 });
 
 describe("acceptedExtensions", () => {

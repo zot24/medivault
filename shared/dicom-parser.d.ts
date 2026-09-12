@@ -1,12 +1,41 @@
 declare module "dicom-parser" {
+  export type Fragment = {
+    offset: number;
+    position: number;
+    length: number;
+  };
+
+  export type Element = {
+    dataOffset: number;
+    length: number;
+    encapsulatedPixelData?: boolean;
+    basicOffsetTable?: number[];
+    fragments?: Fragment[];
+  };
+
   export type DataSet = {
     string(tag: string): string | undefined;
     uint16(tag: string): number | undefined;
-    elements: Record<string, { dataOffset: number; length: number }>;
+    elements: Record<string, Element>;
   };
 
   export function parseDicom(data: Uint8Array): DataSet;
+  export function readEncapsulatedImageFrame(
+    dataSet: DataSet,
+    pixelDataElement: Element,
+    frameIndex: number,
+  ): Uint8Array;
+  export function readEncapsulatedPixelDataFromFragments(
+    dataSet: DataSet,
+    pixelDataElement: Element,
+    startFragmentIndex: number,
+    numFragments?: number,
+  ): Uint8Array;
 
-  const dicomParser: { parseDicom: typeof parseDicom };
+  const dicomParser: {
+    parseDicom: typeof parseDicom;
+    readEncapsulatedImageFrame: typeof readEncapsulatedImageFrame;
+    readEncapsulatedPixelDataFromFragments: typeof readEncapsulatedPixelDataFromFragments;
+  };
   export default dicomParser;
 }

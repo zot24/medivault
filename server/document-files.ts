@@ -96,6 +96,7 @@ export function createDocumentFiles(deps: {
       const classified = classifyUpload({
         mimeType: input.mimeType,
         originalName: input.originalName,
+        bytes: input.bytes,
       });
       if (!classified) {
         throw new Error(
@@ -126,7 +127,7 @@ export function createDocumentFiles(deps: {
       await deps.objects.put({
         key,
         bytes: input.bytes,
-        contentType: input.mimeType,
+        contentType: classified.mimeType,
       });
 
       try {

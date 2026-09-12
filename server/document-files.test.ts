@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { buildMiniCtDicom } from "@shared/mini-ct-dicom";
 import {
   createDocumentFiles,
   objectKeyFor,
@@ -204,5 +205,57 @@ describe("createDocumentFiles", () => {
       fileName: "slice-01.dcm",
     });
     expect(await files.openOwnedFile("intruder-2", basename)).toBeNull();
+  });
+
+  it("stores an extensionless Part-10 slice as application/dicom with a .dcm key", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const bytes = buildMiniCtDicom({ rows: 8, columns: 8 });
+
+    const created = await files.uploadOwnedDocument({
+      userId: "owner-1",
+      bytes,
+      mimeType: "application/octet-stream",
+      originalName: "CT000001",
+      title: "Chest CT",
+      documentType: "x_ray",
+      documentDate: "2026-09-12",
+      tags: [],
+    });
+
+    expect(created.mimeType).toBe("application/dicom");
+    expect(created.fileName).toBe("CT000001");
+    expect(created.filePath.endsWith(".dcm")).toBe(true);
+
+    const stored = await objects.get(asObjectKey(created.filePath));
+    expect(stored?.contentType).toBe("application/dicom");
+
+    const basename = created.filePath.split("/").pop()!;
+    const owned = await files.openOwnedFile("owner-1", basename);
+    expect(owned).toEqual({
+      bytes,
+      mimeType: "application/dicom",
+      fileName: "CT000001",
+    });
+  });
+
+  it("rejects an extensionless octet-stream that is not Part-10", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+
+    await expect(
+      files.uploadOwnedDocument({
+        userId: "owner-1",
+        bytes: Buffer.alloc(200),
+        mimeType: "application/octet-stream",
+        originalName: "CT000001",
+        title: "Not DICOM",
+        documentType: "other",
+        documentDate: "2026-09-12",
+        tags: [],
+      }),
+    ).rejects.toThrow("Invalid file type");
   });
 });

@@ -33,6 +33,7 @@ import {
   fitsUploadCap,
   isDicomDocument,
   MAX_UPLOAD_BYTES,
+  PART10_SNIFF_BYTES,
   newSeriesTag,
   newSliceTag,
 } from "@shared/upload-kinds";
@@ -75,8 +76,17 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
 
   const uploadMutation = useMutation({
     mutationFn: async (data: UploadFormData & { files: File[] }) => {
-      const dicomCount = data.files.filter((file) =>
-        isDicomDocument({ mimeType: file.type, fileName: file.name }),
+      const heads = await Promise.all(
+        data.files.map(async (file) =>
+          new Uint8Array(await file.slice(0, PART10_SNIFF_BYTES).arrayBuffer()),
+        ),
+      );
+      const dicomCount = data.files.filter((file, index) =>
+        isDicomDocument({
+          mimeType: file.type,
+          fileName: file.name,
+          bytes: heads[index],
+        }),
       ).length;
       const seriesTag =
         dicomCount > 1 ? newSeriesTag() : null;
@@ -86,7 +96,11 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
         const tags = [...data.tags];
         if (
           seriesTag &&
-          isDicomDocument({ mimeType: file.type, fileName: file.name })
+          isDicomDocument({
+            mimeType: file.type,
+            fileName: file.name,
+            bytes: heads[index],
+          })
         ) {
           tags.push(seriesTag, newSliceTag(index));
         }
@@ -168,18 +182,22 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
     onOpenChange(false);
   };
 
-  const handleFilesSelect = (incoming: File[]) => {
+  const handleFilesSelect = async (incoming: File[]) => {
     const accepted: File[] = [];
+    const heads: Uint8Array[] = [];
     for (const file of incoming) {
+      const bytes = new Uint8Array(await file.slice(0, PART10_SNIFF_BYTES).arrayBuffer());
       if (
         !classifyUpload({
           mimeType: file.type,
           originalName: file.name,
+          bytes,
         })
       ) {
         toast({
           title: "Invalid file type",
-          description: "Only PDF, image, and DICOM (.dcm) files are allowed",
+          description:
+            "Only PDF, image, and DICOM files are allowed. CD slices with no extension are accepted when they are Part-10 DICOM.",
           variant: "destructive",
         });
         return;
@@ -193,10 +211,15 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
         return;
       }
       accepted.push(file);
+      heads.push(bytes);
     }
 
-    const dicomCount = accepted.filter((file) =>
-      isDicomDocument({ mimeType: file.type, fileName: file.name }),
+    const dicomCount = accepted.filter((file, index) =>
+      isDicomDocument({
+        mimeType: file.type,
+        fileName: file.name,
+        bytes: heads[index],
+      }),
     ).length;
     if (accepted.length > 1 && dicomCount !== accepted.length) {
       toast({
@@ -323,7 +346,7 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
                     Drop your files here, or click to browse
                   </p>
                   <p className="text-sm text-gray-500 mb-4">
-                    PDF, JPEG, PNG, or DICOM (.dcm). 50MB per file. Multiple .dcm files become one scrollable series.
+                    PDF, JPEG, PNG, or DICOM. 50MB per file. Multiple DICOM slices become one scrollable series. CD slices with no extension are accepted.
                   </p>
                   <Button
                     type="button"

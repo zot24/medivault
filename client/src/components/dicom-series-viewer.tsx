@@ -84,7 +84,7 @@ export default function DicomSeriesViewer({
         const frame = pixelFrameFromPart10(new Uint8Array(await response.arrayBuffer()));
         if (!frame) {
           throw new Error(
-            `${row.fileName} is not an uncompressed CT slice this spike can draw.`,
+            `${row.fileName} is not a CT slice this viewer can draw.`,
           );
         }
         loaded.push(frame);
