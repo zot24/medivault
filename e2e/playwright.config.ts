@@ -1,3 +1,4 @@
+import path from "path";
 import { defineConfig, devices } from "@playwright/test";
 
 const appBase = process.env.E2E_BASE_URL;
@@ -30,7 +31,8 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm exec vite --config e2e/vite.config.ts --host 127.0.0.1 --port 4177 --strictPort",
+    command: "pnpm exec vite --config vite.config.ts --host 127.0.0.1 --port 4177 --strictPort",
+    cwd: path.resolve(import.meta.dirname),
     url: "http://127.0.0.1:4177",
     reuseExistingServer: !process.env.CI,
   },

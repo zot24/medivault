@@ -77,10 +77,11 @@ The synthetic fixtures in `shared/fixtures/` do render. They contain no patient 
 
 ```bash
 pnpm test
+pnpm exec playwright install chromium
 pnpm test:e2e
 ```
 
-`pnpm test:e2e` starts a local harness, draws the synthetic fixtures on a canvas, and asserts non-blank pixels. It does not need a database.
+`pnpm test:e2e` starts a local harness, draws the synthetic fixtures on a canvas, and asserts non-blank pixels. It does not need a database. Chromium is enough. The login and upload spec is skipped unless `E2E_BASE_URL` is set.
 
 To run the login and upload flow against a local app, start Supabase, seed the demo user, then run the app and the app spec.
 

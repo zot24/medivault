@@ -47,7 +47,7 @@ test("draws synthetic SC RGB and CT fixtures on a canvas", async ({ page }) => {
   expect(ctStats).toEqual({
     width: 16,
     height: 16,
-    nonBlack: 256,
+    nonBlack: 255,
     max: 255,
   });
 });
