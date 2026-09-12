@@ -696,9 +696,8 @@ All agents MUST follow TDD:
 4. **PUSH TO REMOTE** - This is MANDATORY:
    ```bash
    git pull --rebase
-   bd sync
    git push
-   git status  # MUST show "up to date with origin"
+   git status
    ```
 5. **Clean up** - Clear stashes, prune remote branches
 6. **Verify** - All changes committed AND pushed
