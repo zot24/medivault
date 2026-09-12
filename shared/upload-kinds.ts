@@ -163,6 +163,93 @@ export function stackDocuments<
   });
 }
 
+export type DocumentBrowseItem<T> =
+  | { kind: "file"; document: T }
+  | { kind: "series"; seriesId: string; documents: T[] };
+
+export function visibleBrowseItems<
+  T extends {
+    id: number;
+    mimeType: string;
+    fileName: string;
+    tags: string[] | null;
+  },
+>(vault: T[], visible: T[]): DocumentBrowseItem<T>[] {
+  const visibleIds = new Set(visible.map((row) => row.id));
+  return groupDocuments(vault).filter((item) => {
+    const rows = item.kind === "series" ? item.documents : [item.document];
+    return rows.some((row) => visibleIds.has(row.id));
+  });
+}
+
+export function groupDocuments<
+  T extends { mimeType: string; fileName: string; tags: string[] | null },
+>(vault: T[]): DocumentBrowseItem<T>[] {
+  const seen = new Set<string>();
+  const items: DocumentBrowseItem<T>[] = [];
+  for (const document of vault) {
+    if (!isDicomDocument(document)) {
+      items.push({ kind: "file", document });
+      continue;
+    }
+    const seriesId = seriesIdFromTags(document.tags);
+    if (!seriesId) {
+      items.push({ kind: "file", document });
+      continue;
+    }
+    if (seen.has(seriesId)) {
+      continue;
+    }
+    seen.add(seriesId);
+    items.push({
+      kind: "series",
+      seriesId,
+      documents: stackDocuments(document, vault),
+    });
+  }
+  return items;
+}
+
+export function focusSliceIndex<T extends { id: number }>(
+  focus: T,
+  stack: T[],
+): number {
+  const index = stack.findIndex((row) => row.id === focus.id);
+  return index < 0 ? 0 : index;
+}
+
+export function displayTags(tags: string[] | null | undefined): string[] {
+  return (tags ?? []).filter(
+    (tag) =>
+      !tag.startsWith(SERIES_TAG_PREFIX) && !tag.startsWith(SLICE_TAG_PREFIX),
+  );
+}
+
+export function sliceCountLabel(count: number): string {
+  return count === 1 ? "1 slice" : `${count} slices`;
+}
+
+export function stepSliceIndex(
+  current: number,
+  delta: number,
+  length: number,
+): number {
+  if (length <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.min(length - 1, current + delta));
+}
+
+export function sliceDeltaFromKey(key: string): number | null {
+  if (key === "ArrowRight" || key === "ArrowDown") {
+    return 1;
+  }
+  if (key === "ArrowLeft" || key === "ArrowUp") {
+    return -1;
+  }
+  return null;
+}
+
 function extensionOf(name: string): string {
   const match = /\.[^.]+$/.exec(name);
   return match ? match[0].toLowerCase() : "";

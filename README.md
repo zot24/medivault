@@ -63,7 +63,7 @@ Open Documents. Use **Share** or **Share case**. Copy the `/s/:token` path. Open
 
 ## Test DICOM
 
-Upload `.dcm` files, or extensionless Part-10 slices from a patient CD (`DICM` at byte 128). A multi-select of DICOM slices becomes one series.
+Upload `.dcm` files, or extensionless Part-10 slices from a patient CD (`DICM` at byte 128). A multi-select of DICOM slices becomes one series. Documents shows that series as one card with a slice count. Open the card and move through slices in the viewer. Do not go back to the list for the next file.
 
 Clinical CT CD data is expected to work after a `.dcm` rename or as extensionless Part-10 files. JPEG Lossless (`1.2.840.10008.1.2.4.70`) and RLE (`1.2.840.10008.1.2.5`) draw in the canvas viewer.
 

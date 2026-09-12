@@ -25,14 +25,23 @@ import type { MedicalDocument } from "@shared/schema";
 import ShareDialog from "@/components/share-dialog";
 import DicomSeriesViewer from "@/components/dicom-series-viewer";
 import { ownedFileUrl } from "@/lib/owned-file";
-import { isDicomDocument } from "@shared/upload-kinds";
+import {
+  displayTags,
+  isDicomDocument,
+  sliceCountLabel,
+} from "@shared/upload-kinds";
 
 interface DocumentCardProps {
   document: MedicalDocument;
   onDelete: (id: number) => void;
+  sliceCount?: number;
 }
 
-export default function DocumentCard({ document: medicalDocument, onDelete }: DocumentCardProps) {
+export default function DocumentCard({
+  document: medicalDocument,
+  onDelete,
+  sliceCount,
+}: DocumentCardProps) {
   const [shareOpen, setShareOpen] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
   const getDocumentTypeStyle = (type: string) => {
@@ -55,6 +64,7 @@ export default function DocumentCard({ document: medicalDocument, onDelete }: Do
   };
 
   const style = getDocumentTypeStyle(medicalDocument.documentType);
+  const visibleTags = displayTags(medicalDocument.tags);
 
   const handleDownload = () => {
     const link = window.document.createElement("a");
@@ -88,7 +98,7 @@ export default function DocumentCard({ document: medicalDocument, onDelete }: Do
                 <span className={`badge-sage capitalize`}>
                   {getDocumentTypeLabel(medicalDocument.documentType)}
                 </span>
-                {medicalDocument.tags && medicalDocument.tags.length > 0 && (
+                {visibleTags.length > 0 && (
                   <div className="flex items-center space-x-1">
                     <Shield className="h-3 w-3 text-secondary" />
                     <span className="text-xs text-foreground-subtle font-body">Secured</span>
@@ -170,16 +180,25 @@ export default function DocumentCard({ document: medicalDocument, onDelete }: Do
         </div>
 
         {/* Tags */}
-        {medicalDocument.tags && medicalDocument.tags.length > 0 && (
+        {sliceCount != null && sliceCount > 1 && (
+          <p
+            className="text-sm text-foreground-muted mb-4 font-body"
+            data-testid={`document-slice-count-${medicalDocument.id}`}
+          >
+            {sliceCountLabel(sliceCount)}
+          </p>
+        )}
+
+        {visibleTags.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-4">
-            {medicalDocument.tags.slice(0, 3).map((tag, index) => (
-              <span key={index} className="px-2 py-1 text-xs bg-surface-1 text-foreground-muted rounded-full border border-border font-body">
+            {visibleTags.slice(0, 3).map((tag) => (
+              <span key={tag} className="px-2 py-1 text-xs bg-surface-1 text-foreground-muted rounded-full border border-border font-body">
                 {tag}
               </span>
             ))}
-            {medicalDocument.tags.length > 3 && (
+            {visibleTags.length > 3 && (
               <span className="px-2 py-1 text-xs bg-surface-1 text-foreground-muted rounded-full border border-border font-body">
-                +{medicalDocument.tags.length - 3} more
+                +{visibleTags.length - 3} more
               </span>
             )}
           </div>

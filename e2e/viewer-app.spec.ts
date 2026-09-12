@@ -61,6 +61,7 @@ test("uploads synthetic DICOM fixtures and draws them in the viewer", async ({
   expect(pixel.rgba[3]).toBe(255);
   expect(pixel.rgba[0] + pixel.rgba[1] + pixel.rgba[2]).toBeGreaterThan(0);
 
+  await expect(page.getByTestId("dicom-slice-index")).toBeVisible();
   const slider = page.getByTestId("dicom-slice-slider");
   await expect(slider).toBeVisible();
   if ((await slider.getAttribute("disabled")) == null) {

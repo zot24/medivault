@@ -14,7 +14,13 @@ import {
   rgbaFromFrame,
   type DicomFrame,
 } from "@shared/dicom-frame";
-import { isDicomDocument, stackDocuments } from "@shared/upload-kinds";
+import {
+  focusSliceIndex,
+  isDicomDocument,
+  sliceDeltaFromKey,
+  stackDocuments,
+  stepSliceIndex,
+} from "@shared/upload-kinds";
 import type { MedicalDocument } from "@shared/schema";
 
 type DicomSeriesViewerProps = {
@@ -54,14 +60,14 @@ export default function DicomSeriesViewer({
   }, [focus, vault]);
 
   useEffect(() => {
-    if (!open || stack.length === 0) {
+    if (!open || !focus || stack.length === 0) {
       setFrames([]);
       setError(null);
       return;
     }
 
     let cancelled = false;
-    setSliceIndex(0);
+    setSliceIndex(focusSliceIndex(focus, stack));
     setError(null);
 
     (async () => {
@@ -93,7 +99,7 @@ export default function DicomSeriesViewer({
     return () => {
       cancelled = true;
     };
-  }, [open, stack]);
+  }, [open, focus, stack]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -104,18 +110,30 @@ export default function DicomSeriesViewer({
     blitFrame(canvas, frame);
   }, [frames, sliceIndex]);
 
-  const label = stack[sliceIndex]?.fileName ?? focus?.fileName ?? "DICOM";
+  const sliceLabel =
+    frames.length === 0 ? "0 / 0" : `${sliceIndex + 1} / ${frames.length}`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="sm:max-w-3xl"
         data-testid="dicom-series-viewer"
+        onKeyDown={(event) => {
+          const delta = sliceDeltaFromKey(event.key);
+          if (delta == null || frames.length < 2) {
+            return;
+          }
+          event.preventDefault();
+          setSliceIndex((current) =>
+            stepSliceIndex(current, delta, frames.length),
+          );
+        }}
       >
         <DialogHeader>
-          <DialogTitle>{focus?.title ?? "CT series"}</DialogTitle>
+          <DialogTitle>{focus?.title ?? "DICOM series"}</DialogTitle>
           <DialogDescription>
-            In-app CT spike. Scroll or use the slider to move through slices.
+            Stay in this dialog. Use the slider, the mouse wheel, or the arrow
+            keys to move through slices.
           </DialogDescription>
         </DialogHeader>
         {error ? (
@@ -136,14 +154,15 @@ export default function DicomSeriesViewer({
                   event.preventDefault();
                   const delta = event.deltaY > 0 ? 1 : -1;
                   setSliceIndex((current) =>
-                    Math.max(0, Math.min(frames.length - 1, current + delta)),
+                    stepSliceIndex(current, delta, frames.length),
                   );
                 }}
               />
             </div>
             <div className="space-y-2">
               <label className="text-sm text-foreground-muted" htmlFor="dicom-slice">
-                Slice {frames.length === 0 ? 0 : sliceIndex + 1} of {frames.length} ({label})
+                Slice{" "}
+                <span data-testid="dicom-slice-index">{sliceLabel}</span>
               </label>
               <input
                 id="dicom-slice"
