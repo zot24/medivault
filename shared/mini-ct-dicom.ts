@@ -71,6 +71,8 @@ function us(value: number): Buffer {
 export const TRANSFER_EXPLICIT_LE = "1.2.840.10008.1.2.1";
 export const TRANSFER_JPEG_LOSSLESS = "1.2.840.10008.1.2.4.70";
 export const TRANSFER_RLE = "1.2.840.10008.1.2.5";
+export const SOP_CT_IMAGE = "1.2.840.10008.5.1.4.1.1.2";
+export const SOP_SECONDARY_CAPTURE = "1.2.840.10008.5.1.4.1.1.7";
 
 export type MiniCtTransfer =
   | typeof TRANSFER_EXPLICIT_LE
@@ -83,6 +85,10 @@ export type MiniCtOptions = {
   instanceNumber?: number;
   pixels?: Uint16Array;
   transferSyntax?: MiniCtTransfer;
+  sopClass?: string;
+  photometric?: string;
+  bitsAllocated?: number;
+  samplesPerPixel?: number;
 };
 
 export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
@@ -97,7 +103,10 @@ export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
     );
 
   const sopInstance = `1.2.826.0.1.3680043.8.498.spike.${instanceNumber}`;
-  const sopClass = "1.2.840.10008.5.1.4.1.1.2";
+  const sopClass = options.sopClass ?? SOP_CT_IMAGE;
+  const photometric = options.photometric ?? "MONOCHROME2";
+  const bitsAllocated = options.bitsAllocated ?? 16;
+  const samplesPerPixel = options.samplesPerPixel ?? 1;
 
   const metaWithoutLength = Buffer.concat([
     explicitElement(0x0002, 0x0001, "OB", Buffer.from([0x00, 0x01])),
@@ -130,13 +139,13 @@ export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
     explicitElement(0x0020, 0x000d, "UI", ui("1.2.826.0.1.3680043.8.498.study.1")),
     explicitElement(0x0020, 0x000e, "UI", ui("1.2.826.0.1.3680043.8.498.series.1")),
     explicitElement(0x0020, 0x0013, "IS", is(instanceNumber)),
-    explicitElement(0x0028, 0x0002, "US", us(1)),
-    explicitElement(0x0028, 0x0004, "CS", cs("MONOCHROME2")),
+    explicitElement(0x0028, 0x0002, "US", us(samplesPerPixel)),
+    explicitElement(0x0028, 0x0004, "CS", cs(photometric)),
     explicitElement(0x0028, 0x0010, "US", us(rows)),
     explicitElement(0x0028, 0x0011, "US", us(columns)),
-    explicitElement(0x0028, 0x0100, "US", us(16)),
-    explicitElement(0x0028, 0x0101, "US", us(16)),
-    explicitElement(0x0028, 0x0102, "US", us(15)),
+    explicitElement(0x0028, 0x0100, "US", us(bitsAllocated)),
+    explicitElement(0x0028, 0x0101, "US", us(bitsAllocated)),
+    explicitElement(0x0028, 0x0102, "US", us(Math.max(bitsAllocated - 1, 0))),
     explicitElement(0x0028, 0x0103, "US", us(0)),
     explicitElement(0x0028, 0x1050, "DS", ds(500)),
     explicitElement(0x0028, 0x1051, "DS", ds(1000)),
@@ -166,20 +175,113 @@ function encapsulatedPixelData(fragment: Buffer): Buffer {
   ]);
 }
 
+export type MiniScRgbOptions = {
+  rows?: number;
+  columns?: number;
+  instanceNumber?: number;
+  pixels?: Uint8Array;
+  transferSyntax?: typeof TRANSFER_EXPLICIT_LE | typeof TRANSFER_RLE;
+};
+
+export function buildMiniScRgbDicom(options: MiniScRgbOptions = {}): Buffer {
+  const rows = options.rows ?? 8;
+  const columns = options.columns ?? 8;
+  const instanceNumber = options.instanceNumber ?? 1;
+  const transferSyntax = options.transferSyntax ?? TRANSFER_RLE;
+  const pixels = options.pixels ?? defaultScRgbPixels(rows, columns);
+  if (pixels.length < rows * columns * 3) {
+    throw new Error("SC RGB pixels must be interleaved RGB");
+  }
+
+  const sopInstance = `1.2.826.0.1.3680043.8.498.sc.${instanceNumber}`;
+  const sopClass = SOP_SECONDARY_CAPTURE;
+
+  const metaWithoutLength = Buffer.concat([
+    explicitElement(0x0002, 0x0001, "OB", Buffer.from([0x00, 0x01])),
+    explicitElement(0x0002, 0x0002, "UI", ui(sopClass)),
+    explicitElement(0x0002, 0x0003, "UI", ui(sopInstance)),
+    explicitElement(0x0002, 0x0010, "UI", ui(transferSyntax)),
+    explicitElement(0x0002, 0x0012, "UI", ui("1.2.826.0.1.3680043.8.498.1")),
+  ]);
+  const fileMeta = Buffer.concat([
+    explicitElement(0x0002, 0x0000, "UL", u32(metaWithoutLength.length)),
+    metaWithoutLength,
+  ]);
+
+  const rgb = pixels.subarray(0, rows * columns * 3);
+  const pixelBytes =
+    transferSyntax === TRANSFER_RLE
+      ? encapsulatedPixelData(encodeRlePlanes(rgbPlanes(rgb, rows * columns)))
+      : explicitElement(0x7fe0, 0x0010, "OB", Buffer.from(rgb));
+
+  const dataset = Buffer.concat([
+    explicitElement(0x0008, 0x0016, "UI", ui(sopClass)),
+    explicitElement(0x0008, 0x0018, "UI", ui(sopInstance)),
+    explicitElement(0x0008, 0x0060, "CS", cs("OT")),
+    explicitElement(0x0020, 0x000d, "UI", ui("1.2.826.0.1.3680043.8.498.study.1")),
+    explicitElement(0x0020, 0x000e, "UI", ui("1.2.826.0.1.3680043.8.498.series.sc")),
+    explicitElement(0x0020, 0x0013, "IS", is(instanceNumber)),
+    explicitElement(0x0028, 0x0002, "US", us(3)),
+    explicitElement(0x0028, 0x0004, "CS", cs("RGB")),
+    explicitElement(0x0028, 0x0006, "US", us(transferSyntax === TRANSFER_RLE ? 1 : 0)),
+    explicitElement(0x0028, 0x0010, "US", us(rows)),
+    explicitElement(0x0028, 0x0011, "US", us(columns)),
+    explicitElement(0x0028, 0x0100, "US", us(8)),
+    explicitElement(0x0028, 0x0101, "US", us(8)),
+    explicitElement(0x0028, 0x0102, "US", us(7)),
+    explicitElement(0x0028, 0x0103, "US", us(0)),
+    pixelBytes,
+  ]);
+
+  return Buffer.concat([Buffer.alloc(PREAMBLE), DICM, fileMeta, dataset]);
+}
+
+function defaultScRgbPixels(rows: number, columns: number): Uint8Array {
+  const pixels = new Uint8Array(rows * columns * 3);
+  pixels[0] = 255;
+  pixels[4] = 255;
+  pixels[8] = 255;
+  for (let i = 3; i < rows * columns; i++) {
+    const offset = i * 3;
+    pixels[offset] = 32;
+    pixels[offset + 1] = 64;
+    pixels[offset + 2] = 96;
+  }
+  return pixels;
+}
+
+function rgbPlanes(rgb: Uint8Array, sampleCount: number): Uint8Array[] {
+  const red = new Uint8Array(sampleCount);
+  const green = new Uint8Array(sampleCount);
+  const blue = new Uint8Array(sampleCount);
+  for (let i = 0; i < sampleCount; i++) {
+    red[i] = rgb[i * 3];
+    green[i] = rgb[i * 3 + 1];
+    blue[i] = rgb[i * 3 + 2];
+  }
+  return [red, green, blue];
+}
+
 function encodeRle(pixels: Uint16Array): Buffer {
-  const high = Buffer.alloc(pixels.length);
-  const low = Buffer.alloc(pixels.length);
+  const high = new Uint8Array(pixels.length);
+  const low = new Uint8Array(pixels.length);
   for (let i = 0; i < pixels.length; i++) {
     high[i] = (pixels[i] >> 8) & 0xff;
     low[i] = pixels[i] & 0xff;
   }
-  const seg0 = rlePlane(high);
-  const seg1 = rlePlane(low);
+  return encodeRlePlanes([high, low]);
+}
+
+function encodeRlePlanes(planes: Uint8Array[]): Buffer {
+  const encoded = planes.map((plane) => rlePlane(Buffer.from(plane)));
   const header = Buffer.alloc(64);
-  header.writeUInt32LE(2, 0);
-  header.writeUInt32LE(64, 4);
-  header.writeUInt32LE(64 + seg0.length, 8);
-  return Buffer.concat([header, seg0, seg1]);
+  header.writeUInt32LE(planes.length, 0);
+  let offset = 64;
+  for (let i = 0; i < planes.length; i++) {
+    header.writeUInt32LE(offset, 4 + i * 4);
+    offset += encoded[i].length;
+  }
+  return Buffer.concat([header, ...encoded]);
 }
 
 function rlePlane(plane: Buffer): Buffer {

@@ -382,7 +382,11 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
                   <FormItem>
                     <FormLabel>Document Title</FormLabel>
                     <FormControl>
-                      <Input placeholder="e.g., Blood Test Results" {...field} />
+                      <Input
+                        placeholder="e.g., Blood Test Results"
+                        data-testid="input-upload-title"
+                        {...field}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -442,7 +446,7 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
                   <FormItem>
                     <FormLabel>Document Date</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} />
+                      <Input type="date" data-testid="input-upload-date" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -487,6 +491,7 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
                 type="submit" 
                 disabled={uploadMutation.isPending || selectedFiles.length === 0}
                 className="bg-medical-blue text-white hover:bg-blue-700"
+                data-testid="button-upload-submit"
               >
                 {uploadMutation.isPending ? "Uploading..." : "Upload Document"}
               </Button>

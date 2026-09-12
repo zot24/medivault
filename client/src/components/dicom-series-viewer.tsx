@@ -8,7 +8,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { pixelFrameFromPart10, type DicomFrame } from "@shared/dicom-frame";
+import {
+  describeUndrawableFrame,
+  pixelFrameFromPart10,
+  rgbaFromFrame,
+  type DicomFrame,
+} from "@shared/dicom-frame";
 import { isDicomDocument, stackDocuments } from "@shared/upload-kinds";
 import type { MedicalDocument } from "@shared/schema";
 
@@ -26,20 +31,7 @@ function blitFrame(canvas: HTMLCanvasElement, frame: DicomFrame) {
     return;
   }
   const image = context.createImageData(frame.columns, frame.rows);
-  const low = frame.windowCenter - frame.windowWidth / 2;
-  const high = frame.windowCenter + frame.windowWidth / 2;
-  const span = Math.max(high - low, 1);
-  for (let i = 0; i < frame.pixels.length; i++) {
-    const gray = Math.max(
-      0,
-      Math.min(255, Math.round(((frame.pixels[i] - low) / span) * 255)),
-    );
-    const offset = i * 4;
-    image.data[offset] = gray;
-    image.data[offset + 1] = gray;
-    image.data[offset + 2] = gray;
-    image.data[offset + 3] = 255;
-  }
+  image.data.set(rgbaFromFrame(frame));
   context.putImageData(image, 0, 0);
 }
 
@@ -79,13 +71,12 @@ export default function DicomSeriesViewer({
           credentials: "include",
         });
         if (!response.ok) {
-          throw new Error(`Could not load ${row.fileName}`);
+          throw new Error("Could not load this file.");
         }
-        const frame = pixelFrameFromPart10(new Uint8Array(await response.arrayBuffer()));
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        const frame = pixelFrameFromPart10(bytes);
         if (!frame) {
-          throw new Error(
-            `${row.fileName} is not a CT slice this viewer can draw.`,
-          );
+          throw new Error(describeUndrawableFrame(bytes));
         }
         loaded.push(frame);
       }

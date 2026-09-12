@@ -13,6 +13,7 @@
     "start": "NODE_ENV=production node dist/index.js",
     "check": "tsc",
     "test": "vitest run",
+    "test:e2e": "playwright test --config e2e/playwright.config.ts",
     "db:push": "drizzle-kit push",
     "db:seed": "tsx server/seed.ts"
   },
@@ -107,6 +108,7 @@
     "@types/react-dom": "^18.3.1",
     "@types/ws": "^8.5.13",
     "@vercel/node": "^5.5.6",
+    "@playwright/test": "^1.55.0",
     "@vitejs/plugin-react": "^4.3.2",
     "autoprefixer": "^10.4.20",
     "drizzle-kit": "^0.30.4",

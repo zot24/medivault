@@ -15,13 +15,23 @@ const JPEG_LOSSLESS = new Set([
 
 const RLE = "1.2.840.10008.1.2.5";
 
-export type DicomFrame = {
+export type DicomMono16Frame = {
+  kind: "mono16";
   rows: number;
   columns: number;
   pixels: Uint16Array;
   windowCenter: number;
   windowWidth: number;
 };
+
+export type DicomRgb8Frame = {
+  kind: "rgb8";
+  rows: number;
+  columns: number;
+  pixels: Uint8Array;
+};
+
+export type DicomFrame = DicomMono16Frame | DicomRgb8Frame;
 
 export function pixelFrameFromPart10(bytes: Uint8Array): DicomFrame | null {
   if (!isPart10(bytes)) {
@@ -34,40 +44,134 @@ export function pixelFrameFromPart10(bytes: Uint8Array): DicomFrame | null {
     const rows = dataSet.uint16("x00280010");
     const columns = dataSet.uint16("x00280011");
     const bitsAllocated = dataSet.uint16("x00280100") ?? 16;
+    const samplesPerPixel = dataSet.uint16("x00280002") ?? 1;
+    const photometric = (dataSet.string("x00280004") ?? "").trim();
+    const planar = dataSet.uint16("x00280006") === 1;
     const pixelElement = dataSet.elements.x7fe00010;
-    if (!rows || !columns || !pixelElement || bitsAllocated !== 16) {
+    if (!rows || !columns || !pixelElement) {
       return null;
     }
 
-    const pixels = decodePixels(transfer, {
-      bytes,
-      dataSet,
-      pixelElement,
-      rows,
-      columns,
-    });
-    if (!pixels || pixels.length < rows * columns) {
-      return null;
+    if (isMono16(photometric, bitsAllocated, samplesPerPixel)) {
+      const pixels = decodeMono16(transfer, {
+        bytes,
+        dataSet,
+        pixelElement,
+        rows,
+        columns,
+      });
+      if (!pixels || pixels.length < rows * columns) {
+        return null;
+      }
+      const windowCenter = Number(dataSet.string("x00281050") ?? "500");
+      const windowWidth = Number(dataSet.string("x00281051") ?? "1000");
+      return {
+        kind: "mono16",
+        rows,
+        columns,
+        pixels: pixels.subarray(0, rows * columns),
+        windowCenter: Number.isFinite(windowCenter) ? windowCenter : 500,
+        windowWidth: Number.isFinite(windowWidth) ? windowWidth : 1000,
+      };
     }
 
-    const windowCenter = Number(dataSet.string("x00281050") ?? "500");
-    const windowWidth = Number(dataSet.string("x00281051") ?? "1000");
-    return {
-      rows,
-      columns,
-      pixels: pixels.subarray(0, rows * columns),
-      windowCenter: Number.isFinite(windowCenter) ? windowCenter : 500,
-      windowWidth: Number.isFinite(windowWidth) ? windowWidth : 1000,
-    };
+    if (isRgb8(photometric, bitsAllocated, samplesPerPixel)) {
+      const pixels = decodeRgb8(transfer, {
+        bytes,
+        dataSet,
+        pixelElement,
+        rows,
+        columns,
+        planar,
+      });
+      if (!pixels || pixels.length < rows * columns * 3) {
+        return null;
+      }
+      return {
+        kind: "rgb8",
+        rows,
+        columns,
+        pixels: pixels.subarray(0, rows * columns * 3),
+      };
+    }
+
+    return null;
   } catch {
     return null;
   }
 }
 
+export function describeUndrawableFrame(bytes: Uint8Array): string {
+  if (!isPart10(bytes)) {
+    return "Not a DICOM Part 10 file.";
+  }
+  try {
+    const dataSet = dicomParser.parseDicom(bytes);
+    const sopClass = dataSet.string("x00080016")?.trim() || "unknown";
+    const photometric = dataSet.string("x00280004")?.trim() || "unknown";
+    const bitsAllocated = dataSet.uint16("x00280100");
+    const bits = bitsAllocated == null ? "unknown-bit" : `${bitsAllocated}-bit`;
+    const transfer = dataSet.string("x00020010")?.trim() || "unknown";
+    return `Cannot draw this file (SOP ${sopClass}, photometric ${photometric}, ${bits}, transfer ${transfer}).`;
+  } catch {
+    return "Could not parse this DICOM file.";
+  }
+}
+
+export function rgbaFromFrame(frame: DicomFrame): Uint8ClampedArray {
+  const rgba = new Uint8ClampedArray(frame.rows * frame.columns * 4);
+  if (frame.kind === "rgb8") {
+    for (let i = 0, o = 0; i < frame.pixels.length; i += 3, o += 4) {
+      rgba[o] = frame.pixels[i];
+      rgba[o + 1] = frame.pixels[i + 1];
+      rgba[o + 2] = frame.pixels[i + 2];
+      rgba[o + 3] = 255;
+    }
+    return rgba;
+  }
+  const low = frame.windowCenter - frame.windowWidth / 2;
+  const high = frame.windowCenter + frame.windowWidth / 2;
+  const span = Math.max(high - low, 1);
+  for (let i = 0; i < frame.pixels.length; i++) {
+    const gray = Math.max(
+      0,
+      Math.min(255, Math.round(((frame.pixels[i] - low) / span) * 255)),
+    );
+    const offset = i * 4;
+    rgba[offset] = gray;
+    rgba[offset + 1] = gray;
+    rgba[offset + 2] = gray;
+    rgba[offset + 3] = 255;
+  }
+  return rgba;
+}
+
 type ParsedDicom = ReturnType<typeof dicomParser.parseDicom>;
 type PixelElement = ParsedDicom["elements"][string];
 
-function decodePixels(
+function isMono16(
+  photometric: string,
+  bitsAllocated: number,
+  samplesPerPixel: number,
+): boolean {
+  return (
+    bitsAllocated === 16 &&
+    samplesPerPixel === 1 &&
+    (photometric === "" ||
+      photometric === "MONOCHROME1" ||
+      photometric === "MONOCHROME2")
+  );
+}
+
+function isRgb8(
+  photometric: string,
+  bitsAllocated: number,
+  samplesPerPixel: number,
+): boolean {
+  return bitsAllocated === 8 && samplesPerPixel === 3 && photometric === "RGB";
+}
+
+function decodeMono16(
   transfer: string,
   input: {
     bytes: Uint8Array;
@@ -78,18 +182,39 @@ function decodePixels(
   },
 ): Uint16Array | null {
   if (UNCOMPRESSED.has(transfer)) {
-    return decodeUncompressed(input.bytes, input.pixelElement);
+    return decodeUncompressedMono16(input.bytes, input.pixelElement);
   }
   if (JPEG_LOSSLESS.has(transfer)) {
     return decodeJpegLossless(input.dataSet, input.pixelElement);
   }
   if (transfer === RLE) {
-    return decodeRle(input.dataSet, input.pixelElement, input.rows * input.columns);
+    return decodeRleMono16(input.dataSet, input.pixelElement, input.rows * input.columns);
   }
   return null;
 }
 
-function decodeUncompressed(
+function decodeRgb8(
+  transfer: string,
+  input: {
+    bytes: Uint8Array;
+    dataSet: ParsedDicom;
+    pixelElement: PixelElement;
+    rows: number;
+    columns: number;
+    planar: boolean;
+  },
+): Uint8Array | null {
+  const sampleCount = input.rows * input.columns;
+  if (UNCOMPRESSED.has(transfer)) {
+    return decodeUncompressedRgb8(input.bytes, input.pixelElement, sampleCount, input.planar);
+  }
+  if (transfer === RLE) {
+    return decodeRleRgb8(input.dataSet, input.pixelElement, sampleCount);
+  }
+  return null;
+}
+
+function decodeUncompressedMono16(
   bytes: Uint8Array,
   pixelElement: { dataOffset: number; length: number },
 ): Uint16Array | null {
@@ -98,6 +223,31 @@ function decodeUncompressed(
     pixelElement.dataOffset + pixelElement.length,
   );
   return new Uint16Array(raw.buffer, raw.byteOffset, raw.byteLength / 2);
+}
+
+function decodeUncompressedRgb8(
+  bytes: Uint8Array,
+  pixelElement: { dataOffset: number; length: number },
+  sampleCount: number,
+  planar: boolean,
+): Uint8Array | null {
+  const raw = bytes.subarray(
+    pixelElement.dataOffset,
+    pixelElement.dataOffset + pixelElement.length,
+  );
+  if (raw.length < sampleCount * 3) {
+    return null;
+  }
+  if (!planar) {
+    return raw.subarray(0, sampleCount * 3);
+  }
+  const rgb = new Uint8Array(sampleCount * 3);
+  for (let i = 0; i < sampleCount; i++) {
+    rgb[i * 3] = raw[i];
+    rgb[i * 3 + 1] = raw[sampleCount + i];
+    rgb[i * 3 + 2] = raw[sampleCount * 2 + i];
+  }
+  return rgb;
 }
 
 function decodeJpegLossless(
@@ -119,11 +269,46 @@ function decodeJpegLossless(
   return decoded;
 }
 
-function decodeRle(
+function decodeRleMono16(
   dataSet: ParsedDicom,
   pixelElement: PixelElement,
   sampleCount: number,
 ): Uint16Array | null {
+  const planes = decodeRlePlanes(dataSet, pixelElement, 2, sampleCount);
+  if (!planes) {
+    return null;
+  }
+  const pixels = new Uint16Array(sampleCount);
+  for (let i = 0; i < sampleCount; i++) {
+    pixels[i] = (planes[0][i] << 8) | planes[1][i];
+  }
+  return pixels;
+}
+
+function decodeRleRgb8(
+  dataSet: ParsedDicom,
+  pixelElement: PixelElement,
+  sampleCount: number,
+): Uint8Array | null {
+  const planes = decodeRlePlanes(dataSet, pixelElement, 3, sampleCount);
+  if (!planes) {
+    return null;
+  }
+  const pixels = new Uint8Array(sampleCount * 3);
+  for (let i = 0; i < sampleCount; i++) {
+    pixels[i * 3] = planes[0][i];
+    pixels[i * 3 + 1] = planes[1][i];
+    pixels[i * 3 + 2] = planes[2][i];
+  }
+  return pixels;
+}
+
+function decodeRlePlanes(
+  dataSet: ParsedDicom,
+  pixelElement: PixelElement,
+  planeCount: number,
+  sampleCount: number,
+): Uint8Array[] | null {
   const fragment = firstFrame(dataSet, pixelElement);
   if (!fragment || fragment.byteLength < 64) {
     return null;
@@ -134,29 +319,23 @@ function decodeRle(
     fragment.byteLength,
   );
   const segments = view.getUint32(0, true);
-  if (segments < 2) {
+  if (segments < planeCount) {
     return null;
   }
-  const high = decodeRleSegment(
-    fragment,
-    view.getUint32(4, true),
-    segmentEnd(view, 1, segments, fragment.byteLength),
-    sampleCount,
-  );
-  const low = decodeRleSegment(
-    fragment,
-    view.getUint32(8, true),
-    segmentEnd(view, 2, segments, fragment.byteLength),
-    sampleCount,
-  );
-  if (!high || !low) {
-    return null;
+  const planes: Uint8Array[] = [];
+  for (let plane = 0; plane < planeCount; plane++) {
+    const decoded = decodeRleSegment(
+      fragment,
+      view.getUint32(4 + plane * 4, true),
+      segmentEnd(view, plane + 1, segments, fragment.byteLength),
+      sampleCount,
+    );
+    if (!decoded) {
+      return null;
+    }
+    planes.push(decoded);
   }
-  const pixels = new Uint16Array(sampleCount);
-  for (let i = 0; i < sampleCount; i++) {
-    pixels[i] = (high[i] << 8) | low[i];
-  }
-  return pixels;
+  return planes;
 }
 
 function segmentEnd(
