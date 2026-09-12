@@ -55,6 +55,36 @@ const uploadFiles = upload.fields([
   { name: "files", maxCount: MAX_FILES_PER_REQUEST },
 ]);
 
+/**
+ * Wraps a multer middleware so its errors reach the client as 4xx JSON
+ * instead of falling through to the generic error handler as a 500 — an
+ * oversize file becomes 413, everything else 400. Takes the multer runner
+ * as a parameter so it can be exercised with a fake in tests.
+ */
+export function createUploadFilesOrReject(
+  runUpload: (req: any, res: any, callback: (err: unknown) => void) => void,
+) {
+  return function uploadFilesOrReject(req: any, res: any, next: any) {
+    runUpload(req, res, (err) => {
+      if (err instanceof multer.MulterError) {
+        const status = err.code === "LIMIT_FILE_SIZE" ? 413 : 400;
+        return res.status(status).json({
+          message:
+            err.code === "LIMIT_FILE_SIZE"
+              ? `File too large. Maximum is ${MAX_UPLOAD_BYTES / 1024 / 1024} MB per file.`
+              : err.message,
+        });
+      }
+      if (err) {
+        return res.status(400).json({ message: (err as Error).message });
+      }
+      next();
+    });
+  };
+}
+
+const uploadFilesOrReject = createUploadFilesOrReject(uploadFiles);
+
 function uploadedFiles(req: any): UploadFile[] {
   const groups = req.files ?? {};
   const list: Express.Multer.File[] = [
@@ -184,7 +214,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   // One request creates one record. Send `files` (many, all DICOM) for a
   // series or a single `file`; long series continue with POST /:id/files.
-  app.post('/api/documents', isAuthenticated, uploadFiles, async (req: any, res) => {
+  app.post('/api/documents', isAuthenticated, uploadFilesOrReject, async (req: any, res) => {
     try {
       const userId = req.user.id;
       const files = uploadedFiles(req);
@@ -221,7 +251,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post('/api/documents/:id/files', isAuthenticated, uploadFiles, async (req: any, res) => {
+  app.post('/api/documents/:id/files', isAuthenticated, uploadFilesOrReject, async (req: any, res) => {
     try {
       const documentId = parseInt(req.params.id, 10);
       if (!Number.isInteger(documentId)) {

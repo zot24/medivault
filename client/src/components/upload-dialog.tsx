@@ -91,8 +91,16 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
       credentials: "include",
     });
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`${response.status}: ${errorText}`);
+      let message = "Failed to upload document";
+      try {
+        const body = await response.json();
+        if (body?.message) {
+          message = body.message;
+        }
+      } catch {
+        // Body wasn't JSON; fall back to the generic message above.
+      }
+      throw new Error(message);
     }
     return response;
   }
