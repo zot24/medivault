@@ -4,52 +4,9 @@
 
 MediVault is a personal health management platform that enables users to securely store medical documents, track symptoms, and gain AI-powered health insights. The application prioritizes privacy, security, and user experience for managing sensitive health information.
 
-## Task Management with Beads
+## Task tracking
 
-**IMPORTANT: Always use Beads (`bd`) for task tracking in this project.**
-
-Beads is a git-backed issue tracker designed for AI agents. All tasks, features, and bugs must be tracked in Beads.
-
-### Essential Commands
-
-```bash
-# View tasks
-bd list                    # Show open tasks
-bd list --all              # Show all tasks (including closed)
-bd ready                   # Show tasks ready to work on (no blockers)
-bd show <id>               # Show task details
-
-# Create tasks
-bd create "Task title" -p 0 --description "Why and what"
-# Priority: -p 0 (P0 critical), -p 1 (P1 high), -p 2 (P2 medium), -p 3 (P3 low)
-
-# Update tasks
-bd close <id> -r "Completion reason"
-bd dep add <child> <parent>    # Add dependency
-
-# Workflow
-bd quickstart              # Interactive guide
-bd doctor --fix            # Fix configuration issues
-```
-
-### Task Workflow
-
-1. **Before starting work**: Check `bd ready` for available tasks
-2. **Starting a task**: Note which task you're working on
-3. **During work**: Create sub-tasks if scope grows
-4. **Completing work**: Close with `bd close <id> -r "what was done"`
-5. **New features/bugs**: Always create a Beads task first
-
-### Current Open Tasks
-
-Run `bd list` to see current backlog. Key upcoming features:
-- AI Health Insights (medivault-4fk)
-- Medication Reminders (medivault-3r5)
-- Document OCR (medivault-dka)
-- Health Data Export (medivault-htn)
-- Biometric Authentication (medivault-fut)
-- Offline Mode (medivault-jvb)
-- Appointment Calendar (medivault-2qf)
+Track work in [GitHub Issues](https://github.com/zot24/medivault/issues). Open items start at issues 6 through 17.
 
 ## Development Philosophy
 
