@@ -20,8 +20,17 @@ export type DicomMono16Frame = {
   rows: number;
   columns: number;
   pixels: Uint16Array;
+  /** Stored value -> real-world units (HU for CT): value * slope + intercept. */
+  rescaleSlope: number;
+  rescaleIntercept: number;
+  /** The file's own preset, in rescaled units. */
   windowCenter: number;
   windowWidth: number;
+};
+
+export type DicomWindow = {
+  center: number;
+  width: number;
 };
 
 export type DicomRgb8Frame = {
@@ -63,15 +72,15 @@ export function pixelFrameFromPart10(bytes: Uint8Array): DicomFrame | null {
       if (!pixels || pixels.length < rows * columns) {
         return null;
       }
-      const windowCenter = Number(dataSet.string("x00281050") ?? "500");
-      const windowWidth = Number(dataSet.string("x00281051") ?? "1000");
       return {
         kind: "mono16",
         rows,
         columns,
         pixels: pixels.subarray(0, rows * columns),
-        windowCenter: Number.isFinite(windowCenter) ? windowCenter : 500,
-        windowWidth: Number.isFinite(windowWidth) ? windowWidth : 1000,
+        rescaleSlope: firstDecimal(dataSet.string("x00281053")) ?? 1,
+        rescaleIntercept: firstDecimal(dataSet.string("x00281052")) ?? 0,
+        windowCenter: firstDecimal(dataSet.string("x00281050")) ?? 500,
+        windowWidth: firstDecimal(dataSet.string("x00281051")) ?? 1000,
       };
     }
 
@@ -118,7 +127,22 @@ export function describeUndrawableFrame(bytes: Uint8Array): string {
   }
 }
 
-export function rgbaFromFrame(frame: DicomFrame): Uint8ClampedArray {
+/**
+ * First value of a DS element. Scanners often write several presets in one
+ * element ("345\\-600"); Number() on the raw string yields NaN.
+ */
+function firstDecimal(raw: string | undefined): number | null {
+  if (!raw) {
+    return null;
+  }
+  const value = Number(raw.split("\\")[0].trim());
+  return Number.isFinite(value) ? value : null;
+}
+
+export function rgbaFromFrame(
+  frame: DicomFrame,
+  window?: DicomWindow,
+): Uint8ClampedArray {
   const rgba = new Uint8ClampedArray(frame.rows * frame.columns * 4);
   if (frame.kind === "rgb8") {
     for (let i = 0, o = 0; i < frame.pixels.length; i += 3, o += 4) {
@@ -129,9 +153,13 @@ export function rgbaFromFrame(frame: DicomFrame): Uint8ClampedArray {
     }
     return rgba;
   }
-  const low = frame.windowCenter - frame.windowWidth / 2;
-  const high = frame.windowCenter + frame.windowWidth / 2;
-  const span = Math.max(high - low, 1);
+  // Window in rescaled units, mapped back to stored values so the loop stays integer-cheap.
+  const center = window?.center ?? frame.windowCenter;
+  const width = window?.width ?? frame.windowWidth;
+  const slope = frame.rescaleSlope === 0 ? 1 : frame.rescaleSlope;
+  const low = (center - width / 2 - frame.rescaleIntercept) / slope;
+  const high = (center + width / 2 - frame.rescaleIntercept) / slope;
+  const span = Math.max(high - low, 1e-6);
   for (let i = 0; i < frame.pixels.length; i++) {
     const gray = Math.max(
       0,
@@ -403,4 +431,24 @@ function firstFrame(
     0,
     1,
   );
+}
+
+export type CtWindowPreset = {
+  id: string;
+  label: string;
+  /** Undefined means "use the window stored in the file". */
+  window?: DicomWindow;
+};
+
+/** Common CT windows in Hounsfield units. */
+export const CT_WINDOW_PRESETS: readonly CtWindowPreset[] = [
+  { id: "stored", label: "As stored" },
+  { id: "cta", label: "CT angio", window: { center: 300, width: 800 } },
+  { id: "soft", label: "Soft tissue", window: { center: 40, width: 400 } },
+  { id: "lung", label: "Lung", window: { center: -600, width: 1500 } },
+  { id: "bone", label: "Bone", window: { center: 400, width: 1800 } },
+];
+
+export function windowForPreset(id: string): DicomWindow | undefined {
+  return CT_WINDOW_PRESETS.find((preset) => preset.id === id)?.window;
 }
