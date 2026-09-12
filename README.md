@@ -9,7 +9,7 @@ MediVault is a patient-controlled health history. You store documents and sympto
 - Durable files in Supabase Storage. The API serves a download only after it checks that the signed-in user owns the file.
 - Expiring share links at `/s/:token`. Each link lasts 1h, 24h, or 7d. You can revoke a link.
 - Case bundles that put more than one file in one share packet.
-- A DICOM CT viewer. `dicom-parser` plus `jpeg-lossless-decoder-js` draw uncompressed, JPEG Lossless (`1.2.840.10008.1.2.4.70` and `1.2.840.10008.1.2.4.57`), and RLE (`1.2.840.10008.1.2.5`) 16-bit frames on a canvas.
+- A DICOM viewer. `dicom-parser` plus `jpeg-lossless-decoder-js` draw 16-bit CT Image Storage (`1.2.840.10008.5.1.4.1.1.2`, MONOCHROME2) and 8-bit Secondary Capture RGB (`1.2.840.10008.5.1.4.1.1.7`) on a canvas. Transfer syntaxes are uncompressed, JPEG Lossless (`1.2.840.10008.1.2.4.70` and `1.2.840.10008.1.2.4.57`), and RLE (`1.2.840.10008.1.2.5`).
 
 ## Stack
 
@@ -67,9 +67,29 @@ Upload `.dcm` files, or extensionless Part-10 slices from a patient CD (`DICM` a
 
 Clinical CT CD data is expected to work after a `.dcm` rename or as extensionless Part-10 files. JPEG Lossless (`1.2.840.10008.1.2.4.70`) and RLE (`1.2.840.10008.1.2.5`) draw in the canvas viewer.
 
+Two objects on those CDs often share a CT-like file name. CT Image Storage (`SOP 1.2.840.10008.5.1.4.1.1.2`) is 16-bit greyscale. Secondary Capture (`SOP 1.2.840.10008.5.1.4.1.1.7`) is often 8-bit RGB RLE, a screenshot or recon panel. Both draw. A file that still cannot draw shows SOP class, photometric interpretation, and bits allocated. It does not show patient tags.
+
 This is not a PACS. JPEG 2000, JPEG-LS, and other transfer syntaxes still do not draw. Each file must be 50MB or smaller.
 
-The mini fixtures in `shared/fixtures/` do render.
+The synthetic fixtures in `shared/fixtures/` do render. They contain no patient data.
+
+## Test
+
+```bash
+pnpm test
+pnpm test:e2e
+```
+
+`pnpm test:e2e` starts a local harness, draws the synthetic fixtures on a canvas, and asserts non-blank pixels. It does not need a database.
+
+To run the login and upload flow against a local app, start Supabase, seed the demo user, then run the app and the app spec.
+
+```bash
+PORT=3002 pnpm dev
+E2E_BASE_URL=http://localhost:3002 pnpm test:e2e
+```
+
+Sign in with `demo@medivault.app` / `demo123`. The app spec uploads `shared/fixtures/mini-sc-rgb.dcm` and `shared/fixtures/mini-ct-01.dcm`, opens the viewer, and checks the canvas.
 
 ## Mobile
 
