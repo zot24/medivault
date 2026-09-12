@@ -1,3 +1,9 @@
+/** "2026-09-11" -> a Date at local midnight, so calendar dates don't shift with the timezone. */
+export function localDate(isoDate: string): Date {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 export const DICOM_MIME = "application/dicom";
 /** Slices per upload request; the server enforces the same cap. */
