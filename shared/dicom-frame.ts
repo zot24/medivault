@@ -110,6 +110,115 @@ export function pixelFrameFromPart10(bytes: Uint8Array): DicomFrame | null {
   }
 }
 
+export type DicomOverlay = {
+  rows: number;
+  columns: number;
+  /** 1-based; where the overlay's top-left pixel sits on the image. */
+  originRow: number;
+  originColumn: number;
+  /** One byte per pixel, 0 or 1, row-major. */
+  bits: Uint8Array;
+};
+
+const OVERLAY_GROUP_FIRST = 0x6000;
+const OVERLAY_GROUP_LAST = 0x601e;
+
+/** Reads every graphics/ROI overlay plane (group 6000, 6002, ... 601e). [] when none. */
+export function overlaysFromPart10(bytes: Uint8Array): DicomOverlay[] {
+  if (!isPart10(bytes)) {
+    return [];
+  }
+  try {
+    const dataSet = dicomParser.parseDicom(bytes);
+    const overlays: DicomOverlay[] = [];
+    for (
+      let group = OVERLAY_GROUP_FIRST;
+      group <= OVERLAY_GROUP_LAST;
+      group += 2
+    ) {
+      const prefix = `x${group.toString(16).padStart(4, "0")}`;
+      const rows = dataSet.uint16(`${prefix}0010`);
+      const columns = dataSet.uint16(`${prefix}0011`);
+      const dataElement = dataSet.elements[`${prefix}3000`];
+      if (!rows || !columns || !dataElement) {
+        continue;
+      }
+      const [originRow, originColumn] = overlayOrigin(
+        dataSet.string(`${prefix}0050`),
+      );
+      overlays.push({
+        rows,
+        columns,
+        originRow,
+        originColumn,
+        bits: unpackOverlayBits(bytes, dataElement, rows * columns),
+      });
+    }
+    return overlays;
+  } catch {
+    return [];
+  }
+}
+
+function overlayOrigin(raw: string | undefined): [number, number] {
+  const [row, column] = (raw ?? "1\\1").split("\\").map(Number);
+  return [
+    Number.isFinite(row) ? row : 1,
+    Number.isFinite(column) ? column : 1,
+  ];
+}
+
+/** Little-endian bit order: bit 0 of byte 0 is pixel 0, row-major. */
+function unpackOverlayBits(
+  bytes: Uint8Array,
+  dataElement: { dataOffset: number; length: number },
+  pixelCount: number,
+): Uint8Array {
+  const raw = bytes.subarray(
+    dataElement.dataOffset,
+    dataElement.dataOffset + dataElement.length,
+  );
+  const bits = new Uint8Array(pixelCount);
+  for (let i = 0; i < pixelCount; i++) {
+    bits[i] = (raw[i >> 3] >> (i & 7)) & 1;
+  }
+  return bits;
+}
+
+const OVERLAY_COLOR: [number, number, number] = [0, 255, 128];
+
+/** Burns overlay planes into an RGBA buffer already produced by rgbaFromFrame. */
+export function compositeOverlays(
+  rgba: Uint8ClampedArray,
+  frameRows: number,
+  frameColumns: number,
+  overlays: DicomOverlay[],
+  color: [number, number, number] = OVERLAY_COLOR,
+): void {
+  for (const overlay of overlays) {
+    for (let r = 0; r < overlay.rows; r++) {
+      const frameRow = overlay.originRow - 1 + r;
+      if (frameRow < 0 || frameRow >= frameRows) {
+        continue;
+      }
+      for (let c = 0; c < overlay.columns; c++) {
+        if (overlay.bits[r * overlay.columns + c] !== 1) {
+          continue;
+        }
+        const frameColumn = overlay.originColumn - 1 + c;
+        if (frameColumn < 0 || frameColumn >= frameColumns) {
+          continue;
+        }
+        const offset = (frameRow * frameColumns + frameColumn) * 4;
+        rgba[offset] = color[0];
+        rgba[offset + 1] = color[1];
+        rgba[offset + 2] = color[2];
+        rgba[offset + 3] = 255;
+      }
+    }
+  }
+}
+
 export function describeUndrawableFrame(bytes: Uint8Array): string {
   if (!isPart10(bytes)) {
     return "Not a DICOM Part 10 file.";
