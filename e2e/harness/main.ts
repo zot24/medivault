@@ -1,5 +1,7 @@
 import {
+  compositeOverlays,
   describeUndrawableFrame,
+  overlaysFromPart10,
   pixelFrameFromPart10,
   rgbaFromFrame,
 } from "@shared/dicom-frame";
@@ -26,7 +28,12 @@ async function draw(url: string, canvasId: string): Promise<void> {
     throw new Error("2d context unavailable");
   }
   const image = context.createImageData(frame.columns, frame.rows);
-  image.data.set(rgbaFromFrame(frame));
+  const rgba = rgbaFromFrame(frame);
+  const overlays = overlaysFromPart10(bytes);
+  if (overlays.length > 0) {
+    compositeOverlays(rgba, frame.rows, frame.columns, overlays);
+  }
+  image.data.set(rgba);
   context.putImageData(image, 0, 0);
 }
 
@@ -34,6 +41,7 @@ const status = document.getElementById("status");
 try {
   await draw("/mini-sc-rgb.dcm", "sc-rgb");
   await draw("/mini-ct-01.dcm", "ct-mono");
+  await draw("/mini-ct-overlay.dcm", "ct-overlay");
   if (status) {
     status.textContent = "ready";
   }
