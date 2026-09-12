@@ -73,6 +73,8 @@ This is not a PACS. JPEG 2000, JPEG-LS, and other transfer syntaxes still do not
 
 ## Uploading a study from a hospital CD
 
+For a worked example of a real disc — three cardiac studies, 32 series, what each one is and what draws — see [docs/reference-case.md](docs/reference-case.md).
+
 A patient CD usually holds several studies, a bundled viewer, and an index. Only the image series are worth uploading.
 
 **What is on the disc**
