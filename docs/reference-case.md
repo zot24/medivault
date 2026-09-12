@@ -115,13 +115,14 @@ Checked against `shared/dicom-frame.ts` and the 50 MB per-file cap in `shared/up
 | A2 snapshots, A3 dose sheet | Draws | Single JPEG Lossless mono images |
 | A3 function charts | Draws | RLE 8-bit RGB — added in #20 |
 | A4 structured reports | Uploads, does not draw | No pixel data; nothing renders SR content yet |
-| B echo | Does not draw | JPEG Baseline is not decoded; multi-frame is not stepped through |
-| C cath | Cannot upload | Files exceed the 50 MB cap; multi-frame |
+| B echo | Uploads, does not draw | JPEG Baseline is not decoded and multi-frame is not stepped through. Each frame is a complete JPEG that the browser decodes natively (`createImageBitmap`, ~4 ms) — see plan 06. |
+| C cath | Cannot upload | Files exceed the 50 MB cap (500 today; should be 413). Uncompressed, so a frame is a fixed byte range; the object store answers `Range` requests — see plan 07. |
 
 Status of the local experiment:
 
-- **Loaded:** A1 series 7, as one record of 774 files. This is the case behind the HU windowing fix, the one-record-per-series model, and progressive loading (#22).
-- **Next, in order:** A2 snapshots and A3 charts (mixed single images, RGB path); A1 series 5/6/9 (several series under one study — motivates a study-level grouping); A1 series 8 (memory and 4D); then B and C as decoder and cap work.
+- **Loaded:** all of study A, one record per series (32 records, 7,556 files). One echo cine file from study B. Nothing from C.
+- **Findings, in the order they surfaced:** windowing and one-record-per-series (#22, done); measurement snapshots draw without their overlay planes; the 4D volume streams but holds ~3 GB and hides its phase structure; the "Radiology Report" SRs are empty and only the CT Coronary SR has readable findings; 32 peer cards need a study view.
+- **Plans:** [docs/plans](plans/README.md).
 
 ## Regenerating this inventory
 
