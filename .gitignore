@@ -12,6 +12,5 @@ vite.config.ts.*
 .env.*.local
 Mediqux/
 
-# Expo
 .expo/
 **/.expo/

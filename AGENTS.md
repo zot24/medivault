@@ -697,7 +697,7 @@ All agents MUST follow TDD:
    ```bash
    git pull --rebase
    git push
-   git status  # MUST show "up to date with origin"
+   git status
    ```
 5. **Clean up** - Clear stashes, prune remote branches
 6. **Verify** - All changes committed AND pushed
