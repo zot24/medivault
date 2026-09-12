@@ -13,6 +13,36 @@ export interface User {
   updatedAt: Date | null;
 }
 
+/**
+ * Metadata read from the first file of a DICOM series. Never carries a
+ * patient identifier or a date — see shared/dicom-meta.ts on the server.
+ */
+export interface DicomSeriesMeta {
+  studyInstanceUid: string;
+  seriesInstanceUid: string;
+  sopClassUid: string;
+  modality: string;
+  studyDescription: string;
+  seriesDescription: string;
+  seriesNumber: number | null;
+  rows: number | null;
+  columns: number | null;
+  numberOfFrames: number;
+  photometric: string;
+  transferSyntaxUid: string;
+  sliceThickness: number | null;
+  imageType: string[];
+  hasOverlay: boolean;
+}
+
+export type SeriesGroup =
+  | 'volume'
+  | 'snapshot'
+  | 'analysis'
+  | 'report'
+  | 'localizer'
+  | 'other';
+
 export interface MedicalDocument {
   id: number;
   userId: string;
@@ -29,8 +59,23 @@ export interface MedicalDocument {
   tags: string[] | null;
   /** Files in this record; a DICOM series has one per slice. */
   fileCount: number;
+  /** Set when the first file is DICOM; null for every other document. */
+  dicomMeta: DicomSeriesMeta | null;
   createdAt: Date | null;
   updatedAt: Date | null;
+}
+
+/** One study — every record sharing a studyInstanceUid. */
+export interface StudySummary {
+  studyInstanceUid: string;
+  modalities: string[];
+  studyDescription: string;
+  documentDate: string;
+  seriesCount: number;
+  fileCount: number;
+  totalBytes: number;
+  primary: MedicalDocument | null;
+  groups: Record<SeriesGroup, MedicalDocument[]>;
 }
 
 /** One file of a document, as listed by GET /api/documents/:id/files. */

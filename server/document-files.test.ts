@@ -29,6 +29,7 @@ function fakeDocument(
     facilityName: null,
     tags: [],
     fileCount: 1,
+    dicomMeta: null,
     createdAt: new Date("2026-09-11T00:00:00.000Z"),
     updatedAt: new Date("2026-09-11T00:00:00.000Z"),
     ...overrides,
@@ -90,6 +91,7 @@ function memoryRecords(rows: MedicalDocument[] = []) {
           facilityName: input.facilityName ?? null,
           tags: input.tags ?? [],
           fileCount: input.fileCount ?? 1,
+          dicomMeta: input.dicomMeta ?? null,
         });
         documents.push(row);
         return row;
@@ -423,5 +425,43 @@ describe("createDocumentFiles series", () => {
     for (const key of keys) {
       expect(await objects.get(asObjectKey(key))).toBeNull();
     }
+  });
+
+  it("stores dicomMeta read from the first slice", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+
+    const created = await files.uploadOwnedDocument({ ...meta, files: slices(3) });
+
+    expect(created.dicomMeta).toMatchObject({
+      modality: "CT",
+      studyInstanceUid: "1.2.826.0.1.3680043.8.498.study.1",
+      seriesInstanceUid: "1.2.826.0.1.3680043.8.498.series.1",
+    });
+  });
+
+  it("does not change dicomMeta when more slices are appended", async () => {
+    const objects = new MemoryObjectStore();
+    const { records, documents } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const created = await files.uploadOwnedDocument({ ...meta, files: slices(1) });
+
+    await files.appendOwnedFiles("owner-1", created.id, slices(3).slice(1));
+
+    expect(documents[0].dicomMeta).toEqual(created.dicomMeta);
+  });
+
+  it("stores a null dicomMeta for a non-DICOM upload", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+
+    const created = await files.uploadOwnedDocument({
+      ...meta,
+      files: [{ bytes: Buffer.from("%PDF-1"), mimeType: "application/pdf", originalName: "a.pdf" }],
+    });
+
+    expect(created.dicomMeta).toBeNull();
   });
 });

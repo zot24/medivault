@@ -29,6 +29,9 @@ export type {
   MedicalDocument,
   DocumentFileEntry,
   InsertMedicalDocument,
+  DicomSeriesMeta,
+  SeriesGroup,
+  StudySummary,
   Symptom,
   InsertSymptom,
   LoginResponse,
@@ -64,6 +67,9 @@ export {
   useCreateCaseShare,
   useRevokeCaseShare,
 } from './hooks';
+
+// Studies hooks
+export { useStudies } from './hooks';
 
 // Symptoms hooks
 export {

@@ -12,7 +12,7 @@ import {
   type UseMutationOptions,
 } from '@tanstack/react-query';
 import type { MediVaultClient } from './client';
-import type { MedicalDocument, Symptom, InsertSymptom, User, LoginResponse, ShareTtl, MintedShare, ListedShare } from './types';
+import type { MedicalDocument, StudySummary, Symptom, InsertSymptom, User, LoginResponse, ShareTtl, MintedShare, ListedShare } from './types';
 
 // ============================================
 // SDK Context
@@ -227,6 +227,7 @@ export function useCreateDocument(
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['documents'] });
+      queryClient.invalidateQueries({ queryKey: ['studies'] });
     },
     ...options,
   });
@@ -251,7 +252,30 @@ export function useDeleteDocument(
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['documents'] });
+      queryClient.invalidateQueries({ queryKey: ['studies'] });
     },
+    ...options,
+  });
+}
+
+/**
+ * Hook to fetch every DICOM study
+ */
+export function useStudies(
+  options?: Omit<UseQueryOptions<StudySummary[], Error>, 'queryKey' | 'queryFn'>
+) {
+  const sdk = useSDK();
+
+  return useQuery<StudySummary[], Error>({
+    queryKey: ['studies'],
+    queryFn: async () => {
+      const result = await sdk.studies.list();
+      if (result.error) {
+        throw new Error(result.error.message);
+      }
+      return result.data;
+    },
+    staleTime: 5 * 60 * 1000,
     ...options,
   });
 }

@@ -26,6 +26,7 @@ export {
   useDocumentsByType,
   useCreateDocument,
   useDeleteDocument,
+  useStudies,
   useDocumentShares,
   useCreateShare,
   useRevokeShare,
@@ -40,7 +41,17 @@ export {
   useDeleteSymptom,
 } from '@medivault/sdk';
 
-export type { ShareTtl, MintedShare, ListedShare, FrozenSymptom, SharePacket, SharedFileMeta } from '@medivault/sdk';
+export type {
+  ShareTtl,
+  MintedShare,
+  ListedShare,
+  FrozenSymptom,
+  SharePacket,
+  SharedFileMeta,
+  DicomSeriesMeta,
+  SeriesGroup,
+  StudySummary,
+} from '@medivault/sdk';
 
 // SDK Provider component
 export function SDKProvider({ children }: { children: React.ReactNode }) {

@@ -6,6 +6,7 @@ import {
   type InsertMedicalDocument,
   type MedicalDocument,
 } from "@shared/schema";
+import { readSeriesMeta } from "@shared/dicom-meta";
 import {
   DICOM_MIME,
   acceptedExtensions,
@@ -188,6 +189,8 @@ export function createDocumentFiles(deps: {
       const files = classifyFiles(input.userId, input.files);
       const [first] = files;
       const totalBytes = files.reduce((sum, file) => sum + file.bytes.length, 0);
+      const dicomMeta =
+        first.mimeType === DICOM_MIME ? readSeriesMeta(first.bytes) : null;
       const documentData = insertMedicalDocumentSchema.parse({
         userId: input.userId,
         title: input.title,
@@ -202,6 +205,7 @@ export function createDocumentFiles(deps: {
         facilityName: input.facilityName,
         tags: input.tags,
         fileCount: files.length,
+        dicomMeta,
       });
 
       await putAll(deps.objects, files);

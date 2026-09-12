@@ -7,6 +7,7 @@ import type {
   User,
   MedicalDocument,
   DocumentFileEntry,
+  StudySummary,
   Symptom,
   InsertSymptom,
   LoginResponse,
@@ -305,6 +306,18 @@ export class MediVaultClient {
       shareId: number,
     ): Promise<ApiResult<void>> => {
       return this.request<void>('DELETE', `/api/documents/${id}/shares/${shareId}`);
+    },
+  };
+
+  // ============================================
+  // Studies Methods
+  // ============================================
+  studies = {
+    /**
+     * List every DICOM study — records grouped by studyInstanceUid
+     */
+    list: async (): Promise<ApiResult<StudySummary[]>> => {
+      return this.request<StudySummary[]>('GET', '/api/studies');
     },
   };
 
