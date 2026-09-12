@@ -6,15 +6,19 @@ const fixtures = path.resolve(import.meta.dirname, "../shared/fixtures");
 
 test.skip(
   !appBase,
-  "Set E2E_BASE_URL to a running app (demo@medivault.app / demo123) to upload fixtures and open the viewer.",
+  "Set E2E_BASE_URL to a running app (demo@medivault.app / demo123, or E2E_EMAIL / E2E_PASSWORD) to upload fixtures and open the viewer.",
 );
 
 test("uploads synthetic DICOM fixtures and draws them in the viewer", async ({
   page,
 }) => {
   await page.goto("/login");
-  await page.getByTestId("input-login-email").fill("demo@medivault.app");
-  await page.getByTestId("input-login-password").fill("demo123");
+  await page
+    .getByTestId("input-login-email")
+    .fill(process.env.E2E_EMAIL ?? "demo@medivault.app");
+  await page
+    .getByTestId("input-login-password")
+    .fill(process.env.E2E_PASSWORD ?? "demo123");
   await page.getByTestId("button-login-submit").click();
   await page.waitForURL(/\/(dashboard|documents)/);
 
@@ -41,6 +45,8 @@ test("uploads synthetic DICOM fixtures and draws them in the viewer", async ({
   const canvas = page.getByTestId("dicom-viewer-canvas");
   await expect(canvas).toBeVisible();
   await expect(page.getByTestId("dicom-viewer-error")).toHaveCount(0);
+  // Slices stream in; the overlay goes away once the first one is drawn.
+  await expect(page.getByTestId("dicom-viewer-loading")).toHaveCount(0);
 
   const pixel = await canvas.evaluate((node) => {
     if (!(node instanceof HTMLCanvasElement)) {

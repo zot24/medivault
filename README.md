@@ -63,7 +63,7 @@ Open Documents. Use **Share** or **Share case**. Copy the `/s/:token` path. Open
 
 ## Test DICOM
 
-Upload `.dcm` files, or extensionless Part-10 slices from a patient CD (`DICM` at byte 128). A multi-select of DICOM slices becomes one series. Documents shows that series as one card with a slice count. Open the card and move through slices in the viewer. Do not go back to the list for the next file.
+Upload `.dcm` files, or extensionless Part-10 slices from a patient CD (`DICM` at byte 128). A multi-select of DICOM slices becomes one series: one document record with one file per slice (`document_files`), sent in chunks of 50 (`POST /api/documents`, then `POST /api/documents/:id/files`). Documents shows the series as one card with a slice count. Open the card: the viewer lists `GET /api/documents/:id/files`, draws the first slice as soon as it arrives and fills the rest in the background, nearest slices first. CT images are windowed in Hounsfield units with presets (CT angio, soft tissue, lung, bone).
 
 Clinical CT CD data is expected to work after a `.dcm` rename or as extensionless Part-10 files. JPEG Lossless (`1.2.840.10008.1.2.4.70`) and RLE (`1.2.840.10008.1.2.5`) draw in the canvas viewer.
 

@@ -1,8 +1,7 @@
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 export const DICOM_MIME = "application/dicom";
-
-export const SERIES_TAG_PREFIX = "series:";
-export const SLICE_TAG_PREFIX = "slice:";
+/** Slices per upload request; the server enforces the same cap. */
+export const MAX_FILES_PER_REQUEST = 50;
 
 export type ClassifiedUpload = {
   mimeType: string;
@@ -115,115 +114,12 @@ export function isDicomDocument(input: {
   );
 }
 
-export function newSeriesTag(): string {
-  return `${SERIES_TAG_PREFIX}${globalThis.crypto.randomUUID()}`;
-}
-
-export function seriesIdFromTags(tags: string[] | null | undefined): string | null {
-  const tag = (tags ?? []).find((value) =>
-    value.startsWith(SERIES_TAG_PREFIX),
-  );
-  return tag ? tag.slice(SERIES_TAG_PREFIX.length) : null;
-}
-
-export function newSliceTag(index: number): string {
-  return `${SLICE_TAG_PREFIX}${index}`;
-}
-
-export function sliceIndexFromTags(
-  tags: string[] | null | undefined,
-): number | null {
-  const tag = (tags ?? []).find((value) => value.startsWith(SLICE_TAG_PREFIX));
-  if (!tag) {
-    return null;
+export function chunkFiles<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
   }
-  const index = Number(tag.slice(SLICE_TAG_PREFIX.length));
-  return Number.isInteger(index) ? index : null;
-}
-
-export function stackDocuments<
-  T extends { mimeType: string; fileName: string; tags: string[] | null },
->(focus: T, vault: T[]): T[] {
-  const seriesId = seriesIdFromTags(focus.tags);
-  if (!seriesId) {
-    return [focus];
-  }
-
-  const siblings = vault.filter(
-    (row) =>
-      isDicomDocument(row) && seriesIdFromTags(row.tags) === seriesId,
-  );
-  const rows = siblings.length === 0 ? [focus] : siblings;
-  return [...rows].sort((a, b) => {
-    const aIndex = sliceIndexFromTags(a.tags);
-    const bIndex = sliceIndexFromTags(b.tags);
-    if (aIndex != null && bIndex != null && aIndex !== bIndex) {
-      return aIndex - bIndex;
-    }
-    return a.fileName.localeCompare(b.fileName);
-  });
-}
-
-export type DocumentBrowseItem<T> =
-  | { kind: "file"; document: T }
-  | { kind: "series"; seriesId: string; documents: T[] };
-
-export function visibleBrowseItems<
-  T extends {
-    id: number;
-    mimeType: string;
-    fileName: string;
-    tags: string[] | null;
-  },
->(vault: T[], visible: T[]): DocumentBrowseItem<T>[] {
-  const visibleIds = new Set(visible.map((row) => row.id));
-  return groupDocuments(vault).filter((item) => {
-    const rows = item.kind === "series" ? item.documents : [item.document];
-    return rows.some((row) => visibleIds.has(row.id));
-  });
-}
-
-export function groupDocuments<
-  T extends { mimeType: string; fileName: string; tags: string[] | null },
->(vault: T[]): DocumentBrowseItem<T>[] {
-  const seen = new Set<string>();
-  const items: DocumentBrowseItem<T>[] = [];
-  for (const document of vault) {
-    if (!isDicomDocument(document)) {
-      items.push({ kind: "file", document });
-      continue;
-    }
-    const seriesId = seriesIdFromTags(document.tags);
-    if (!seriesId) {
-      items.push({ kind: "file", document });
-      continue;
-    }
-    if (seen.has(seriesId)) {
-      continue;
-    }
-    seen.add(seriesId);
-    items.push({
-      kind: "series",
-      seriesId,
-      documents: stackDocuments(document, vault),
-    });
-  }
-  return items;
-}
-
-export function focusSliceIndex<T extends { id: number }>(
-  focus: T,
-  stack: T[],
-): number {
-  const index = stack.findIndex((row) => row.id === focus.id);
-  return index < 0 ? 0 : index;
-}
-
-export function displayTags(tags: string[] | null | undefined): string[] {
-  return (tags ?? []).filter(
-    (tag) =>
-      !tag.startsWith(SERIES_TAG_PREFIX) && !tag.startsWith(SLICE_TAG_PREFIX),
-  );
+  return chunks;
 }
 
 export function sliceCountLabel(count: number): string {
@@ -239,6 +135,28 @@ export function stepSliceIndex(
     return 0;
   }
   return Math.max(0, Math.min(length - 1, current + delta));
+}
+
+/**
+ * Next unloaded slice, nearest to `around` first, so the one on screen and
+ * its neighbours arrive before the far ends of the stack.
+ */
+export function nextSliceToLoad(
+  around: number,
+  count: number,
+  taken: (position: number) => boolean,
+): number | null {
+  for (let distance = 0; distance < count; distance += 1) {
+    const after = around + distance;
+    if (after < count && !taken(after)) {
+      return after;
+    }
+    const before = around - distance;
+    if (distance > 0 && before >= 0 && !taken(before)) {
+      return before;
+    }
+  }
+  return null;
 }
 
 export function sliceDeltaFromKey(key: string): number | null {

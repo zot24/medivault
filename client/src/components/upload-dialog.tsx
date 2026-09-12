@@ -32,10 +32,10 @@ import {
   classifyUpload,
   fitsUploadCap,
   isDicomDocument,
+  MAX_FILES_PER_REQUEST,
   MAX_UPLOAD_BYTES,
   PART10_SNIFF_BYTES,
-  newSeriesTag,
-  newSliceTag,
+  chunkFiles,
 } from "@shared/upload-kinds";
 
 const uploadSchema = z.object({
@@ -74,65 +74,60 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
     },
   });
 
+  const [progress, setProgress] = useState<{ sent: number; total: number } | null>(null);
+
+  async function postFiles(path: string, fields: FormData, files: File[]) {
+    const body = new FormData();
+    fields.forEach((value, key) => body.append(key, value));
+    for (const file of files) {
+      body.append("files", file);
+    }
+    const response = await fetch(path, {
+      method: "POST",
+      body,
+      credentials: "include",
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`${response.status}: ${errorText}`);
+    }
+    return response;
+  }
+
+  // One selection is one record. A DICOM series goes up in request-sized
+  // chunks: the first creates the record, the rest append to it.
   const uploadMutation = useMutation({
     mutationFn: async (data: UploadFormData & { files: File[] }) => {
-      const heads = await Promise.all(
-        data.files.map(async (file) =>
-          new Uint8Array(await file.slice(0, PART10_SNIFF_BYTES).arrayBuffer()),
-        ),
-      );
-      const dicomCount = data.files.filter((file, index) =>
-        isDicomDocument({
-          mimeType: file.type,
-          fileName: file.name,
-          bytes: heads[index],
-        }),
-      ).length;
-      const seriesTag =
-        dicomCount > 1 ? newSeriesTag() : null;
+      const fields = new FormData();
+      fields.append("title", data.title);
+      if (data.description) {
+        fields.append("description", data.description);
+      }
+      fields.append("documentType", data.documentType);
+      fields.append("documentDate", data.documentDate);
+      if (data.doctorName) {
+        fields.append("doctorName", data.doctorName);
+      }
+      if (data.facilityName) {
+        fields.append("facilityName", data.facilityName);
+      }
+      fields.append("tags", JSON.stringify(data.tags));
 
-      for (let index = 0; index < data.files.length; index += 1) {
-        const file = data.files[index];
-        const tags = [...data.tags];
-        if (
-          seriesTag &&
-          isDicomDocument({
-            mimeType: file.type,
-            fileName: file.name,
-            bytes: heads[index],
-          })
-        ) {
-          tags.push(seriesTag, newSliceTag(index));
-        }
+      const [first, ...rest] = chunkFiles(data.files, MAX_FILES_PER_REQUEST);
+      setProgress({ sent: 0, total: data.files.length });
+      const created = (await (await postFiles("/api/documents", fields, first)).json()) as {
+        id: number;
+      };
+      setProgress({ sent: first.length, total: data.files.length });
 
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("title", data.title);
-        if (data.description) {
-          formData.append("description", data.description);
-        }
-        formData.append("documentType", data.documentType);
-        formData.append("documentDate", data.documentDate);
-        if (data.doctorName) {
-          formData.append("doctorName", data.doctorName);
-        }
-        if (data.facilityName) {
-          formData.append("facilityName", data.facilityName);
-        }
-        formData.append("tags", JSON.stringify(tags));
-
-        const response = await fetch("/api/documents", {
-          method: "POST",
-          body: formData,
-          credentials: "include",
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`${response.status}: ${errorText}`);
-        }
+      let sent = first.length;
+      for (const chunk of rest) {
+        await postFiles(`/api/documents/${created.id}/files`, new FormData(), chunk);
+        sent += chunk.length;
+        setProgress({ sent, total: data.files.length });
       }
     },
+    onSettled: () => setProgress(null),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
       queryClient.invalidateQueries({ queryKey: ["documents"] });
@@ -147,7 +142,7 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
         description:
           variables.files.length === 1
             ? "Document uploaded successfully"
-            : `${variables.files.length} files uploaded successfully`,
+            : `Series of ${variables.files.length} slices uploaded successfully`,
       });
       handleClose();
     },
@@ -493,7 +488,11 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
                 className="bg-medical-blue text-white hover:bg-blue-700"
                 data-testid="button-upload-submit"
               >
-                {uploadMutation.isPending ? "Uploading..." : "Upload Document"}
+                {uploadMutation.isPending
+                  ? progress && progress.total > 1
+                    ? `Uploading ${progress.sent} / ${progress.total}…`
+                    : "Uploading..."
+                  : "Upload Document"}
               </Button>
             </div>
           </form>

@@ -22,8 +22,6 @@ import {
   Leaf,
   FolderOpen
 } from "lucide-react";
-import type { MedicalDocument } from "@shared/schema";
-import { visibleBrowseItems } from "@shared/upload-kinds";
 
 export default function Documents() {
   const { toast } = useToast();
@@ -69,11 +67,6 @@ export default function Documents() {
 
     return matchesSearch && matchesType;
   }) || [];
-
-  const browseItems = visibleBrowseItems<MedicalDocument>(
-    documents ?? [],
-    filteredDocuments,
-  );
 
   useEffect(() => {
     if (searchQuery && documents) {
@@ -310,26 +303,15 @@ export default function Documents() {
               </Card>
             ))}
           </div>
-        ) : browseItems.length > 0 ? (
+        ) : filteredDocuments.length > 0 ? (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="documents-grid">
-            {browseItems.map((item) => {
-              const document =
-                item.kind === "series" ? item.documents[0] : item.document;
-              return (
-                <DocumentCard
-                  key={
-                    item.kind === "series"
-                      ? `series:${item.seriesId}`
-                      : String(document.id)
-                  }
-                  document={document}
-                  sliceCount={
-                    item.kind === "series" ? item.documents.length : undefined
-                  }
-                  onDelete={handleDelete}
-                />
-              );
-            })}
+            {filteredDocuments.map((document) => (
+              <DocumentCard
+                key={document.id}
+                document={document}
+                onDelete={handleDelete}
+              />
+            ))}
           </div>
         ) : documents && documents.length > 0 ? (
           <div className="text-center py-16">

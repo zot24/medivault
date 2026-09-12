@@ -18,6 +18,7 @@ import { insertSymptomSchema } from "@shared/schema";
 import {
   classifyUpload,
   isVagueUploadMime,
+  MAX_FILES_PER_REQUEST,
   MAX_UPLOAD_BYTES,
 } from "@shared/upload-kinds";
 import { z } from "zod";
@@ -48,9 +49,6 @@ const upload = multer({
     );
   },
 });
-
-// Per-request cap on slices; long series arrive in several requests.
-export const MAX_FILES_PER_REQUEST = 50;
 
 const uploadFiles = upload.fields([
   { name: "file", maxCount: 1 },

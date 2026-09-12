@@ -1,20 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   acceptedExtensions,
+  chunkFiles,
   classifyUpload,
-  displayTags,
   fitsUploadCap,
-  focusSliceIndex,
-  groupDocuments,
   isDicomDocument,
-  newSeriesTag,
-  newSliceTag,
-  seriesIdFromTags,
+  nextSliceToLoad,
   sliceCountLabel,
   sliceDeltaFromKey,
-  stackDocuments,
   stepSliceIndex,
-  visibleBrowseItems,
 } from "./upload-kinds";
 
 describe("classifyUpload", () => {
@@ -124,127 +118,6 @@ describe("isDicomDocument", () => {
   });
 });
 
-describe("stackDocuments", () => {
-  const slice = (id: number, fileName: string, tags: string[]) => ({
-    id,
-    mimeType: "application/dicom",
-    fileName,
-    tags,
-  });
-
-  it("returns only the focus file when no series tag is present", () => {
-    const focus = slice(3, "b.dcm", []);
-    expect(stackDocuments(focus, [slice(1, "a.dcm", []), focus])).toEqual([
-      focus,
-    ]);
-  });
-
-  it("returns tagged siblings sorted by slice tag then file name", () => {
-    const tag = newSeriesTag();
-    expect(tag.startsWith("series:")).toBe(true);
-    const a = slice(1, "z-02.dcm", [tag, newSliceTag(1)]);
-    const b = slice(2, "z-01.dcm", [tag, newSliceTag(0)]);
-    const other = slice(9, "other.dcm", [newSeriesTag(), newSliceTag(0)]);
-    expect(stackDocuments(a, [a, other, b])).toEqual([b, a]);
-    expect(seriesIdFromTags(a.tags)).toBe(tag.slice("series:".length));
-  });
-});
-
-describe("groupDocuments", () => {
-  const slice = (id: number, fileName: string, tags: string[]) => ({
-    id,
-    mimeType: "application/dicom",
-    fileName,
-    tags,
-  });
-
-  it("collapses one series into a single browse item in vault order", () => {
-    const tag = "series:stack-a";
-    const first = slice(1, "s-02.dcm", [tag, "slice:1"]);
-    const second = slice(2, "s-01.dcm", [tag, "slice:0"]);
-    const pdf = {
-      id: 3,
-      mimeType: "application/pdf",
-      fileName: "labs.pdf",
-      tags: [] as string[],
-    };
-    const lone = slice(4, "lone.dcm", []);
-
-    expect(groupDocuments([first, pdf, second, lone])).toEqual([
-      {
-        kind: "series",
-        seriesId: "stack-a",
-        documents: [second, first],
-      },
-      { kind: "file", document: pdf },
-      { kind: "file", document: lone },
-    ]);
-  });
-
-  it("keeps two series as two browse items", () => {
-    const a = slice(1, "a.dcm", ["series:one", "slice:0"]);
-    const b = slice(2, "b.dcm", ["series:two", "slice:0"]);
-    expect(groupDocuments([a, b])).toEqual([
-      { kind: "series", seriesId: "one", documents: [a] },
-      { kind: "series", seriesId: "two", documents: [b] },
-    ]);
-  });
-});
-
-describe("visibleBrowseItems", () => {
-  it("keeps a series when any sibling matches the filter", () => {
-    const tag = "series:stack-a";
-    const first = {
-      id: 1,
-      mimeType: "application/dicom",
-      fileName: "s-02.dcm",
-      tags: [tag, "slice:1"],
-    };
-    const second = {
-      id: 2,
-      mimeType: "application/dicom",
-      fileName: "s-01.dcm",
-      tags: [tag, "slice:0"],
-    };
-    const pdf = {
-      id: 3,
-      mimeType: "application/pdf",
-      fileName: "labs.pdf",
-      tags: [] as string[],
-    };
-    expect(visibleBrowseItems([first, pdf, second], [first])).toEqual([
-      {
-        kind: "series",
-        seriesId: "stack-a",
-        documents: [second, first],
-      },
-    ]);
-  });
-});
-
-describe("focusSliceIndex", () => {
-  it("returns the focus row index in the stacked series", () => {
-    const stack = [
-      { id: 10, mimeType: "application/dicom", fileName: "a.dcm", tags: [] },
-      { id: 11, mimeType: "application/dicom", fileName: "b.dcm", tags: [] },
-      { id: 12, mimeType: "application/dicom", fileName: "c.dcm", tags: [] },
-    ];
-    expect(focusSliceIndex(stack[2], stack)).toBe(2);
-  });
-
-  it("returns 0 when the focus is not in the stack", () => {
-    expect(focusSliceIndex({ id: 9 }, [{ id: 1 }, { id: 2 }])).toBe(0);
-  });
-});
-
-describe("displayTags", () => {
-  it("hides series and slice tags from the card", () => {
-    expect(
-      displayTags(["series:abc", "follow-up", "slice:3", "lab"]),
-    ).toEqual(["follow-up", "lab"]);
-  });
-});
-
 describe("sliceCountLabel", () => {
   it("uses the plural form for more than one slice", () => {
     expect(sliceCountLabel(24)).toBe("24 slices");
@@ -278,5 +151,36 @@ describe("fitsUploadCap", () => {
 
   it("rejects an object larger than the documented 50 MiB spike cap", () => {
     expect(fitsUploadCap(50 * 1024 * 1024 + 1)).toBe(false);
+  });
+});
+
+describe("chunkFiles", () => {
+  it("splits a long series into request-sized batches in order", () => {
+    const items = Array.from({ length: 7 }, (_, index) => index);
+    expect(chunkFiles(items, 3)).toEqual([[0, 1, 2], [3, 4, 5], [6]]);
+  });
+
+  it("returns one batch when everything fits", () => {
+    expect(chunkFiles([1, 2], 3)).toEqual([[1, 2]]);
+    expect(chunkFiles([], 3)).toEqual([]);
+  });
+});
+
+describe("nextSliceToLoad", () => {
+  it("walks outwards from the slice on screen", () => {
+    const taken = new Set<number>();
+    const order: number[] = [];
+    for (;;) {
+      const next = nextSliceToLoad(3, 7, (p) => taken.has(p));
+      if (next == null) break;
+      taken.add(next);
+      order.push(next);
+    }
+    expect(order).toEqual([3, 4, 2, 5, 1, 6, 0]);
+  });
+
+  it("returns null once everything is taken or in flight", () => {
+    expect(nextSliceToLoad(0, 2, () => true)).toBeNull();
+    expect(nextSliceToLoad(0, 0, () => false)).toBeNull();
   });
 });
