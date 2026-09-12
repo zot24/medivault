@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import { createDocumentFiles } from "./document-files";
 import { MemoryObjectStore } from "./object-store";
 import type {
+  DocumentFile,
+  InsertDocumentFile,
   InsertMedicalDocument,
   MedicalDocument,
   Symptom,
@@ -29,6 +31,7 @@ function fakeDocument(
     doctorName: null,
     facilityName: null,
     tags: [],
+    fileCount: 1,
     createdAt: new Date("2026-09-11T00:00:00.000Z"),
     updatedAt: new Date("2026-09-11T00:00:00.000Z"),
     ...overrides,
@@ -61,6 +64,22 @@ function memoryDocuments(rows: MedicalDocument[] = []) {
         documents.push(row);
         return row;
       },
+      async createFiles(inputs: InsertDocumentFile[]): Promise<DocumentFile[]> {
+        return inputs.map((input, index) => ({
+          id: index + 1,
+          documentId: input.documentId,
+          position: input.position,
+          fileName: input.fileName,
+          filePath: input.filePath,
+          fileSize: input.fileSize,
+          mimeType: input.mimeType,
+          createdAt: null,
+        }));
+      },
+      async listFiles(): Promise<DocumentFile[]> {
+        return [];
+      },
+      async updateTotals(): Promise<void> {},
       async findByFilePath(userId: string, filePath: string) {
         return documents.find(
           (row) => row.userId === userId && row.filePath === filePath,
@@ -201,9 +220,9 @@ async function uploadLabs(
 ) {
   return files.uploadOwnedDocument({
     userId,
-    bytes: Buffer.from("%PDF-1"),
-    mimeType: "application/pdf",
-    originalName: "labs.pdf",
+    files: [
+      { bytes: Buffer.from("%PDF-1"), mimeType: "application/pdf", originalName: "labs.pdf" },
+    ],
     title: "Lab Results",
     documentType: "lab_result",
     documentDate: "2026-09-11",
@@ -223,9 +242,13 @@ async function uploadNamed(
 ) {
   return files.uploadOwnedDocument({
     userId: input.userId ?? "owner-1",
-    bytes: input.bytes,
-    mimeType: input.mimeType ?? "application/pdf",
-    originalName: input.originalName,
+    files: [
+      {
+        bytes: input.bytes,
+        mimeType: input.mimeType ?? "application/pdf",
+        originalName: input.originalName,
+      },
+    ],
     title: input.title,
     documentType: "lab_result",
     documentDate: "2026-09-11",

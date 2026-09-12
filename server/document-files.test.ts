@@ -6,7 +6,12 @@ import {
   parseObjectBasename,
 } from "./document-files";
 import { MemoryObjectStore, asObjectKey } from "./object-store";
-import type { InsertMedicalDocument, MedicalDocument } from "@shared/schema";
+import type {
+  DocumentFile,
+  InsertDocumentFile,
+  InsertMedicalDocument,
+  MedicalDocument,
+} from "@shared/schema";
 
 function fakeDocument(
   overrides: Partial<MedicalDocument> & Pick<MedicalDocument, "userId" | "filePath">,
@@ -23,6 +28,7 @@ function fakeDocument(
     doctorName: null,
     facilityName: null,
     tags: [],
+    fileCount: 1,
     createdAt: new Date("2026-09-11T00:00:00.000Z"),
     updatedAt: new Date("2026-09-11T00:00:00.000Z"),
     ...overrides,
@@ -31,11 +37,43 @@ function fakeDocument(
 
 function memoryRecords(rows: MedicalDocument[] = []) {
   const documents = [...rows];
+  const files: DocumentFile[] = [];
   let nextId = documents.reduce((max, row) => Math.max(max, row.id), 0) + 1;
+  let nextFileId = 1;
 
   return {
     documents,
+    files,
     records: {
+      async createFiles(inputs: InsertDocumentFile[]): Promise<DocumentFile[]> {
+        const created = inputs.map((input) => ({
+          id: nextFileId++,
+          documentId: input.documentId,
+          position: input.position,
+          fileName: input.fileName,
+          filePath: input.filePath,
+          fileSize: input.fileSize,
+          mimeType: input.mimeType,
+          createdAt: new Date("2026-09-11T00:00:00.000Z"),
+        }));
+        files.push(...created);
+        return created;
+      },
+      async listFiles(documentId: number): Promise<DocumentFile[]> {
+        return files
+          .filter((row) => row.documentId === documentId)
+          .sort((a, b) => a.position - b.position);
+      },
+      async updateTotals(
+        id: number,
+        totals: { fileCount: number; fileSize: string },
+      ): Promise<void> {
+        const row = documents.find((doc) => doc.id === id);
+        if (row) {
+          row.fileCount = totals.fileCount;
+          row.fileSize = totals.fileSize;
+        }
+      },
       async create(input: InsertMedicalDocument): Promise<MedicalDocument> {
         const row = fakeDocument({
           id: nextId++,
@@ -51,6 +89,7 @@ function memoryRecords(rows: MedicalDocument[] = []) {
           doctorName: input.doctorName ?? null,
           facilityName: input.facilityName ?? null,
           tags: input.tags ?? [],
+          fileCount: input.fileCount ?? 1,
         });
         documents.push(row);
         return row;
@@ -71,6 +110,9 @@ function memoryRecords(rows: MedicalDocument[] = []) {
           return false;
         }
         documents.splice(index, 1);
+        for (let i = files.length - 1; i >= 0; i--) {
+          if (files[i].documentId === id) files.splice(i, 1);
+        }
         return true;
       },
     },
@@ -104,9 +146,7 @@ describe("createDocumentFiles", () => {
 
     const created = await files.uploadOwnedDocument({
       userId: "owner-1",
-      bytes: Buffer.from("%PDF-1"),
-      mimeType: "application/pdf",
-      originalName: "labs.pdf",
+      files: [{ bytes: Buffer.from("%PDF-1"), mimeType: "application/pdf", originalName: "labs.pdf" }],
       title: "Lab Results",
       documentType: "lab_result",
       documentDate: "2026-09-11",
@@ -157,9 +197,7 @@ describe("createDocumentFiles", () => {
 
     const created = await files.uploadOwnedDocument({
       userId: "owner-1",
-      bytes: Buffer.from("%PDF-2"),
-      mimeType: "application/pdf",
-      originalName: "labs.pdf",
+      files: [{ bytes: Buffer.from("%PDF-2"), mimeType: "application/pdf", originalName: "labs.pdf" }],
       title: "Lab Results",
       documentType: "lab_result",
       documentDate: "2026-09-11",
@@ -185,9 +223,7 @@ describe("createDocumentFiles", () => {
 
     const created = await files.uploadOwnedDocument({
       userId: "owner-1",
-      bytes: Buffer.from("DICM"),
-      mimeType: "",
-      originalName: "slice-01.dcm",
+      files: [{ bytes: Buffer.from("DICM"), mimeType: "", originalName: "slice-01.dcm" }],
       title: "Chest CT",
       documentType: "x_ray",
       documentDate: "2026-09-11",
@@ -215,9 +251,9 @@ describe("createDocumentFiles", () => {
 
     const created = await files.uploadOwnedDocument({
       userId: "owner-1",
-      bytes,
-      mimeType: "application/octet-stream",
-      originalName: "CT000001",
+      files: [
+        { bytes, mimeType: "application/octet-stream", originalName: "CT000001" },
+      ],
       title: "Chest CT",
       documentType: "x_ray",
       documentDate: "2026-09-12",
@@ -248,14 +284,144 @@ describe("createDocumentFiles", () => {
     await expect(
       files.uploadOwnedDocument({
         userId: "owner-1",
-        bytes: Buffer.alloc(200),
-        mimeType: "application/octet-stream",
-        originalName: "CT000001",
+        files: [
+          {
+            bytes: Buffer.alloc(200),
+            mimeType: "application/octet-stream",
+            originalName: "CT000001",
+          },
+        ],
         title: "Not DICOM",
         documentType: "other",
         documentDate: "2026-09-12",
         tags: [],
       }),
     ).rejects.toThrow("Invalid file type");
+  });
+});
+
+describe("createDocumentFiles series", () => {
+  function slices(count: number) {
+    return Array.from({ length: count }, (_, index) => ({
+      bytes: buildMiniCtDicom({ instanceNumber: index + 1 }),
+      mimeType: "",
+      originalName: `CT${String(index + 1).padStart(6, "0")}`,
+    }));
+  }
+
+  const meta = {
+    userId: "owner-1",
+    title: "Coronary CTA",
+    documentType: "x_ray",
+    documentDate: "2026-09-11",
+    tags: ["CT"],
+  };
+
+  it("stores a multi-file upload as one record with ordered files", async () => {
+    const objects = new MemoryObjectStore();
+    const { records, documents } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+
+    const created = await files.uploadOwnedDocument({ ...meta, files: slices(3) });
+
+    expect(documents).toHaveLength(1);
+    expect(created.fileCount).toBe(3);
+    expect(created.mimeType).toBe("application/dicom");
+    expect(created.fileName).toBe("CT000001");
+    const total = slices(3).reduce((sum, f) => sum + f.bytes.length, 0);
+    expect(created.fileSize).toBe(String(total));
+
+    const listed = await files.listOwnedFiles("owner-1", created.id);
+    expect(listed?.map((row) => [row.position, row.fileName])).toEqual([
+      [0, "CT000001"],
+      [1, "CT000002"],
+      [2, "CT000003"],
+    ]);
+    expect(listed?.[0].filePath).toBe(created.filePath);
+    expect(await files.listOwnedFiles("intruder-2", created.id)).toBeNull();
+  });
+
+  it("opens a file by position only for the owner", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const input = slices(2);
+    const created = await files.uploadOwnedDocument({ ...meta, files: input });
+
+    const second = await files.openOwnedFileAt("owner-1", created.id, 1);
+    expect(second?.fileName).toBe("CT000002");
+    expect(second?.bytes.equals(input[1].bytes)).toBe(true);
+    expect(second?.mimeType).toBe("application/dicom");
+    expect(await files.openOwnedFileAt("owner-1", created.id, 2)).toBeNull();
+    expect(await files.openOwnedFileAt("intruder-2", created.id, 0)).toBeNull();
+  });
+
+  it("appends files after the existing ones and updates the totals", async () => {
+    const objects = new MemoryObjectStore();
+    const { records, documents } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const created = await files.uploadOwnedDocument({ ...meta, files: slices(2) });
+
+    const result = await files.appendOwnedFiles("owner-1", created.id, slices(3).slice(2));
+    expect(result).toEqual({ kind: "appended", fileCount: 3 });
+
+    const listed = await files.listOwnedFiles("owner-1", created.id);
+    expect(listed?.map((row) => row.position)).toEqual([0, 1, 2]);
+    const total = slices(3).reduce((sum, f) => sum + f.bytes.length, 0);
+    expect(documents[0].fileCount).toBe(3);
+    expect(documents[0].fileSize).toBe(String(total));
+  });
+
+  it("refuses to append to another user's document or to a non-DICOM record", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const series = await files.uploadOwnedDocument({ ...meta, files: slices(1) });
+    const pdf = await files.uploadOwnedDocument({
+      ...meta,
+      files: [{ bytes: Buffer.from("%PDF-1"), mimeType: "application/pdf", originalName: "a.pdf" }],
+    });
+
+    expect(await files.appendOwnedFiles("intruder-2", series.id, slices(1))).toEqual({
+      kind: "not_found",
+    });
+    expect(await files.appendOwnedFiles("owner-1", pdf.id, slices(1))).toEqual({
+      kind: "rejected",
+      message: "Only DICOM series accept more files.",
+    });
+    expect(
+      await files.appendOwnedFiles("owner-1", series.id, [
+        { bytes: Buffer.from("%PDF-1"), mimeType: "application/pdf", originalName: "a.pdf" },
+      ]),
+    ).toEqual({ kind: "rejected", message: "All files in a series must be DICOM." });
+  });
+
+  it("rejects a multi-file upload that mixes DICOM with other kinds", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+
+    await expect(
+      files.uploadOwnedDocument({
+        ...meta,
+        files: [
+          ...slices(1),
+          { bytes: Buffer.from("%PDF-1"), mimeType: "application/pdf", originalName: "a.pdf" },
+        ],
+      }),
+    ).rejects.toThrow("All files in a series must be DICOM.");
+  });
+
+  it("removes every stored object when a series is deleted", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const created = await files.uploadOwnedDocument({ ...meta, files: slices(3) });
+    const keys = (await files.listOwnedFiles("owner-1", created.id))!.map((row) => row.filePath);
+
+    expect(await files.removeOwnedDocument("owner-1", created.id)).toBe("deleted");
+    for (const key of keys) {
+      expect(await objects.get(asObjectKey(key))).toBeNull();
+    }
   });
 });

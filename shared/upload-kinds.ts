@@ -1,4 +1,5 @@
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+export const DICOM_MIME = "application/dicom";
 
 export const SERIES_TAG_PREFIX = "series:";
 export const SLICE_TAG_PREFIX = "slice:";

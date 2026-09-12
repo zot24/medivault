@@ -27,6 +27,7 @@ export type { SDKConfig, ApiResult, ApiResponse, ApiError } from './client';
 export type {
   User,
   MedicalDocument,
+  DocumentFileEntry,
   InsertMedicalDocument,
   Symptom,
   InsertSymptom,

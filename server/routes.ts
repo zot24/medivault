@@ -2,7 +2,7 @@ import type { Express } from "express";
 import multer from "multer";
 import { storage } from "./storage";
 import { setupLocalAuth, isAuthenticated } from "./localAuth";
-import { createDocumentFiles } from "./document-files";
+import { createDocumentFiles, type UploadFile } from "./document-files";
 import {
   createObjectStoreFromEnv,
   ObjectStoreConfigError,
@@ -49,6 +49,36 @@ const upload = multer({
   },
 });
 
+// Per-request cap on slices; long series arrive in several requests.
+export const MAX_FILES_PER_REQUEST = 50;
+
+const uploadFiles = upload.fields([
+  { name: "file", maxCount: 1 },
+  { name: "files", maxCount: MAX_FILES_PER_REQUEST },
+]);
+
+function uploadedFiles(req: any): UploadFile[] {
+  const groups = req.files ?? {};
+  const list: Express.Multer.File[] = [
+    ...(groups.file ?? []),
+    ...(groups.files ?? []),
+  ];
+  return list.map((file) => ({
+    bytes: file.buffer,
+    mimeType: file.mimetype,
+    originalName: file.originalname,
+  }));
+}
+
+function isUploadRejection(message: string): boolean {
+  return (
+    message.startsWith("Invalid file type") ||
+    message === "File too large" ||
+    message === "No file uploaded" ||
+    message === "All files in a series must be DICOM."
+  );
+}
+
 let objectStore: ObjectStore | undefined;
 let documentFiles:
   | ReturnType<typeof createDocumentFiles>
@@ -74,6 +104,9 @@ function getDocumentFiles() {
           storage.getMedicalDocumentByFilePath(userId, filePath),
         get: (id, userId) => storage.getMedicalDocument(id, userId),
         delete: (id, userId) => storage.deleteMedicalDocument(id, userId),
+        createFiles: (files) => storage.createDocumentFiles(files),
+        listFiles: (documentId) => storage.listDocumentFiles(documentId),
+        updateTotals: (id, totals) => storage.updateDocumentTotals(id, totals),
       },
     });
   }
@@ -151,19 +184,19 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post('/api/documents', isAuthenticated, upload.single('file'), async (req: any, res) => {
+  // One request creates one record. Send `files` (many, all DICOM) for a
+  // series or a single `file`; long series continue with POST /:id/files.
+  app.post('/api/documents', isAuthenticated, uploadFiles, async (req: any, res) => {
     try {
       const userId = req.user.id;
-      
-      if (!req.file) {
+      const files = uploadedFiles(req);
+      if (files.length === 0) {
         return res.status(400).json({ message: "No file uploaded" });
       }
 
       const document = await getDocumentFiles().uploadOwnedDocument({
         userId,
-        bytes: req.file.buffer,
-        mimeType: req.file.mimetype,
-        originalName: req.file.originalname,
+        files,
         title: req.body.title,
         description: req.body.description,
         documentType: req.body.documentType,
@@ -181,9 +214,94 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (error instanceof ObjectStoreConfigError) {
         return res.status(503).json({ message: error.message });
       }
-      
+      if (error instanceof Error && isUploadRejection(error.message)) {
+        return res.status(400).json({ message: error.message });
+      }
+
       console.error("Error uploading document:", error);
       res.status(500).json({ message: "Failed to upload document" });
+    }
+  });
+
+  app.post('/api/documents/:id/files', isAuthenticated, uploadFiles, async (req: any, res) => {
+    try {
+      const documentId = parseInt(req.params.id, 10);
+      if (!Number.isInteger(documentId)) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+      const files = uploadedFiles(req);
+      if (files.length === 0) {
+        return res.status(400).json({ message: "No file uploaded" });
+      }
+
+      const result = await getDocumentFiles().appendOwnedFiles(req.user.id, documentId, files);
+      if (result.kind === "not_found") {
+        return res.status(404).json({ message: "Document not found" });
+      }
+      if (result.kind === "rejected") {
+        return res.status(400).json({ message: result.message });
+      }
+      res.status(201).json({ fileCount: result.fileCount });
+    } catch (error) {
+      if (error instanceof ObjectStoreConfigError) {
+        return res.status(503).json({ message: error.message });
+      }
+      if (error instanceof Error && isUploadRejection(error.message)) {
+        return res.status(400).json({ message: error.message });
+      }
+      console.error("Error appending files:", error);
+      res.status(500).json({ message: "Failed to upload files" });
+    }
+  });
+
+  app.get('/api/documents/:id/files', isAuthenticated, async (req: any, res) => {
+    try {
+      const documentId = parseInt(req.params.id, 10);
+      if (!Number.isInteger(documentId)) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+      const files = await getDocumentFiles().listOwnedFiles(req.user.id, documentId);
+      if (!files) {
+        return res.status(404).json({ message: "Document not found" });
+      }
+      res.json(
+        files.map((file) => ({
+          position: file.position,
+          fileName: file.fileName,
+          fileSize: file.fileSize,
+          mimeType: file.mimeType,
+        })),
+      );
+    } catch (error) {
+      console.error("Error listing files:", error);
+      res.status(500).json({ message: "Failed to list files" });
+    }
+  });
+
+  app.get('/api/documents/:id/files/:position', isAuthenticated, async (req: any, res) => {
+    try {
+      const documentId = parseInt(req.params.id, 10);
+      const position = parseInt(req.params.position, 10);
+      if (!Number.isInteger(documentId) || !Number.isInteger(position) || position < 0) {
+        return res.status(404).json({ message: "File not found" });
+      }
+      const owned = await getDocumentFiles().openOwnedFileAt(req.user.id, documentId, position);
+      if (!owned) {
+        return res.status(404).json({ message: "File not found" });
+      }
+      res.setHeader("Content-Type", owned.mimeType);
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="${owned.fileName.replace(/"/g, "")}"`,
+      );
+      res.setHeader("Cache-Control", "private, max-age=3600");
+      res.send(owned.bytes);
+    } catch (error) {
+      if (error instanceof ObjectStoreConfigError) {
+        return res.status(503).json({ message: error.message });
+      }
+      console.error("Error reading file:", error);
+      res.status(500).json({ message: "Failed to read file" });
     }
   });
 

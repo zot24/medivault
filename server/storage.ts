@@ -1,12 +1,15 @@
 import {
   users,
   medicalDocuments,
+  documentFiles,
   symptoms,
   shareLinks,
   type User,
   type UpsertUser,
   type MedicalDocument,
   type InsertMedicalDocument,
+  type DocumentFile,
+  type InsertDocumentFile,
   type ShareLink,
   type Symptom,
   type InsertSymptom,
@@ -34,6 +37,9 @@ export interface IStorage {
   searchMedicalDocuments(userId: string, query: string): Promise<MedicalDocument[]>;
   getMedicalDocumentsByType(userId: string, type: string): Promise<MedicalDocument[]>;
   deleteMedicalDocument(id: number, userId: string): Promise<boolean>;
+  createDocumentFiles(files: InsertDocumentFile[]): Promise<DocumentFile[]>;
+  listDocumentFiles(documentId: number): Promise<DocumentFile[]>;
+  updateDocumentTotals(id: number, totals: { fileCount: number; fileSize: string }): Promise<void>;
 
   insertShareLink(row: Omit<ShareLinkRow, "id" | "createdAt">): Promise<ShareLinkRow>;
   listShareLinksByDocument(createdBy: string, documentId: number): Promise<ShareLinkRow[]>;
@@ -189,6 +195,31 @@ export class DatabaseStorage implements IStorage {
         eq(medicalDocuments.userId, userId)
       ));
     return (result.rowCount || 0) > 0;
+  }
+
+  async createDocumentFiles(files: InsertDocumentFile[]): Promise<DocumentFile[]> {
+    if (files.length === 0) {
+      return [];
+    }
+    return await db.insert(documentFiles).values(files).returning();
+  }
+
+  async listDocumentFiles(documentId: number): Promise<DocumentFile[]> {
+    return await db
+      .select()
+      .from(documentFiles)
+      .where(eq(documentFiles.documentId, documentId))
+      .orderBy(documentFiles.position);
+  }
+
+  async updateDocumentTotals(
+    id: number,
+    totals: { fileCount: number; fileSize: string },
+  ): Promise<void> {
+    await db
+      .update(medicalDocuments)
+      .set({ fileCount: totals.fileCount, fileSize: totals.fileSize, updatedAt: new Date() })
+      .where(eq(medicalDocuments.id, id));
   }
 
   async insertShareLink(

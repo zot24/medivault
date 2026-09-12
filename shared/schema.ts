@@ -54,9 +54,35 @@ export const medicalDocuments = pgTable("medical_documents", {
   doctorName: varchar("doctor_name"),
   facilityName: varchar("facility_name"),
   tags: text("tags").array(),
+  // A record is one document; a DICOM series is one record with many files.
+  // file_name/file_path/mime_type describe the first file, file_size is the total.
+  fileCount: integer("file_count").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// Files belonging to a document, in display order (slice order for DICOM).
+export const documentFiles = pgTable(
+  "document_files",
+  {
+    id: serial("id").primaryKey(),
+    documentId: integer("document_id")
+      .notNull()
+      .references(() => medicalDocuments.id, { onDelete: "cascade" }),
+    position: integer("position").notNull(),
+    fileName: varchar("file_name").notNull(),
+    filePath: varchar("file_path").notNull(),
+    fileSize: integer("file_size").notNull(),
+    mimeType: varchar("mime_type").notNull(),
+    createdAt: timestamp("created_at").defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("document_files_document_position_uidx").on(
+      table.documentId,
+      table.position,
+    ),
+  ],
+);
 
 // Symptom tracking table
 export const symptoms = pgTable("symptoms", {
@@ -130,6 +156,8 @@ export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type MedicalDocument = typeof medicalDocuments.$inferSelect;
 export type InsertMedicalDocument = z.infer<typeof insertMedicalDocumentSchema>;
+export type DocumentFile = typeof documentFiles.$inferSelect;
+export type InsertDocumentFile = typeof documentFiles.$inferInsert;
 export type ShareLink = typeof shareLinks.$inferSelect;
 export type InsertShareLink = typeof shareLinks.$inferInsert;
 export type Symptom = typeof symptoms.$inferSelect;
