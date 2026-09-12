@@ -27,8 +27,18 @@ export interface MedicalDocument {
   doctorName: string | null;
   facilityName: string | null;
   tags: string[] | null;
+  /** Files in this record; a DICOM series has one per slice. */
+  fileCount: number;
   createdAt: Date | null;
   updatedAt: Date | null;
+}
+
+/** One file of a document, as listed by GET /api/documents/:id/files. */
+export interface DocumentFileEntry {
+  position: number;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
 }
 
 export interface InsertMedicalDocument {

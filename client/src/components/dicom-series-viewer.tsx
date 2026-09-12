@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useDocuments } from "@/lib/sdk";
-import { ownedFileUrl } from "@/lib/owned-file";
+import { useEffect, useRef, useState } from "react";
+import { documentFileUrl } from "@/lib/owned-file";
 import {
   Dialog,
   DialogContent,
@@ -9,16 +8,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  CT_WINDOW_PRESETS,
   describeUndrawableFrame,
   pixelFrameFromPart10,
   rgbaFromFrame,
+  windowForPreset,
   type DicomFrame,
 } from "@shared/dicom-frame";
 import {
-  focusSliceIndex,
-  isDicomDocument,
+  nextSliceToLoad,
   sliceDeltaFromKey,
-  stackDocuments,
   stepSliceIndex,
 } from "@shared/upload-kinds";
 import type { MedicalDocument } from "@shared/schema";
@@ -29,7 +28,14 @@ type DicomSeriesViewerProps = {
   onOpenChange: (open: boolean) => void;
 };
 
-function blitFrame(canvas: HTMLCanvasElement, frame: DicomFrame) {
+/** Parallel fetches while filling the stack in the background. */
+const LOAD_CONCURRENCY = 6;
+
+function blitFrame(
+  canvas: HTMLCanvasElement,
+  frame: DicomFrame,
+  preset: string,
+) {
   canvas.width = frame.columns;
   canvas.height = frame.rows;
   const context = canvas.getContext("2d");
@@ -37,7 +43,7 @@ function blitFrame(canvas: HTMLCanvasElement, frame: DicomFrame) {
     return;
   }
   const image = context.createImageData(frame.columns, frame.rows);
-  image.data.set(rgbaFromFrame(frame));
+  image.data.set(rgbaFromFrame(frame, windowForPreset(preset)));
   context.putImageData(image, 0, 0);
 }
 
@@ -47,51 +53,89 @@ export default function DicomSeriesViewer({
   onOpenChange,
 }: DicomSeriesViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const framesRef = useRef<Map<number, DicomFrame>>(new Map());
+  const drawnRef = useRef<{ frame: DicomFrame; preset: string } | null>(null);
+  const sliceIndexRef = useRef(0);
   const [sliceIndex, setSliceIndex] = useState(0);
-  const [frames, setFrames] = useState<DicomFrame[]>([]);
+  const [count, setCount] = useState(0);
+  const [loaded, setLoaded] = useState(0);
+  const [preset, setPreset] = useState("stored");
   const [error, setError] = useState<string | null>(null);
-  const { data: vault = [] } = useDocuments(undefined, { enabled: open });
+  const documentId = focus?.id ?? null;
 
-  const stack = useMemo(() => {
-    if (!focus || !isDicomDocument(focus)) {
-      return [];
-    }
-    return stackDocuments(focus, vault);
-  }, [focus, vault]);
+  sliceIndexRef.current = sliceIndex;
 
   useEffect(() => {
-    if (!open || !focus || stack.length === 0) {
-      setFrames([]);
-      setError(null);
+    framesRef.current = new Map();
+    drawnRef.current = null;
+    setSliceIndex(0);
+    setCount(0);
+    setLoaded(0);
+    setError(null);
+    if (!open || documentId == null) {
       return;
     }
 
     let cancelled = false;
-    setSliceIndex(focusSliceIndex(focus, stack));
-    setError(null);
+    const inflight = new Set<number>();
+
+    async function loadOne(position: number) {
+      const response = await fetch(documentFileUrl(documentId!, position), {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error("Could not load this file.");
+      }
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      const frame = pixelFrameFromPart10(bytes);
+      if (!frame) {
+        throw new Error(describeUndrawableFrame(bytes));
+      }
+      return frame;
+    }
+
+    // Each worker keeps pulling the slice nearest to where the user is.
+    async function worker(total: number) {
+      while (!cancelled) {
+        const position = nextSliceToLoad(
+          sliceIndexRef.current,
+          total,
+          (candidate) =>
+            framesRef.current.has(candidate) || inflight.has(candidate),
+        );
+        if (position == null) {
+          return;
+        }
+        inflight.add(position);
+        const frame = await loadOne(position);
+        inflight.delete(position);
+        if (cancelled) {
+          return;
+        }
+        framesRef.current.set(position, frame);
+        setLoaded((current) => current + 1);
+      }
+    }
 
     (async () => {
-      const loaded: DicomFrame[] = [];
-      for (const row of stack) {
-        const response = await fetch(ownedFileUrl(row.filePath), {
-          credentials: "include",
-        });
-        if (!response.ok) {
-          throw new Error("Could not load this file.");
-        }
-        const bytes = new Uint8Array(await response.arrayBuffer());
-        const frame = pixelFrameFromPart10(bytes);
-        if (!frame) {
-          throw new Error(describeUndrawableFrame(bytes));
-        }
-        loaded.push(frame);
+      const response = await fetch(`/api/documents/${documentId}/files`, {
+        credentials: "include",
+      });
+      if (!response.ok) {
+        throw new Error("Could not load this series.");
       }
-      if (!cancelled) {
-        setFrames(loaded);
+      const files = (await response.json()) as unknown[];
+      if (cancelled) {
+        return;
       }
+      setCount(files.length);
+      await Promise.all(
+        Array.from({ length: Math.min(LOAD_CONCURRENCY, files.length) }, () =>
+          worker(files.length),
+        ),
+      );
     })().catch((caught: unknown) => {
       if (!cancelled) {
-        setFrames([]);
         setError(caught instanceof Error ? caught.message : "Could not load series");
       }
     });
@@ -99,19 +143,30 @@ export default function DicomSeriesViewer({
     return () => {
       cancelled = true;
     };
-  }, [open, focus, stack]);
+  }, [open, documentId]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const frame = frames[sliceIndex];
+    const frame = framesRef.current.get(sliceIndex);
     if (!canvas || !frame) {
       return;
     }
-    blitFrame(canvas, frame);
-  }, [frames, sliceIndex]);
+    // `loaded` ticks for every background slice; only redraw when ours changed.
+    const drawn = drawnRef.current;
+    if (drawn && drawn.frame === frame && drawn.preset === preset) {
+      return;
+    }
+    drawnRef.current = { frame, preset };
+    blitFrame(canvas, frame, preset);
+  }, [sliceIndex, preset, loaded]);
 
-  const sliceLabel =
-    frames.length === 0 ? "0 / 0" : `${sliceIndex + 1} / ${frames.length}`;
+  const current = framesRef.current.get(sliceIndex);
+  const isMono = current?.kind === "mono16";
+  const sliceLabel = count === 0 ? "0 / 0" : `${sliceIndex + 1} / ${count}`;
+  const loading = count > 0 && loaded < count;
+
+  const step = (delta: number) =>
+    setSliceIndex((value) => stepSliceIndex(value, delta, count));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -120,13 +175,11 @@ export default function DicomSeriesViewer({
         data-testid="dicom-series-viewer"
         onKeyDown={(event) => {
           const delta = sliceDeltaFromKey(event.key);
-          if (delta == null || frames.length < 2) {
+          if (delta == null || count < 2) {
             return;
           }
           event.preventDefault();
-          setSliceIndex((current) =>
-            stepSliceIndex(current, delta, frames.length),
-          );
+          step(delta);
         }}
       >
         <DialogHeader>
@@ -142,40 +195,75 @@ export default function DicomSeriesViewer({
           </p>
         ) : (
           <div className="space-y-4">
-            <div className="flex justify-center bg-black rounded-lg overflow-hidden">
+            <div className="relative flex justify-center bg-black rounded-lg overflow-hidden">
               <canvas
                 ref={canvasRef}
                 className="max-w-full max-h-[70vh]"
                 data-testid="dicom-viewer-canvas"
                 onWheel={(event) => {
-                  if (frames.length < 2) {
+                  if (count < 2) {
                     return;
                   }
                   event.preventDefault();
-                  const delta = event.deltaY > 0 ? 1 : -1;
-                  setSliceIndex((current) =>
-                    stepSliceIndex(current, delta, frames.length),
-                  );
+                  step(event.deltaY > 0 ? 1 : -1);
                 }}
               />
+              {!current && (
+                <p
+                  className="absolute inset-0 flex items-center justify-center text-sm text-white/70"
+                  data-testid="dicom-viewer-loading"
+                >
+                  Loading slice…
+                </p>
+              )}
             </div>
-            <div className="space-y-2">
+            <div className="flex items-center justify-between gap-4">
               <label className="text-sm text-foreground-muted" htmlFor="dicom-slice">
                 Slice{" "}
                 <span data-testid="dicom-slice-index">{sliceLabel}</span>
+                {loading && (
+                  <span className="ml-2 text-foreground-subtle" data-testid="dicom-loaded-count">
+                    · loaded {loaded} / {count}
+                  </span>
+                )}
               </label>
-              <input
-                id="dicom-slice"
-                type="range"
-                min={0}
-                max={Math.max(frames.length - 1, 0)}
-                value={sliceIndex}
-                disabled={frames.length < 2}
-                onChange={(event) => setSliceIndex(Number(event.target.value))}
-                className="w-full"
-                data-testid="dicom-slice-slider"
-              />
+              {isMono && (
+                <label className="flex items-center gap-2 text-sm text-foreground-muted">
+                  Window
+                  <select
+                    className="rounded-md border border-border bg-surface-1 px-2 py-1 text-sm text-foreground"
+                    value={preset}
+                    onChange={(event) => setPreset(event.target.value)}
+                    data-testid="dicom-window-preset"
+                  >
+                    {CT_WINDOW_PRESETS.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
             </div>
+            <input
+              id="dicom-slice"
+              type="range"
+              min={0}
+              max={Math.max(count - 1, 0)}
+              value={sliceIndex}
+              disabled={count < 2}
+              onChange={(event) => setSliceIndex(Number(event.target.value))}
+              className="w-full"
+              data-testid="dicom-slice-slider"
+            />
+            {loading && (
+              <div className="h-1 w-full rounded bg-surface-1" aria-hidden="true">
+                <div
+                  className="h-1 rounded bg-primary transition-[width]"
+                  style={{ width: `${(loaded / count) * 100}%` }}
+                />
+              </div>
+            )}
           </div>
         )}
       </DialogContent>

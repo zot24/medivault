@@ -26,16 +26,18 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
-import { Upload, FileText, X } from "lucide-react";
+import { Upload, FileText, Layers, X } from "lucide-react";
 import {
   acceptAttribute,
   classifyUpload,
   fitsUploadCap,
   isDicomDocument,
+  MAX_FILES_PER_REQUEST,
   MAX_UPLOAD_BYTES,
   PART10_SNIFF_BYTES,
-  newSeriesTag,
-  newSliceTag,
+  chunkFiles,
+  describeSeriesUpload,
+  isHeavyUpload,
 } from "@shared/upload-kinds";
 
 const uploadSchema = z.object({
@@ -74,65 +76,61 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
     },
   });
 
+  const [progress, setProgress] = useState<{ sent: number; total: number } | null>(null);
+  const seriesSummary = describeSeriesUpload(selectedFiles);
+
+  async function postFiles(path: string, fields: FormData, files: File[]) {
+    const body = new FormData();
+    fields.forEach((value, key) => body.append(key, value));
+    for (const file of files) {
+      body.append("files", file);
+    }
+    const response = await fetch(path, {
+      method: "POST",
+      body,
+      credentials: "include",
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`${response.status}: ${errorText}`);
+    }
+    return response;
+  }
+
+  // One selection is one record. A DICOM series goes up in request-sized
+  // chunks: the first creates the record, the rest append to it.
   const uploadMutation = useMutation({
     mutationFn: async (data: UploadFormData & { files: File[] }) => {
-      const heads = await Promise.all(
-        data.files.map(async (file) =>
-          new Uint8Array(await file.slice(0, PART10_SNIFF_BYTES).arrayBuffer()),
-        ),
-      );
-      const dicomCount = data.files.filter((file, index) =>
-        isDicomDocument({
-          mimeType: file.type,
-          fileName: file.name,
-          bytes: heads[index],
-        }),
-      ).length;
-      const seriesTag =
-        dicomCount > 1 ? newSeriesTag() : null;
+      const fields = new FormData();
+      fields.append("title", data.title);
+      if (data.description) {
+        fields.append("description", data.description);
+      }
+      fields.append("documentType", data.documentType);
+      fields.append("documentDate", data.documentDate);
+      if (data.doctorName) {
+        fields.append("doctorName", data.doctorName);
+      }
+      if (data.facilityName) {
+        fields.append("facilityName", data.facilityName);
+      }
+      fields.append("tags", JSON.stringify(data.tags));
 
-      for (let index = 0; index < data.files.length; index += 1) {
-        const file = data.files[index];
-        const tags = [...data.tags];
-        if (
-          seriesTag &&
-          isDicomDocument({
-            mimeType: file.type,
-            fileName: file.name,
-            bytes: heads[index],
-          })
-        ) {
-          tags.push(seriesTag, newSliceTag(index));
-        }
+      const [first, ...rest] = chunkFiles(data.files, MAX_FILES_PER_REQUEST);
+      setProgress({ sent: 0, total: data.files.length });
+      const created = (await (await postFiles("/api/documents", fields, first)).json()) as {
+        id: number;
+      };
+      setProgress({ sent: first.length, total: data.files.length });
 
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append("title", data.title);
-        if (data.description) {
-          formData.append("description", data.description);
-        }
-        formData.append("documentType", data.documentType);
-        formData.append("documentDate", data.documentDate);
-        if (data.doctorName) {
-          formData.append("doctorName", data.doctorName);
-        }
-        if (data.facilityName) {
-          formData.append("facilityName", data.facilityName);
-        }
-        formData.append("tags", JSON.stringify(tags));
-
-        const response = await fetch("/api/documents", {
-          method: "POST",
-          body: formData,
-          credentials: "include",
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`${response.status}: ${errorText}`);
-        }
+      let sent = first.length;
+      for (const chunk of rest) {
+        await postFiles(`/api/documents/${created.id}/files`, new FormData(), chunk);
+        sent += chunk.length;
+        setProgress({ sent, total: data.files.length });
       }
     },
+    onSettled: () => setProgress(null),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
       queryClient.invalidateQueries({ queryKey: ["documents"] });
@@ -147,7 +145,7 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
         description:
           variables.files.length === 1
             ? "Document uploaded successfully"
-            : `${variables.files.length} files uploaded successfully`,
+            : `Series of ${variables.files.length} slices uploaded successfully`,
       });
       handleClose();
     },
@@ -232,9 +230,16 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
 
     setSelectedFiles(accepted);
 
+    if (dicomCount > 0) {
+      form.setValue("documentType", "x_ray");
+    }
     if (!form.getValues("title") && accepted[0]) {
-      const nameWithoutExtension = accepted[0].name.replace(/\.[^/.]+$/, "");
-      form.setValue("title", nameWithoutExtension);
+      form.setValue(
+        "title",
+        accepted.length > 1
+          ? `DICOM series (${accepted.length} slices)`
+          : accepted[0].name.replace(/\.[^/.]+$/, ""),
+      );
     }
   };
 
@@ -299,24 +304,63 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
                 Document File
               </label>
               
-              {selectedFiles.length > 0 ? (
+              {selectedFiles.length > 1 ? (
+                <Card data-testid="upload-series-summary">
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-medical-blue bg-opacity-10 rounded-lg flex items-center justify-center">
+                        <Layers className="text-medical-blue h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-professional-dark">
+                          DICOM series · {seriesSummary.slices} slices · {seriesSummary.sizeLabel}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {selectedFiles[0].name} … {selectedFiles[selectedFiles.length - 1].name}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      Stored as one document. Uploaded in {seriesSummary.requests} batches of up to{" "}
+                      {MAX_FILES_PER_REQUEST} slices, in the order shown.
+                    </p>
+                    {isHeavyUpload(seriesSummary) && (
+                      <p
+                        className="text-sm rounded-md border border-amber-300 bg-amber-50 text-amber-900 px-3 py-2"
+                        data-testid="upload-heavy-notice"
+                      >
+                        This is a large upload ({seriesSummary.sizeLabel}). It can take several
+                        minutes on a slow connection. Keep this dialog open until it finishes;
+                        closing it or losing the connection leaves a partial series, which you
+                        can delete and upload again.
+                      </p>
+                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedFiles([])}
+                      data-testid="button-clear-upload-files"
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      Clear files
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : selectedFiles.length === 1 ? (
                 <Card>
                   <CardContent className="p-4 space-y-3">
-                    {selectedFiles.map((file) => (
-                      <div key={file.name} className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-medical-blue bg-opacity-10 rounded-lg flex items-center justify-center">
-                            <FileText className="text-medical-blue h-5 w-5" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-professional-dark">{file.name}</p>
-                            <p className="text-sm text-gray-600">
-                              {(file.size / 1024 / 1024).toFixed(2)} MB
-                            </p>
-                          </div>
-                        </div>
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-medical-blue bg-opacity-10 rounded-lg flex items-center justify-center">
+                        <FileText className="text-medical-blue h-5 w-5" />
                       </div>
-                    ))}
+                      <div>
+                        <p className="font-medium text-professional-dark">{selectedFiles[0].name}</p>
+                        <p className="text-sm text-gray-600">
+                          {(selectedFiles[0].size / 1024 / 1024).toFixed(2)} MB
+                        </p>
+                      </div>
+                    </div>
                     <Button
                       type="button"
                       variant="ghost"
@@ -346,8 +390,36 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
                     Drop your files here, or click to browse
                   </p>
                   <p className="text-sm text-gray-500 mb-4">
-                    PDF, JPEG, PNG, or DICOM. 50MB per file. Multiple DICOM slices become one scrollable series. CD slices with no extension are accepted.
+                    PDF, JPEG, PNG, or DICOM. 50MB per file. Select all slices of one DICOM
+                    series and they become one scrollable document.
                   </p>
+                  <details className="text-left text-sm text-gray-600 mb-4 mx-auto max-w-md">
+                    <summary className="cursor-pointer text-medical-blue">
+                      Uploading a CT or MRI from a hospital CD?
+                    </summary>
+                    <ul className="mt-2 space-y-1 list-disc pl-5">
+                      <li>
+                        Open the disc and find the image folders — usually{" "}
+                        <code className="font-mono">DICOM/</code> or{" "}
+                        <code className="font-mono">ST000001/SE000007</code>-style paths.
+                        One <code className="font-mono">SE…</code> folder is one series.
+                      </li>
+                      <li>
+                        Select every file inside a single series folder (they may have no
+                        extension). Skip <code className="font-mono">DICOMDIR</code>, viewer
+                        programs, and <code className="font-mono">.exe</code>/
+                        <code className="font-mono">.dmg</code> files.
+                      </li>
+                      <li>
+                        A thin-slice CT series is often 500–1000 files and 100–300 MB. The
+                        upload is sent in batches; stay on this page until it finishes.
+                      </li>
+                      <li>
+                        Reports (SR), ultrasound cine loops, and angiography runs are not
+                        viewable yet — upload the axial image series first.
+                      </li>
+                    </ul>
+                  </details>
                   <Button
                     type="button"
                     variant="outline"
@@ -493,7 +565,11 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
                 className="bg-medical-blue text-white hover:bg-blue-700"
                 data-testid="button-upload-submit"
               >
-                {uploadMutation.isPending ? "Uploading..." : "Upload Document"}
+                {uploadMutation.isPending
+                  ? progress && progress.total > 1
+                    ? `Uploading ${progress.sent} / ${progress.total}…`
+                    : "Uploading..."
+                  : "Upload Document"}
               </Button>
             </div>
           </form>

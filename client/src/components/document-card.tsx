@@ -25,22 +25,16 @@ import type { MedicalDocument } from "@shared/schema";
 import ShareDialog from "@/components/share-dialog";
 import DicomSeriesViewer from "@/components/dicom-series-viewer";
 import { ownedFileUrl } from "@/lib/owned-file";
-import {
-  displayTags,
-  isDicomDocument,
-  sliceCountLabel,
-} from "@shared/upload-kinds";
+import { isDicomDocument, sliceCountLabel } from "@shared/upload-kinds";
 
 interface DocumentCardProps {
   document: MedicalDocument;
   onDelete: (id: number) => void;
-  sliceCount?: number;
 }
 
 export default function DocumentCard({
   document: medicalDocument,
   onDelete,
-  sliceCount,
 }: DocumentCardProps) {
   const [shareOpen, setShareOpen] = useState(false);
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -64,7 +58,7 @@ export default function DocumentCard({
   };
 
   const style = getDocumentTypeStyle(medicalDocument.documentType);
-  const visibleTags = displayTags(medicalDocument.tags);
+  const visibleTags = medicalDocument.tags ?? [];
 
   const handleDownload = () => {
     const link = window.document.createElement("a");
@@ -180,12 +174,12 @@ export default function DocumentCard({
         </div>
 
         {/* Tags */}
-        {sliceCount != null && sliceCount > 1 && (
+        {medicalDocument.fileCount > 1 && (
           <p
             className="text-sm text-foreground-muted mb-4 font-body"
             data-testid={`document-slice-count-${medicalDocument.id}`}
           >
-            {sliceCountLabel(sliceCount)}
+            {sliceCountLabel(medicalDocument.fileCount)}
           </p>
         )}
 

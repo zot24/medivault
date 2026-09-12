@@ -6,6 +6,7 @@
 import type {
   User,
   MedicalDocument,
+  DocumentFileEntry,
   Symptom,
   InsertSymptom,
   LoginResponse,
@@ -243,6 +244,33 @@ export class MediVaultClient {
      */
     create: async (formData: FormData): Promise<ApiResult<MedicalDocument>> => {
       return this.request<MedicalDocument>('POST', '/api/documents', { formData });
+    },
+
+    /**
+     * Append more files (DICOM slices) to an existing series
+     * @param formData FormData with one or more `files` entries
+     */
+    appendFiles: async (
+      id: number,
+      formData: FormData,
+    ): Promise<ApiResult<{ fileCount: number }>> => {
+      return this.request<{ fileCount: number }>('POST', `/api/documents/${id}/files`, {
+        formData,
+      });
+    },
+
+    /**
+     * List the files of a document in display order
+     */
+    listFiles: async (id: number): Promise<ApiResult<DocumentFileEntry[]>> => {
+      return this.request<DocumentFileEntry[]>('GET', `/api/documents/${id}/files`);
+    },
+
+    /**
+     * URL of one file of a document by position
+     */
+    getFileAtUrl: (id: number, position: number): string => {
+      return `${this.baseUrl}/api/documents/${id}/files/${position}`;
     },
 
     /**

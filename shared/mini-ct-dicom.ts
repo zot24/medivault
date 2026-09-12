@@ -60,7 +60,7 @@ function is(value: number): Buffer {
   return padEven(Buffer.from(String(value), "ascii"));
 }
 
-function ds(value: number): Buffer {
+function ds(value: number | string): Buffer {
   return padEven(Buffer.from(String(value), "ascii"));
 }
 
@@ -89,6 +89,11 @@ export type MiniCtOptions = {
   photometric?: string;
   bitsAllocated?: number;
   samplesPerPixel?: number;
+  /** DS text as written to the file; multi-valued like "345\\-600" is allowed. */
+  windowCenter?: number | string;
+  windowWidth?: number | string;
+  rescaleIntercept?: number;
+  rescaleSlope?: number;
 };
 
 export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
@@ -107,6 +112,8 @@ export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
   const photometric = options.photometric ?? "MONOCHROME2";
   const bitsAllocated = options.bitsAllocated ?? 16;
   const samplesPerPixel = options.samplesPerPixel ?? 1;
+  const windowCenter = options.windowCenter ?? 500;
+  const windowWidth = options.windowWidth ?? 1000;
 
   const metaWithoutLength = Buffer.concat([
     explicitElement(0x0002, 0x0001, "OB", Buffer.from([0x00, 0x01])),
@@ -147,8 +154,14 @@ export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
     explicitElement(0x0028, 0x0101, "US", us(bitsAllocated)),
     explicitElement(0x0028, 0x0102, "US", us(Math.max(bitsAllocated - 1, 0))),
     explicitElement(0x0028, 0x0103, "US", us(0)),
-    explicitElement(0x0028, 0x1050, "DS", ds(500)),
-    explicitElement(0x0028, 0x1051, "DS", ds(1000)),
+    explicitElement(0x0028, 0x1050, "DS", ds(windowCenter)),
+    explicitElement(0x0028, 0x1051, "DS", ds(windowWidth)),
+    ...(options.rescaleIntercept != null
+      ? [explicitElement(0x0028, 0x1052, "DS", ds(options.rescaleIntercept))]
+      : []),
+    ...(options.rescaleSlope != null
+      ? [explicitElement(0x0028, 0x1053, "DS", ds(options.rescaleSlope))]
+      : []),
     pixelBytes,
   ]);
 

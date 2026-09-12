@@ -1,10 +1,13 @@
 import { randomUUID } from "crypto";
 import {
   insertMedicalDocumentSchema,
+  type DocumentFile,
+  type InsertDocumentFile,
   type InsertMedicalDocument,
   type MedicalDocument,
 } from "@shared/schema";
 import {
+  DICOM_MIME,
   acceptedExtensions,
   classifyUpload,
   fitsUploadCap,
@@ -23,13 +26,25 @@ export type DocumentRecords = {
   ): Promise<MedicalDocument | undefined>;
   get(id: number, userId: string): Promise<MedicalDocument | undefined>;
   delete(id: number, userId: string): Promise<boolean>;
+  createFiles(files: InsertDocumentFile[]): Promise<DocumentFile[]>;
+  /** Ordered by position. */
+  listFiles(documentId: number): Promise<DocumentFile[]>;
+  updateTotals(
+    id: number,
+    totals: { fileCount: number; fileSize: string },
+  ): Promise<void>;
+};
+
+export type UploadFile = {
+  bytes: Buffer;
+  mimeType: string;
+  originalName: string;
 };
 
 export type UploadDocumentInput = {
   userId: string;
-  bytes: Buffer;
-  mimeType: string;
-  originalName: string;
+  /** One file for an ordinary document; many (all DICOM) for a series. */
+  files: UploadFile[];
   title: string;
   description?: string;
   documentType: string;
@@ -46,6 +61,71 @@ export type OwnedFileBytes = {
 };
 
 export type RemoveDocumentResult = "deleted" | "not_found";
+
+export type AppendFilesResult =
+  | { kind: "appended"; fileCount: number }
+  | { kind: "not_found" }
+  | { kind: "rejected"; message: string };
+
+const SERIES_KIND_MESSAGE = "All files in a series must be DICOM.";
+const APPEND_KIND_MESSAGE = "Only DICOM series accept more files.";
+
+type ClassifiedFile = UploadFile & { mimeType: string; key: ObjectKey };
+
+/**
+ * Validates every file up front so a bad slice fails the request before any
+ * object is written. A multi-file upload is a DICOM series by definition.
+ */
+function classifyFiles(userId: string, files: UploadFile[]): ClassifiedFile[] {
+  if (files.length === 0) {
+    throw new Error("No file uploaded");
+  }
+  const classified = files.map((file) => {
+    if (!fitsUploadCap(file.bytes.length)) {
+      throw new Error("File too large");
+    }
+    const kind = classifyUpload({
+      mimeType: file.mimeType,
+      originalName: file.originalName,
+      bytes: file.bytes,
+    });
+    if (!kind) {
+      throw new Error(
+        "Invalid file type. Only PDF, image, and DICOM files are allowed.",
+      );
+    }
+    return {
+      ...file,
+      mimeType: kind.mimeType,
+      key: objectKeyFor(
+        userId,
+        newObjectBasename(kind.mimeType, file.originalName),
+      ),
+    };
+  });
+  if (
+    classified.length > 1 &&
+    classified.some((file) => file.mimeType !== DICOM_MIME)
+  ) {
+    throw new Error(SERIES_KIND_MESSAGE);
+  }
+  return classified;
+}
+
+function fileRows(
+  documentId: number,
+  startPosition: number,
+  files: ClassifiedFile[],
+): InsertDocumentFile[] {
+  return files.map((file, index) => ({
+    documentId,
+    position: startPosition + index,
+    fileName: file.originalName,
+    filePath: file.key,
+    fileSize: file.bytes.length,
+    mimeType: file.mimeType,
+  }));
+}
 
 export function parseObjectBasename(raw: string): string | null {
   if (!raw || raw.length > 180) {
@@ -81,6 +161,22 @@ export function newObjectBasename(
   return `${randomUUID()}${classified.extension}`;
 }
 
+async function putAll(objects: ObjectStore, files: ClassifiedFile[]) {
+  await Promise.all(
+    files.map((file) =>
+      objects.put({
+        key: file.key,
+        bytes: file.bytes,
+        contentType: file.mimeType,
+      }),
+    ),
+  );
+}
+
+async function deleteAll(objects: ObjectStore, keys: ObjectKey[]) {
+  await Promise.all(keys.map((key) => objects.delete(key)));
+}
+
 export function createDocumentFiles(deps: {
   objects: ObjectStore;
   documents: DocumentRecords;
@@ -89,53 +185,105 @@ export function createDocumentFiles(deps: {
     async uploadOwnedDocument(
       input: UploadDocumentInput,
     ): Promise<MedicalDocument> {
-      if (!fitsUploadCap(input.bytes.length)) {
-        throw new Error("File too large");
-      }
-
-      const classified = classifyUpload({
-        mimeType: input.mimeType,
-        originalName: input.originalName,
-        bytes: input.bytes,
-      });
-      if (!classified) {
-        throw new Error(
-          "Invalid file type. Only PDF, image, and DICOM files are allowed.",
-        );
-      }
-
-      const basename = newObjectBasename(
-        classified.mimeType,
-        input.originalName,
-      );
-      const key = objectKeyFor(input.userId, basename);
+      const files = classifyFiles(input.userId, input.files);
+      const [first] = files;
+      const totalBytes = files.reduce((sum, file) => sum + file.bytes.length, 0);
       const documentData = insertMedicalDocumentSchema.parse({
         userId: input.userId,
         title: input.title,
         description: input.description,
         documentType: input.documentType,
-        fileName: input.originalName,
-        filePath: key,
-        fileSize: input.bytes.length.toString(),
-        mimeType: classified.mimeType,
+        fileName: first.originalName,
+        filePath: first.key,
+        fileSize: totalBytes.toString(),
+        mimeType: first.mimeType,
         documentDate: input.documentDate,
         doctorName: input.doctorName,
         facilityName: input.facilityName,
         tags: input.tags,
+        fileCount: files.length,
       });
 
-      await deps.objects.put({
-        key,
-        bytes: input.bytes,
-        contentType: classified.mimeType,
-      });
+      await putAll(deps.objects, files);
 
       try {
-        return await deps.documents.create(documentData);
+        const document = await deps.documents.create(documentData);
+        await deps.documents.createFiles(fileRows(document.id, 0, files));
+        return document;
       } catch (error) {
-        await deps.objects.delete(key);
+        await deleteAll(deps.objects, files.map((file) => file.key));
         throw error;
       }
+    },
+
+    async appendOwnedFiles(
+      userId: string,
+      documentId: number,
+      input: UploadFile[],
+    ): Promise<AppendFilesResult> {
+      const document = await deps.documents.get(documentId, userId);
+      if (!document) {
+        return { kind: "not_found" };
+      }
+      if (document.mimeType !== DICOM_MIME) {
+        return { kind: "rejected", message: APPEND_KIND_MESSAGE };
+      }
+      const files = classifyFiles(userId, input);
+      if (files.some((file) => file.mimeType !== DICOM_MIME)) {
+        return { kind: "rejected", message: SERIES_KIND_MESSAGE };
+      }
+
+      const existing = await deps.documents.listFiles(documentId);
+      const start = existing.reduce((max, row) => Math.max(max, row.position + 1), 0);
+      await putAll(deps.objects, files);
+      try {
+        await deps.documents.createFiles(fileRows(documentId, start, files));
+      } catch (error) {
+        await deleteAll(deps.objects, files.map((file) => file.key));
+        throw error;
+      }
+
+      const fileCount = existing.length + files.length;
+      const fileSize =
+        existing.reduce((sum, row) => sum + row.fileSize, 0) +
+        files.reduce((sum, file) => sum + file.bytes.length, 0);
+      await deps.documents.updateTotals(documentId, {
+        fileCount,
+        fileSize: fileSize.toString(),
+      });
+      return { kind: "appended", fileCount };
+    },
+
+    async listOwnedFiles(
+      userId: string,
+      documentId: number,
+    ): Promise<DocumentFile[] | null> {
+      const document = await deps.documents.get(documentId, userId);
+      if (!document) {
+        return null;
+      }
+      return deps.documents.listFiles(documentId);
+    },
+
+    async openOwnedFileAt(
+      userId: string,
+      documentId: number,
+      position: number,
+    ): Promise<OwnedFileBytes | null> {
+      const rows = await this.listOwnedFiles(userId, documentId);
+      const row = rows?.find((file) => file.position === position);
+      if (!row) {
+        return null;
+      }
+      const stored = await deps.objects.get(asObjectKey(row.filePath));
+      if (!stored) {
+        return null;
+      }
+      return {
+        bytes: stored.bytes,
+        mimeType: row.mimeType,
+        fileName: row.fileName,
+      };
     },
 
     async openOwnedFile(
@@ -174,12 +322,17 @@ export function createDocumentFiles(deps: {
         return "not_found";
       }
 
+      const files = await deps.documents.listFiles(documentId);
       const deleted = await deps.documents.delete(documentId, userId);
       if (!deleted) {
         return "not_found";
       }
 
-      await deps.objects.delete(asObjectKey(document.filePath));
+      const keys = new Set<string>([
+        document.filePath,
+        ...files.map((row) => row.filePath),
+      ]);
+      await deleteAll(deps.objects, Array.from(keys, asObjectKey));
       return "deleted";
     },
   };

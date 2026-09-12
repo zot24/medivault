@@ -4,6 +4,7 @@ import {
   describeUndrawableFrame,
   pixelFrameFromPart10,
   rgbaFromFrame,
+  windowForPreset,
 } from "./dicom-frame";
 import {
   SOP_CT_IMAGE,
@@ -168,5 +169,65 @@ describe("pixelFrameFromPart10", () => {
     expect(describeUndrawableFrame(new Uint8Array(bytes))).toContain(SOP_CT_IMAGE);
     expect(describeUndrawableFrame(new Uint8Array(bytes))).toContain("MONOCHROME2");
     expect(describeUndrawableFrame(new Uint8Array(bytes))).toContain("8-bit");
+  });
+});
+
+describe("window and rescale", () => {
+  it("takes the first value of a multi-valued WindowCenter/WindowWidth", () => {
+    // Siemens SOMATOM writes two presets: "345\-600" and "1215\1300".
+    const bytes = buildMiniCtDicom({
+      windowCenter: "345\\-600",
+      windowWidth: "1215\\1300",
+    });
+
+    const frame = pixelFrameFromPart10(new Uint8Array(bytes));
+    expect(frame).toMatchObject({ windowCenter: 345, windowWidth: 1215 });
+  });
+
+  it("carries RescaleIntercept and RescaleSlope on the frame", () => {
+    const bytes = buildMiniCtDicom({ rescaleIntercept: -1024, rescaleSlope: 1 });
+
+    const frame = pixelFrameFromPart10(new Uint8Array(bytes));
+    expect(frame).toMatchObject({ rescaleIntercept: -1024, rescaleSlope: 1 });
+  });
+
+  it("defaults rescale to identity when the tags are absent", () => {
+    const frame = pixelFrameFromPart10(new Uint8Array(buildMiniCtDicom()));
+    expect(frame).toMatchObject({ rescaleIntercept: 0, rescaleSlope: 1 });
+  });
+
+  it("windows in rescaled (HU) units, not stored values", () => {
+    // Stored 1024 with intercept -1024 is 0 HU: the centre of a 0/200 window -> mid grey.
+    const pixels = new Uint16Array(16 * 16).fill(1024);
+    const bytes = buildMiniCtDicom({
+      pixels,
+      rescaleIntercept: -1024,
+      windowCenter: 0,
+      windowWidth: 200,
+    });
+
+    const rgba = rgbaFromFrame(pixelFrameFromPart10(new Uint8Array(bytes))!);
+    expect(rgba[0]).toBe(128);
+  });
+
+  it("lets the caller override the window with a preset", () => {
+    const pixels = new Uint16Array(16 * 16).fill(1024 + 300);
+    const bytes = buildMiniCtDicom({ pixels, rescaleIntercept: -1024 });
+    const frame = pixelFrameFromPart10(new Uint8Array(bytes))!;
+
+    // 300 HU is the centre of the CT angio preset.
+    const rgba = rgbaFromFrame(frame, { center: 300, width: 800 });
+    expect(rgba[0]).toBe(128);
+    // ...and far above a lung window.
+    const lung = rgbaFromFrame(frame, { center: -600, width: 1500 });
+    expect(lung[0]).toBe(255);
+  });
+});
+
+describe("CT_WINDOW_PRESETS", () => {
+  it("resolves a preset id to a window and 'stored' to undefined", () => {
+    expect(windowForPreset("cta")).toEqual({ center: 300, width: 800 });
+    expect(windowForPreset("stored")).toBeUndefined();
+    expect(windowForPreset("nope")).toBeUndefined();
   });
 });

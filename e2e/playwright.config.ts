@@ -31,7 +31,9 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm exec vite --config vite.config.ts --host 127.0.0.1 --port 4177 --strictPort",
+    // pnpm exec runs from the workspace root (e2e has no package.json), so a
+    // relative --config would resolve to the app's vite.config.ts.
+    command: `pnpm exec vite --config ${path.resolve(import.meta.dirname, "vite.config.ts")} --host 127.0.0.1 --port 4177 --strictPort`,
     cwd: path.resolve(import.meta.dirname),
     url: "http://127.0.0.1:4177",
     reuseExistingServer: !process.env.CI,
