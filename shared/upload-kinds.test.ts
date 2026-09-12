@@ -3,8 +3,10 @@ import {
   acceptedExtensions,
   chunkFiles,
   classifyUpload,
+  describeSeriesUpload,
   fitsUploadCap,
   isDicomDocument,
+  isHeavyUpload,
   nextSliceToLoad,
   sliceCountLabel,
   sliceDeltaFromKey,
@@ -182,5 +184,33 @@ describe("nextSliceToLoad", () => {
   it("returns null once everything is taken or in flight", () => {
     expect(nextSliceToLoad(0, 2, () => true)).toBeNull();
     expect(nextSliceToLoad(0, 0, () => false)).toBeNull();
+  });
+});
+
+describe("describeSeriesUpload", () => {
+  it("summarises slices, size, and how many requests the upload takes", () => {
+    const files = Array.from({ length: 120 }, () => ({ size: 250 * 1024 }));
+    expect(describeSeriesUpload(files)).toEqual({
+      slices: 120,
+      totalBytes: 120 * 250 * 1024,
+      requests: 3,
+      sizeLabel: "29.3 MB",
+    });
+  });
+
+  it("shows small totals in KB and single files as one request", () => {
+    expect(describeSeriesUpload([{ size: 900 }])).toEqual({
+      slices: 1,
+      totalBytes: 900,
+      requests: 1,
+      sizeLabel: "0.9 KB",
+    });
+  });
+
+  it("flags a heavy upload above the advisory threshold", () => {
+    const light = Array.from({ length: 10 }, () => ({ size: 1024 * 1024 }));
+    const heavy = Array.from({ length: 400 }, () => ({ size: 1024 * 1024 }));
+    expect(isHeavyUpload(describeSeriesUpload(light))).toBe(false);
+    expect(isHeavyUpload(describeSeriesUpload(heavy))).toBe(true);
   });
 });

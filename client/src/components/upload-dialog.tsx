@@ -26,7 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
-import { Upload, FileText, X } from "lucide-react";
+import { Upload, FileText, Layers, X } from "lucide-react";
 import {
   acceptAttribute,
   classifyUpload,
@@ -36,6 +36,8 @@ import {
   MAX_UPLOAD_BYTES,
   PART10_SNIFF_BYTES,
   chunkFiles,
+  describeSeriesUpload,
+  isHeavyUpload,
 } from "@shared/upload-kinds";
 
 const uploadSchema = z.object({
@@ -75,6 +77,7 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
   });
 
   const [progress, setProgress] = useState<{ sent: number; total: number } | null>(null);
+  const seriesSummary = describeSeriesUpload(selectedFiles);
 
   async function postFiles(path: string, fields: FormData, files: File[]) {
     const body = new FormData();
@@ -227,9 +230,16 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
 
     setSelectedFiles(accepted);
 
+    if (dicomCount > 0) {
+      form.setValue("documentType", "x_ray");
+    }
     if (!form.getValues("title") && accepted[0]) {
-      const nameWithoutExtension = accepted[0].name.replace(/\.[^/.]+$/, "");
-      form.setValue("title", nameWithoutExtension);
+      form.setValue(
+        "title",
+        accepted.length > 1
+          ? `DICOM series (${accepted.length} slices)`
+          : accepted[0].name.replace(/\.[^/.]+$/, ""),
+      );
     }
   };
 
@@ -294,24 +304,63 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
                 Document File
               </label>
               
-              {selectedFiles.length > 0 ? (
+              {selectedFiles.length > 1 ? (
+                <Card data-testid="upload-series-summary">
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-medical-blue bg-opacity-10 rounded-lg flex items-center justify-center">
+                        <Layers className="text-medical-blue h-5 w-5" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-professional-dark">
+                          DICOM series · {seriesSummary.slices} slices · {seriesSummary.sizeLabel}
+                        </p>
+                        <p className="text-sm text-gray-600">
+                          {selectedFiles[0].name} … {selectedFiles[selectedFiles.length - 1].name}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-sm text-gray-600">
+                      Stored as one document. Uploaded in {seriesSummary.requests} batches of up to{" "}
+                      {MAX_FILES_PER_REQUEST} slices, in the order shown.
+                    </p>
+                    {isHeavyUpload(seriesSummary) && (
+                      <p
+                        className="text-sm rounded-md border border-amber-300 bg-amber-50 text-amber-900 px-3 py-2"
+                        data-testid="upload-heavy-notice"
+                      >
+                        This is a large upload ({seriesSummary.sizeLabel}). It can take several
+                        minutes on a slow connection. Keep this dialog open until it finishes;
+                        closing it or losing the connection leaves a partial series, which you
+                        can delete and upload again.
+                      </p>
+                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedFiles([])}
+                      data-testid="button-clear-upload-files"
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      Clear files
+                    </Button>
+                  </CardContent>
+                </Card>
+              ) : selectedFiles.length === 1 ? (
                 <Card>
                   <CardContent className="p-4 space-y-3">
-                    {selectedFiles.map((file) => (
-                      <div key={file.name} className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <div className="w-10 h-10 bg-medical-blue bg-opacity-10 rounded-lg flex items-center justify-center">
-                            <FileText className="text-medical-blue h-5 w-5" />
-                          </div>
-                          <div>
-                            <p className="font-medium text-professional-dark">{file.name}</p>
-                            <p className="text-sm text-gray-600">
-                              {(file.size / 1024 / 1024).toFixed(2)} MB
-                            </p>
-                          </div>
-                        </div>
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-medical-blue bg-opacity-10 rounded-lg flex items-center justify-center">
+                        <FileText className="text-medical-blue h-5 w-5" />
                       </div>
-                    ))}
+                      <div>
+                        <p className="font-medium text-professional-dark">{selectedFiles[0].name}</p>
+                        <p className="text-sm text-gray-600">
+                          {(selectedFiles[0].size / 1024 / 1024).toFixed(2)} MB
+                        </p>
+                      </div>
+                    </div>
                     <Button
                       type="button"
                       variant="ghost"
@@ -341,8 +390,36 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
                     Drop your files here, or click to browse
                   </p>
                   <p className="text-sm text-gray-500 mb-4">
-                    PDF, JPEG, PNG, or DICOM. 50MB per file. Multiple DICOM slices become one scrollable series. CD slices with no extension are accepted.
+                    PDF, JPEG, PNG, or DICOM. 50MB per file. Select all slices of one DICOM
+                    series and they become one scrollable document.
                   </p>
+                  <details className="text-left text-sm text-gray-600 mb-4 mx-auto max-w-md">
+                    <summary className="cursor-pointer text-medical-blue">
+                      Uploading a CT or MRI from a hospital CD?
+                    </summary>
+                    <ul className="mt-2 space-y-1 list-disc pl-5">
+                      <li>
+                        Open the disc and find the image folders — usually{" "}
+                        <code className="font-mono">DICOM/</code> or{" "}
+                        <code className="font-mono">ST000001/SE000007</code>-style paths.
+                        One <code className="font-mono">SE…</code> folder is one series.
+                      </li>
+                      <li>
+                        Select every file inside a single series folder (they may have no
+                        extension). Skip <code className="font-mono">DICOMDIR</code>, viewer
+                        programs, and <code className="font-mono">.exe</code>/
+                        <code className="font-mono">.dmg</code> files.
+                      </li>
+                      <li>
+                        A thin-slice CT series is often 500–1000 files and 100–300 MB. The
+                        upload is sent in batches; stay on this page until it finishes.
+                      </li>
+                      <li>
+                        Reports (SR), ultrasound cine loops, and angiography runs are not
+                        viewable yet — upload the axial image series first.
+                      </li>
+                    </ul>
+                  </details>
                   <Button
                     type="button"
                     variant="outline"

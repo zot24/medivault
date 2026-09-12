@@ -71,6 +71,35 @@ Two objects on those CDs often share a CT-like file name. CT Image Storage (`SOP
 
 This is not a PACS. JPEG 2000, JPEG-LS, and other transfer syntaxes still do not draw. Each file must be 50MB or smaller.
 
+## Uploading a study from a hospital CD
+
+A patient CD usually holds several studies, a bundled viewer, and an index. Only the image series are worth uploading.
+
+**What is on the disc**
+
+- `DICOMDIR`, `Studies_List.txt`, `Autorun.inf` — index files. Skip them.
+- `*.exe`, `*.dmg`, `viewers/`, `weasis/` — the viewer programs the hospital bundles. Skip them.
+- Folders like `ST000001/SE000007` (or `DICOM/…`) — one `ST` folder per study, one `SE` folder per series. Files inside often have no extension (`CT000001`, `XA000001`). **These are the images.**
+
+**What to pick**
+
+- Upload **one `SE` folder at a time**: select every file in it. The app stores it as one document with one file per slice and shows it as one card.
+- For a CT, start with the thin-slice axial series (the folder with the most files, around 0.5–1 mm slices). Thick 3 mm reconstructions, MPR snapshots, and dose sheets are also fine, one series each.
+- A 4D or multi-phase series (thousands of files) works but is slow to upload and view; take the single best-phase series first.
+
+**What will not draw yet**
+
+- Structured reports (`SR`): no pixels. They upload as opaque files.
+- Ultrasound cine (`US`, JPEG Baseline) and angiography runs (`XA`, multi-frame, often over 50 MB per file): not supported by the decoder or over the size cap.
+
+**Size and time**
+
+A thin-slice CT series is typically 500–1,000 files and 100–300 MB. The browser sends it in batches of 50 slices; the dialog shows progress and warns above 100 MB. Stay on the page until it finishes. If it is interrupted, delete the partial card and upload the folder again.
+
+**Privacy**
+
+DICOM headers carry the patient name, birth date, and hospital IDs. They are stored with the file, only readable by the owning account, and never shown by the viewer or logged. Do not commit real patient files to this repository; the fixtures under `shared/fixtures/` are synthetic.
+
 The synthetic fixtures in `shared/fixtures/` do render. They contain no patient data.
 
 ## Test

@@ -114,6 +114,40 @@ export function isDicomDocument(input: {
   );
 }
 
+export type SeriesUploadSummary = {
+  slices: number;
+  totalBytes: number;
+  /** Requests the browser will make: one to create, then one per extra chunk. */
+  requests: number;
+  sizeLabel: string;
+};
+
+/** Above this the dialog warns that the upload is heavy and should not be interrupted. */
+export const HEAVY_UPLOAD_BYTES = 100 * 1024 * 1024;
+
+export function describeSeriesUpload(
+  files: { size: number }[],
+): SeriesUploadSummary {
+  const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+  return {
+    slices: files.length,
+    totalBytes,
+    requests: Math.max(1, Math.ceil(files.length / MAX_FILES_PER_REQUEST)),
+    sizeLabel: formatBytes(totalBytes),
+  };
+}
+
+export function isHeavyUpload(summary: SeriesUploadSummary): boolean {
+  return summary.totalBytes >= HEAVY_UPLOAD_BYTES;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
 export function chunkFiles<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = [];
   for (let index = 0; index < items.length; index += size) {
