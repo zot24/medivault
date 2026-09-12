@@ -77,6 +77,7 @@ export default function Login() {
                     onChange={(e) => setEmail(e.target.value)}
                     className="pl-10 bg-surface-2 border-white/20 text-foreground"
                     autoComplete="email"
+                    data-testid="input-login-email"
                   />
                 </div>
               </div>
@@ -93,6 +94,7 @@ export default function Login() {
                     onChange={(e) => setPassword(e.target.value)}
                     className="pl-10 bg-surface-2 border-white/20 text-foreground"
                     autoComplete="current-password"
+                    data-testid="input-login-password"
                   />
                 </div>
               </div>
@@ -101,6 +103,7 @@ export default function Login() {
                 type="submit"
                 className="w-full bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90"
                 disabled={loginMutation.isPending}
+                data-testid="button-login-submit"
               >
                 {loginMutation.isPending ? "Signing in..." : "Sign In"}
               </Button>
