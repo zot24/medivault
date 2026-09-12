@@ -65,7 +65,7 @@ Open Documents. Use **Share** or **Share case**. Copy the `/s/:token` path. Open
 
 Upload `.dcm` files, or extensionless Part-10 slices from a patient CD (`DICM` at byte 128). A multi-select of DICOM slices becomes one series.
 
-Dewi-style CD data is expected to work after a `.dcm` rename or as extensionless Part-10 files. JPEG Lossless (`1.2.840.10008.1.2.4.70`) and RLE (`1.2.840.10008.1.2.5`) draw in the canvas viewer.
+Clinical CT CD data is expected to work after a `.dcm` rename or as extensionless Part-10 files. JPEG Lossless (`1.2.840.10008.1.2.4.70`) and RLE (`1.2.840.10008.1.2.5`) draw in the canvas viewer.
 
 This is not a PACS. JPEG 2000, JPEG-LS, and other transfer syntaxes still do not draw. Each file must be 50MB or smaller.
 
