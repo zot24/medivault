@@ -80,6 +80,63 @@ describe("FrameCache", () => {
     expect(cache.has(1)).toBe(false);
   });
 
+  it("weighs a bitmap frame (plan 06 cine playback) as rows*columns*4", () => {
+    // 8x8 bitmap = 256 bytes; budget fits exactly one.
+    const cache = new FrameCache<CacheableFrame>(ROWS * COLUMNS * 4);
+    cache.set(0, { rows: ROWS, columns: COLUMNS, kind: "bitmap" });
+    cache.set(1, { rows: ROWS, columns: COLUMNS, kind: "bitmap" });
+
+    expect(cache.has(0)).toBe(false);
+    expect(cache.has(1)).toBe(true);
+  });
+
+  it("calls dispose on an evicted frame, so a decoded ImageBitmap can be closed", () => {
+    const closed: number[] = [];
+    type Bitmapish = CacheableFrame & { id: number; close(): void };
+    const cache = new FrameCache<Bitmapish>(3 * FRAME_COST, {
+      dispose: (entry) => {
+        closed.push(entry.id);
+        entry.close();
+      },
+    });
+    const bitmap = (id: number): Bitmapish => ({
+      id,
+      rows: ROWS,
+      columns: COLUMNS,
+      kind: "mono16",
+      close: () => {},
+    });
+    cache.set(0, bitmap(0));
+    cache.set(1, bitmap(1));
+    cache.set(2, bitmap(2));
+    cache.set(3, bitmap(3)); // evicts 0
+
+    expect(closed).toEqual([0]);
+  });
+
+  it("disposes a replaced entry when the same position is set again", () => {
+    const closed: number[] = [];
+    const cache = new FrameCache<CacheableFrame & { id: number }>(3 * FRAME_COST, {
+      dispose: (entry) => closed.push(entry.id),
+    });
+    cache.set(0, { id: 1, rows: ROWS, columns: COLUMNS, kind: "mono16" });
+    cache.set(0, { id: 2, rows: ROWS, columns: COLUMNS, kind: "mono16" });
+
+    expect(closed).toEqual([1]);
+  });
+
+  it("disposes every remaining entry on clear()", () => {
+    const closed: number[] = [];
+    const cache = new FrameCache<CacheableFrame & { id: number }>(3 * FRAME_COST, {
+      dispose: (entry) => closed.push(entry.id),
+    });
+    cache.set(0, { id: 1, rows: ROWS, columns: COLUMNS, kind: "mono16" });
+    cache.set(1, { id: 2, rows: ROWS, columns: COLUMNS, kind: "mono16" });
+    cache.clear();
+
+    expect(closed.sort()).toEqual([1, 2]);
+  });
+
   it("replacing an existing position updates its cost without double-counting", () => {
     // Budget fits exactly two frames (256 bytes). Re-setting position 0
     // must not count its cost twice, or the budget would look exceeded

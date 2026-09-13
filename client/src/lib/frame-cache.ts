@@ -4,10 +4,13 @@
  * the JS heap to ~3 GB (see docs/plans/04-multiphase-and-cache.md).
  *
  * A frame's cost in bytes is its decoded pixel buffer size: mono16 is 2
- * bytes/pixel, rgb8 is 3. Eviction removes the least recently *drawn or
- * loaded* frame first (`get` counts as a touch, so does `set`), but never a
- * position passed to `protect` — the caller uses that to pin the current
- * slice and its neighbours so scrolling never evicts what's on screen.
+ * bytes/pixel, rgb8 is 3, and a decoded `bitmap` (an ultrasound cine frame,
+ * plan 06 — `createImageBitmap`'s RGBA output) is 4. Eviction removes the
+ * least recently *drawn or loaded* frame first (`get` counts as a touch, so
+ * does `set`), but never a position passed to `protect` — the caller uses
+ * that to pin the current slice and its neighbours so scrolling never
+ * evicts what's on screen. Pass `dispose` to release a resource (e.g.
+ * `bitmap.close()`) an entry holds once it leaves the cache.
  */
 export type CacheableFrame = {
   rows: number;
@@ -16,19 +19,33 @@ export type CacheableFrame = {
 };
 
 function costOf(frame: CacheableFrame): number {
-  return frame.rows * frame.columns * (frame.kind === "mono16" ? 2 : 3);
+  const bytesPerPixel = frame.kind === "mono16" ? 2 : frame.kind === "bitmap" ? 4 : 3;
+  return frame.rows * frame.columns * bytesPerPixel;
 }
+
+export type FrameCacheOptions<T> = {
+  /**
+   * Called once for every entry removed from the cache — evicted to stay
+   * within budget, replaced by a `set()` of the same position, or cleared —
+   * before it is otherwise discarded. Used to `bitmap.close()` a decoded
+   * ImageBitmap (plan 06: ultrasound cine playback) so the bounded cache
+   * doesn't leak GPU-backed memory the JS heap can't see.
+   */
+  dispose?: (frame: T) => void;
+};
 
 export class FrameCache<T extends CacheableFrame> {
   private readonly maxBytes: number;
+  private readonly dispose?: (frame: T) => void;
   // Map iteration order is insertion order; re-inserting on every touch
   // keeps it least-recently-used -> most-recently-used, front to back.
   private readonly entries = new Map<number, T>();
   private protectedPositions = new Set<number>();
   private bytesUsed = 0;
 
-  constructor(maxBytes: number) {
+  constructor(maxBytes: number, options: FrameCacheOptions<T> = {}) {
     this.maxBytes = maxBytes;
+    this.dispose = options.dispose;
   }
 
   has(position: number): boolean {
@@ -50,6 +67,9 @@ export class FrameCache<T extends CacheableFrame> {
     if (existing !== undefined) {
       this.bytesUsed -= costOf(existing);
       this.entries.delete(position);
+      if (existing !== frame) {
+        this.dispose?.(existing);
+      }
     }
     this.entries.set(position, frame);
     this.bytesUsed += costOf(frame);
@@ -66,6 +86,11 @@ export class FrameCache<T extends CacheableFrame> {
   }
 
   clear(): void {
+    if (this.dispose) {
+      for (const frame of Array.from(this.entries.values())) {
+        this.dispose(frame);
+      }
+    }
     this.entries.clear();
     this.protectedPositions.clear();
     this.bytesUsed = 0;
@@ -84,6 +109,7 @@ export class FrameCache<T extends CacheableFrame> {
       }
       this.entries.delete(position);
       this.bytesUsed -= costOf(frame);
+      this.dispose?.(frame);
     }
   }
 }
