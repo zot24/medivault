@@ -10,6 +10,7 @@ import Landing from "@/pages/landing";
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
 import Documents from "@/pages/documents";
+import Study from "@/pages/study";
 import Symptoms from "@/pages/symptoms";
 import SharedFile from "@/pages/shared-file";
 
@@ -20,6 +21,7 @@ function Router() {
       <Route path="/login" component={Login} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/documents" component={Documents} />
+      <Route path="/studies/:studyInstanceUid" component={Study} />
       <Route path="/symptoms" component={Symptoms} />
       <Route path="/s/:token" component={SharedFile} />
       <Route component={NotFound} />

@@ -58,6 +58,9 @@ export default function DocumentCard({
   };
 
   const style = getDocumentTypeStyle(medicalDocument.documentType);
+  const typeLabel = medicalDocument.dicomMeta
+    ? medicalDocument.dicomMeta.modality
+    : getDocumentTypeLabel(medicalDocument.documentType);
   const visibleTags = medicalDocument.tags ?? [];
 
   const handleDownload = () => {
@@ -90,7 +93,7 @@ export default function DocumentCard({
               </h3>
               <div className="flex items-center space-x-2">
                 <span className={`badge-sage capitalize`}>
-                  {getDocumentTypeLabel(medicalDocument.documentType)}
+                  {typeLabel}
                 </span>
                 {visibleTags.length > 0 && (
                   <div className="flex items-center space-x-1">
