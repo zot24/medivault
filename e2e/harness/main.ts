@@ -1,6 +1,7 @@
 import {
   compositeOverlays,
   describeUndrawableFrame,
+  multiFrameSourceFromPart10,
   overlaysFromPart10,
   pixelFrameFromPart10,
   rgbaFromFrame,
@@ -37,11 +38,45 @@ async function draw(url: string, canvasId: string): Promise<void> {
   context.putImageData(image, 0, 0);
 }
 
+/** Draws frame 0 and frame 1 of a JPEG Baseline cine (plan 06), side by side. */
+async function drawCineFrames(
+  url: string,
+  frame0CanvasId: string,
+  frame1CanvasId: string,
+): Promise<void> {
+  const bytes = new Uint8Array(await (await fetch(url)).arrayBuffer());
+  const source = multiFrameSourceFromPart10(bytes);
+  if (!source) {
+    throw new Error(`not a jpeg-frames source: ${url}`);
+  }
+  for (const [index, canvasId] of [
+    [0, frame0CanvasId],
+    [1, frame1CanvasId],
+  ] as const) {
+    const canvas = document.getElementById(canvasId);
+    if (!(canvas instanceof HTMLCanvasElement)) {
+      throw new Error(`missing canvas ${canvasId}`);
+    }
+    const bitmap = await createImageBitmap(
+      new Blob([source.frame(index)], { type: "image/jpeg" }),
+    );
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("2d context unavailable");
+    }
+    context.drawImage(bitmap, 0, 0);
+    bitmap.close();
+  }
+}
+
 const status = document.getElementById("status");
 try {
   await draw("/mini-sc-rgb.dcm", "sc-rgb");
   await draw("/mini-ct-01.dcm", "ct-mono");
   await draw("/mini-ct-overlay.dcm", "ct-overlay");
+  await drawCineFrames("/mini-us-cine.dcm", "us-cine-frame0", "us-cine-frame1");
   if (status) {
     status.textContent = "ready";
   }

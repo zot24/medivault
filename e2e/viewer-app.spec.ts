@@ -199,3 +199,72 @@ test("shows a phase select and holds the slice steady while cine-ing through pha
   await phaseSelect.selectOption("1");
   await expect(page.getByTestId("dicom-slice-index")).toHaveText(/1 \/ 2 · Phase 2/);
 });
+
+// mini-us-cine.dcm: a synthetic 2-frame JPEG Baseline ultrasound cine loop
+// (shared/dicom-frame.test.ts builds the same fixture from the same two
+// frame byte arrays) — plan 06.
+const US_CINE_STUDY_UID = "1.2.826.0.1.3680043.8.498.study.us";
+
+test("plays a synthetic ultrasound cine loop and steps its frame label", async ({ page }) => {
+  await page.goto("/login");
+  await page
+    .getByTestId("input-login-email")
+    .fill(process.env.E2E_EMAIL ?? "demo@medivault.app");
+  await page
+    .getByTestId("input-login-password")
+    .fill(process.env.E2E_PASSWORD ?? "demo123");
+  await page.getByTestId("button-login-submit").click();
+  await page.waitForURL(/\/(dashboard|documents)/);
+
+  await page.goto("/documents");
+  await page.getByTestId("button-upload-document").click();
+  await page.getByTestId("input-upload-title").fill("Synthetic echo cine");
+  await page.getByTestId("input-upload-date").fill("2026-09-12");
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByTestId("button-choose-upload-files").click();
+  const dialog = await chooser;
+  await dialog.setFiles([path.join(fixtures, "mini-us-cine.dcm")]);
+  const uploaded = page.waitForResponse(
+    (response) => response.url().includes("/api/documents") && response.request().method() === "POST",
+  );
+  await page.getByTestId("button-upload-submit").click();
+  await uploaded;
+  // See the multi-phase test above: the studies query needs a reload to
+  // pick up a freshly uploaded series (a pre-existing gap, unrelated to
+  // this plan).
+  await page.reload();
+
+  const studyCard = page.getByTestId(`study-card-${US_CINE_STUDY_UID}`);
+  await expect(studyCard).toBeVisible({ timeout: 30_000 });
+  await studyCard.getByTestId(`button-open-study-${US_CINE_STUDY_UID}`).click();
+
+  await page.waitForURL(`**/studies/${encodeURIComponent(US_CINE_STUDY_UID)}`);
+  const view = page.locator('[data-testid^="button-view-series-"]').first();
+  await view.click();
+
+  const canvas = page.getByTestId("dicom-viewer-canvas");
+  await expect(canvas).toBeVisible();
+  await expect(page.getByTestId("dicom-viewer-error")).toHaveCount(0);
+
+  // No window-preset picker for this RGB/YBR content.
+  await expect(page.getByTestId("dicom-window-preset")).toHaveCount(0);
+
+  const play = page.getByTestId("dicom-play");
+  await expect(play).toBeVisible();
+  await expect(play).toBeEnabled({ timeout: 15_000 }); // preload completes
+
+  const frameLabel = page.getByTestId("dicom-cine-frame-index");
+  await expect(frameLabel).toHaveText("1 / 2");
+
+  await play.click();
+  await expect(page.getByRole("button", { name: "Pause" })).toBeVisible();
+  // The fixture's frame rate (2 fps) flips the frame within 500ms; just
+  // assert the label actually moves off its starting value, rather than
+  // pinning an exact frame — which one it lands on depends on timing.
+  await expect(frameLabel).not.toHaveText("1 / 2", { timeout: 5_000 });
+
+  // The frame slider also scrubs directly, independent of playback.
+  await page.getByTestId("dicom-play").click(); // pause first
+  await page.getByTestId("dicom-frame-slider").fill("0");
+  await expect(frameLabel).toHaveText("1 / 2");
+});
