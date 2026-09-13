@@ -1,8 +1,8 @@
 import type { Express } from "express";
-import multer from "multer";
 import { storage } from "./storage";
 import { setupLocalAuth, isAuthenticated } from "./localAuth";
 import { createDocumentFiles, type UploadFile } from "./document-files";
+import { uploadFilesOrReject } from "./upload-middleware";
 import {
   createObjectStoreFromEnv,
   ObjectStoreConfigError,
@@ -16,45 +16,7 @@ import {
 } from "./share-links";
 import { insertSymptomSchema } from "@shared/schema";
 import { groupIntoStudies } from "@shared/studies";
-import {
-  classifyUpload,
-  isVagueUploadMime,
-  MAX_FILES_PER_REQUEST,
-  MAX_UPLOAD_BYTES,
-} from "@shared/upload-kinds";
 import { z } from "zod";
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: MAX_UPLOAD_BYTES,
-  },
-  fileFilter: (_req, file, cb) => {
-    const classified = classifyUpload({
-      mimeType: file.mimetype,
-      originalName: file.originalname,
-    });
-    if (classified) {
-      file.mimetype = classified.mimeType;
-      cb(null, true);
-      return;
-    }
-    if (isVagueUploadMime(file.mimetype.trim().toLowerCase())) {
-      cb(null, true);
-      return;
-    }
-    cb(
-      new Error(
-        "Invalid file type. Only PDF, image, and DICOM files are allowed.",
-      ),
-    );
-  },
-});
-
-const uploadFiles = upload.fields([
-  { name: "file", maxCount: 1 },
-  { name: "files", maxCount: MAX_FILES_PER_REQUEST },
-]);
 
 function uploadedFiles(req: any): UploadFile[] {
   const groups = req.files ?? {};
@@ -198,7 +160,7 @@ export async function registerRoutes(app: Express): Promise<void> {
 
   // One request creates one record. Send `files` (many, all DICOM) for a
   // series or a single `file`; long series continue with POST /:id/files.
-  app.post('/api/documents', isAuthenticated, uploadFiles, async (req: any, res) => {
+  app.post('/api/documents', isAuthenticated, uploadFilesOrReject, async (req: any, res) => {
     try {
       const userId = req.user.id;
       const files = uploadedFiles(req);
@@ -235,7 +197,7 @@ export async function registerRoutes(app: Express): Promise<void> {
     }
   });
 
-  app.post('/api/documents/:id/files', isAuthenticated, uploadFiles, async (req: any, res) => {
+  app.post('/api/documents/:id/files', isAuthenticated, uploadFilesOrReject, async (req: any, res) => {
     try {
       const documentId = parseInt(req.params.id, 10);
       if (!Number.isInteger(documentId)) {

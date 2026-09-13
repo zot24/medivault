@@ -26,7 +26,7 @@ import ShareDialog from "@/components/share-dialog";
 import DicomSeriesViewer from "@/components/dicom-series-viewer";
 import TypeBadge from "@/components/type-badge";
 import { ownedFileUrl } from "@/lib/owned-file";
-import { isDicomDocument, sliceCountLabel } from "@shared/upload-kinds";
+import { isDicomDocument, localDate, sliceCountLabel } from "@shared/upload-kinds";
 
 interface DocumentCardProps {
   document: MedicalDocument;
@@ -152,7 +152,7 @@ export default function DocumentCard({
           <div className="flex items-center text-sm text-foreground-muted font-body">
             <Calendar className="mr-2 h-4 w-4 text-primary" />
             <span>
-              {format(new Date(medicalDocument.documentDate), "MMM d, yyyy")}
+              {format(localDate(medicalDocument.documentDate), "MMM d, yyyy")}
             </span>
           </div>
 

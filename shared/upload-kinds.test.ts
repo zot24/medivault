@@ -7,6 +7,7 @@ import {
   fitsUploadCap,
   isDicomDocument,
   isHeavyUpload,
+  localDate,
   nextSliceToLoad,
   sliceCountLabel,
   sliceDeltaFromKey,
@@ -184,6 +185,15 @@ describe("nextSliceToLoad", () => {
   it("returns null once everything is taken or in flight", () => {
     expect(nextSliceToLoad(0, 2, () => true)).toBeNull();
     expect(nextSliceToLoad(0, 0, () => false)).toBeNull();
+  });
+});
+
+describe("localDate", () => {
+  it("keeps the calendar date regardless of the local timezone", () => {
+    const date = localDate("2026-09-11");
+    expect(date.getFullYear()).toBe(2026);
+    expect(date.getMonth()).toBe(8);
+    expect(date.getDate()).toBe(11);
   });
 });
 

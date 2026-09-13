@@ -9,11 +9,14 @@ import {
 } from "@/components/ui/dialog";
 import {
   CT_WINDOW_PRESETS,
+  compositeOverlays,
   describeUndrawableFrame,
+  overlaysFromPart10,
   pixelFrameFromPart10,
   rgbaFromFrame,
   windowForPreset,
   type DicomFrame,
+  type DicomOverlay,
 } from "@shared/dicom-frame";
 import {
   nextSliceToLoad,
@@ -35,6 +38,8 @@ function blitFrame(
   canvas: HTMLCanvasElement,
   frame: DicomFrame,
   preset: string,
+  overlays: DicomOverlay[],
+  showOverlays: boolean,
 ) {
   canvas.width = frame.columns;
   canvas.height = frame.rows;
@@ -43,7 +48,11 @@ function blitFrame(
     return;
   }
   const image = context.createImageData(frame.columns, frame.rows);
-  image.data.set(rgbaFromFrame(frame, windowForPreset(preset)));
+  const rgba = rgbaFromFrame(frame, windowForPreset(preset));
+  if (showOverlays && overlays.length > 0) {
+    compositeOverlays(rgba, frame.rows, frame.columns, overlays);
+  }
+  image.data.set(rgba);
   context.putImageData(image, 0, 0);
 }
 
@@ -53,13 +62,20 @@ export default function DicomSeriesViewer({
   onOpenChange,
 }: DicomSeriesViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const framesRef = useRef<Map<number, DicomFrame>>(new Map());
-  const drawnRef = useRef<{ frame: DicomFrame; preset: string } | null>(null);
+  const framesRef = useRef<
+    Map<number, { frame: DicomFrame; overlays: DicomOverlay[] }>
+  >(new Map());
+  const drawnRef = useRef<{
+    frame: DicomFrame;
+    preset: string;
+    showOverlays: boolean;
+  } | null>(null);
   const sliceIndexRef = useRef(0);
   const [sliceIndex, setSliceIndex] = useState(0);
   const [count, setCount] = useState(0);
   const [loaded, setLoaded] = useState(0);
   const [preset, setPreset] = useState("stored");
+  const [showOverlays, setShowOverlays] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const documentId = focus?.id ?? null;
 
@@ -71,6 +87,7 @@ export default function DicomSeriesViewer({
     setSliceIndex(0);
     setCount(0);
     setLoaded(0);
+    setShowOverlays(true);
     setError(null);
     if (!open || documentId == null) {
       return;
@@ -91,7 +108,7 @@ export default function DicomSeriesViewer({
       if (!frame) {
         throw new Error(describeUndrawableFrame(bytes));
       }
-      return frame;
+      return { frame, overlays: overlaysFromPart10(bytes) };
     }
 
     // Each worker keeps pulling the slice nearest to where the user is.
@@ -107,12 +124,12 @@ export default function DicomSeriesViewer({
           return;
         }
         inflight.add(position);
-        const frame = await loadOne(position);
+        const entry = await loadOne(position);
         inflight.delete(position);
         if (cancelled) {
           return;
         }
-        framesRef.current.set(position, frame);
+        framesRef.current.set(position, entry);
         setLoaded((current) => current + 1);
       }
     }
@@ -147,23 +164,31 @@ export default function DicomSeriesViewer({
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const frame = framesRef.current.get(sliceIndex);
-    if (!canvas || !frame) {
+    const entry = framesRef.current.get(sliceIndex);
+    if (!canvas || !entry) {
       return;
     }
     // `loaded` ticks for every background slice; only redraw when ours changed.
     const drawn = drawnRef.current;
-    if (drawn && drawn.frame === frame && drawn.preset === preset) {
+    if (
+      drawn &&
+      drawn.frame === entry.frame &&
+      drawn.preset === preset &&
+      drawn.showOverlays === showOverlays
+    ) {
       return;
     }
-    drawnRef.current = { frame, preset };
-    blitFrame(canvas, frame, preset);
-  }, [sliceIndex, preset, loaded]);
+    drawnRef.current = { frame: entry.frame, preset, showOverlays };
+    blitFrame(canvas, entry.frame, preset, entry.overlays, showOverlays);
+  }, [sliceIndex, preset, loaded, showOverlays]);
 
-  const current = framesRef.current.get(sliceIndex);
+  const currentEntry = framesRef.current.get(sliceIndex);
+  const current = currentEntry?.frame;
   const isMono = current?.kind === "mono16";
+  const hasOverlays = (currentEntry?.overlays.length ?? 0) > 0;
   const sliceLabel = count === 0 ? "0 / 0" : `${sliceIndex + 1} / ${count}`;
   const loading = count > 0 && loaded < count;
+  const single = count === 1;
 
   const step = (delta: number) =>
     setSliceIndex((value) => stepSliceIndex(value, delta, count));
@@ -185,8 +210,9 @@ export default function DicomSeriesViewer({
         <DialogHeader>
           <DialogTitle>{focus?.title ?? "DICOM series"}</DialogTitle>
           <DialogDescription>
-            Stay in this dialog. Use the slider, the mouse wheel, or the arrow
-            keys to move through slices.
+            {single
+              ? "Single image."
+              : "Stay in this dialog. Use the slider, the mouse wheel, or the arrow keys to move through slices."}
           </DialogDescription>
         </DialogHeader>
         {error ? (
@@ -218,7 +244,11 @@ export default function DicomSeriesViewer({
               )}
             </div>
             <div className="flex items-center justify-between gap-4">
-              <label className="text-sm text-foreground-muted" htmlFor="dicom-slice">
+              <label
+                className="text-sm text-foreground-muted"
+                htmlFor="dicom-slice"
+                hidden={single}
+              >
                 Slice{" "}
                 <span data-testid="dicom-slice-index">{sliceLabel}</span>
                 {loading && (
@@ -227,23 +257,36 @@ export default function DicomSeriesViewer({
                   </span>
                 )}
               </label>
-              {isMono && (
-                <label className="flex items-center gap-2 text-sm text-foreground-muted">
-                  Window
-                  <select
-                    className="rounded-md border border-border bg-surface-1 px-2 py-1 text-sm text-foreground"
-                    value={preset}
-                    onChange={(event) => setPreset(event.target.value)}
-                    data-testid="dicom-window-preset"
-                  >
-                    {CT_WINDOW_PRESETS.map((option) => (
-                      <option key={option.id} value={option.id}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
+              <div className="flex items-center gap-4">
+                {hasOverlays && (
+                  <label className="flex items-center gap-2 text-sm text-foreground-muted">
+                    <input
+                      type="checkbox"
+                      checked={showOverlays}
+                      onChange={(event) => setShowOverlays(event.target.checked)}
+                      data-testid="dicom-overlay-toggle"
+                    />
+                    Measurements
+                  </label>
+                )}
+                {isMono && (
+                  <label className="flex items-center gap-2 text-sm text-foreground-muted">
+                    Window
+                    <select
+                      className="rounded-md border border-border bg-surface-1 px-2 py-1 text-sm text-foreground"
+                      value={preset}
+                      onChange={(event) => setPreset(event.target.value)}
+                      data-testid="dicom-window-preset"
+                    >
+                      {CT_WINDOW_PRESETS.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </div>
             </div>
             <input
               id="dicom-slice"
@@ -255,8 +298,9 @@ export default function DicomSeriesViewer({
               onChange={(event) => setSliceIndex(Number(event.target.value))}
               className="w-full"
               data-testid="dicom-slice-slider"
+              hidden={single}
             />
-            {loading && (
+            {loading && !single && (
               <div className="h-1 w-full rounded bg-surface-1" aria-hidden="true">
                 <div
                   className="h-1 rounded bg-primary transition-[width]"

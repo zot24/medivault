@@ -103,3 +103,37 @@ test("uploads synthetic DICOM fixtures and draws them in the viewer", async ({
     expect(after[3]).toBe(255);
   }
 });
+
+test("hides the slice chrome for a single-image record", async ({ page }) => {
+  await page.goto("/login");
+  await page
+    .getByTestId("input-login-email")
+    .fill(process.env.E2E_EMAIL ?? "demo@medivault.app");
+  await page
+    .getByTestId("input-login-password")
+    .fill(process.env.E2E_PASSWORD ?? "demo123");
+  await page.getByTestId("button-login-submit").click();
+  await page.waitForURL(/\/(dashboard|documents)/);
+
+  await page.goto("/documents");
+  await page.getByTestId("button-upload-document").click();
+  await page.getByTestId("input-upload-title").fill("Synthetic single slice");
+  await page.getByTestId("input-upload-date").fill("2026-09-12");
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByTestId("button-choose-upload-files").click();
+  const dialog = await chooser;
+  await dialog.setFiles([path.join(fixtures, "mini-ct-01.dcm")]);
+  await page.getByTestId("button-upload-submit").click();
+  await expect(page.getByText("Synthetic single slice")).toBeVisible({
+    timeout: 30_000,
+  });
+
+  await page.locator("h3", { hasText: "Synthetic single slice" }).click();
+  const view = page.locator('[data-testid^="button-view-primary-"]').first();
+  await view.click();
+
+  await expect(page.getByTestId("dicom-viewer-canvas")).toBeVisible();
+  await expect(page.getByText("Single image.")).toBeVisible();
+  await expect(page.getByTestId("dicom-slice-index")).not.toBeVisible();
+  await expect(page.getByTestId("dicom-slice-slider")).not.toBeVisible();
+});

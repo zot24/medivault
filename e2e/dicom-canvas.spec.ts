@@ -50,4 +50,21 @@ test("draws synthetic SC RGB and CT fixtures on a canvas", async ({ page }) => {
     nonBlack: 255,
     max: 255,
   });
+
+  const overlay = page.getByTestId("dicom-viewer-canvas-ct-overlay");
+  await expect(overlay).toBeVisible();
+
+  // The fixture draws a 4x4 overlay at OverlayOrigin [6, 6] (1-based), so
+  // its top-left pixel lands at frame row 5, column 5.
+  const overlayPixel = await overlay.evaluate((node) => {
+    if (!(node instanceof HTMLCanvasElement)) {
+      throw new Error("overlay canvas missing");
+    }
+    const context = node.getContext("2d");
+    if (!context) {
+      throw new Error("overlay context missing");
+    }
+    return Array.from(context.getImageData(5, 5, 1, 1).data);
+  });
+  expect(overlayPixel).toEqual([0, 255, 128, 255]);
 });

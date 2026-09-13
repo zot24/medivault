@@ -68,6 +68,13 @@ function us(value: number): Buffer {
   return u16(value);
 }
 
+/** VR SS is binary: each value is a signed 16-bit little-endian integer, never text. */
+function ss(values: number[]): Buffer {
+  const buf = Buffer.alloc(values.length * 2);
+  values.forEach((value, i) => buf.writeInt16LE(value, i * 2));
+  return buf;
+}
+
 export const TRANSFER_EXPLICIT_LE = "1.2.840.10008.1.2.1";
 export const TRANSFER_JPEG_LOSSLESS = "1.2.840.10008.1.2.4.70";
 export const TRANSFER_RLE = "1.2.840.10008.1.2.5";
@@ -78,6 +85,21 @@ export type MiniCtTransfer =
   | typeof TRANSFER_EXPLICIT_LE
   | typeof TRANSFER_JPEG_LOSSLESS
   | typeof TRANSFER_RLE;
+
+export type MiniCtOverlay = {
+  rows: number;
+  columns: number;
+  /** 1-based; both default to 1 (top-left of the image). */
+  originRow?: number;
+  originColumn?: number;
+  /** One byte per pixel, 0 or 1, row-major. */
+  pixels: Uint8Array;
+  /**
+   * Overrides the bytes written for (60xx,3000) instead of packing `pixels`.
+   * Used to build a plane with truncated/corrupt overlay data.
+   */
+  rawOverlayData?: Buffer;
+};
 
 export type MiniCtOptions = {
   rows?: number;
@@ -102,6 +124,13 @@ export type MiniCtOptions = {
   sliceThickness?: number | string;
   /** (0008,0008) values, joined with backslash as DICOM stores them. */
   imageType?: string[];
+  /** A single graphics overlay plane at group (6000,eeee). */
+  overlay?: MiniCtOverlay;
+  /**
+   * Multiple overlay planes, written at groups 0x6000, 0x6002, ... in order.
+   * Takes precedence over `overlay` when both are given.
+   */
+  overlays?: MiniCtOverlay[];
 };
 
 export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
@@ -185,10 +214,47 @@ export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
     ...(options.rescaleSlope != null
       ? [explicitElement(0x0028, 0x1053, "DS", ds(options.rescaleSlope))]
       : []),
+    ...overlaysFor(options).map((overlay, i) =>
+      overlayElements(overlay, 0x6000 + i * 2),
+    ),
     pixelBytes,
   ]);
 
   return Buffer.concat([Buffer.alloc(PREAMBLE), DICM, fileMeta, dataset]);
+}
+
+function overlaysFor(options: MiniCtOptions): MiniCtOverlay[] {
+  if (options.overlays) {
+    return options.overlays;
+  }
+  return options.overlay ? [options.overlay] : [];
+}
+
+/** Emits the six elements of one graphics overlay plane at group (6000,eeee). */
+function overlayElements(overlay: MiniCtOverlay, group = 0x6000): Buffer {
+  const originRow = overlay.originRow ?? 1;
+  const originColumn = overlay.originColumn ?? 1;
+  const data = overlay.rawOverlayData ?? packOverlayBits(overlay.pixels);
+  return Buffer.concat([
+    explicitElement(group, 0x0010, "US", us(overlay.rows)),
+    explicitElement(group, 0x0011, "US", us(overlay.columns)),
+    explicitElement(group, 0x0040, "CS", cs("G")),
+    explicitElement(group, 0x0050, "SS", ss([originRow, originColumn])),
+    explicitElement(group, 0x0100, "US", us(1)),
+    explicitElement(group, 0x0102, "US", us(0)),
+    explicitElement(group, 0x3000, "OW", data),
+  ]);
+}
+
+/** Packs 0|1 pixels little-endian bit order (bit 0 of byte 0 is pixel 0), padded to a byte at the end. */
+function packOverlayBits(pixels: Uint8Array): Buffer {
+  const packed = Buffer.alloc(Math.ceil(pixels.length / 8));
+  for (let i = 0; i < pixels.length; i++) {
+    if (pixels[i]) {
+      packed[i >> 3] |= 1 << (i & 7);
+    }
+  }
+  return padEven(packed);
 }
 
 function encapsulatedPixelData(fragment: Buffer): Buffer {

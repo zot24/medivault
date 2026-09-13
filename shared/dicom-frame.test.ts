@@ -1,7 +1,9 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  compositeOverlays,
   describeUndrawableFrame,
+  overlaysFromPart10,
   pixelFrameFromPart10,
   rgbaFromFrame,
   windowForPreset,
@@ -229,5 +231,108 @@ describe("CT_WINDOW_PRESETS", () => {
     expect(windowForPreset("cta")).toEqual({ center: 300, width: 800 });
     expect(windowForPreset("stored")).toBeUndefined();
     expect(windowForPreset("nope")).toBeUndefined();
+  });
+});
+
+describe("overlaysFromPart10", () => {
+  it("returns no overlays for a plain fixture", () => {
+    const bytes = buildMiniCtDicom();
+    expect(overlaysFromPart10(new Uint8Array(bytes))).toEqual([]);
+  });
+
+  it("reads a 4x4 overlay plane with pixel (1,2) set", () => {
+    const pixels = new Uint8Array(4 * 4);
+    pixels[1 * 4 + 2] = 1;
+    const bytes = buildMiniCtDicom({ overlay: { rows: 4, columns: 4, pixels } });
+
+    const overlays = overlaysFromPart10(new Uint8Array(bytes));
+    expect(overlays).toHaveLength(1);
+    const [overlay] = overlays;
+    expect(overlay).toMatchObject({
+      rows: 4,
+      columns: 4,
+      originRow: 1,
+      originColumn: 1,
+    });
+    expect(overlay.bits[1 * 4 + 2]).toBe(1);
+    expect(Array.from(overlay.bits).filter((bit) => bit === 1)).toEqual([1]);
+  });
+
+  it("reads a plane with 9 columns, where bits continue across rows without padding", () => {
+    const rows = 3;
+    const columns = 9; // 27 pixels: row boundaries fall mid-byte.
+    const pixels = new Uint8Array(rows * columns);
+    pixels[0 * columns + 8] = 1; // last pixel of row 0 -> bit index 8
+    pixels[1 * columns + 0] = 1; // first pixel of row 1 -> bit index 9
+    const bytes = buildMiniCtDicom({ overlay: { rows, columns, pixels } });
+
+    const [overlay] = overlaysFromPart10(new Uint8Array(bytes));
+    expect(overlay.bits[0 * columns + 8]).toBe(1);
+    expect(overlay.bits[1 * columns + 0]).toBe(1);
+    expect(Array.from(overlay.bits).filter((bit) => bit === 1)).toHaveLength(2);
+  });
+
+  it("reads a non-default OverlayOrigin as a 1-based [row, column] pair", () => {
+    const pixels = new Uint8Array(4 * 4);
+    const bytes = buildMiniCtDicom({
+      overlay: { rows: 4, columns: 4, originRow: 2, originColumn: 3, pixels },
+    });
+
+    const [overlay] = overlaysFromPart10(new Uint8Array(bytes));
+    expect(overlay).toMatchObject({ originRow: 2, originColumn: 3 });
+  });
+
+  it("skips a truncated plane but still returns the valid ones", () => {
+    const validPixels = new Uint8Array(4 * 4);
+    validPixels[1 * 4 + 2] = 1;
+    const bytes = buildMiniCtDicom({
+      overlays: [
+        // Group 0x6000: a normal, valid plane.
+        { rows: 4, columns: 4, pixels: validPixels },
+        // Group 0x6002: declares 4x4 (needs 2 bytes packed) but only
+        // supplies 1 byte of overlay data.
+        {
+          rows: 4,
+          columns: 4,
+          pixels: new Uint8Array(4 * 4),
+          rawOverlayData: Buffer.from([0x00]),
+        },
+      ],
+    });
+
+    const overlays = overlaysFromPart10(new Uint8Array(bytes));
+    expect(overlays).toHaveLength(1);
+    expect(overlays[0].bits[1 * 4 + 2]).toBe(1);
+  });
+});
+
+describe("compositeOverlays", () => {
+  it("sets the RGBA of the overlay pixel and leaves neighbours untouched", () => {
+    const rgba = new Uint8ClampedArray(4 * 4 * 4);
+    const bits = new Uint8Array(4 * 4);
+    bits[1 * 4 + 2] = 1;
+
+    compositeOverlays(rgba, 4, 4, [
+      { rows: 4, columns: 4, originRow: 1, originColumn: 1, bits },
+    ]);
+
+    const offset = (1 * 4 + 2) * 4;
+    expect(Array.from(rgba.subarray(offset, offset + 4))).toEqual([0, 255, 128, 255]);
+    expect(Array.from(rgba.subarray(0, 4))).toEqual([0, 0, 0, 0]);
+  });
+
+  it("shifts by a [row, column] origin", () => {
+    const rgba = new Uint8ClampedArray(4 * 4 * 4);
+    const bits = new Uint8Array(4 * 4);
+    bits[0] = 1; // top-left of the overlay plane
+
+    compositeOverlays(rgba, 4, 4, [
+      { rows: 4, columns: 4, originRow: 2, originColumn: 3, bits },
+    ]);
+
+    // Origin [2, 3] shifts by one row and two columns: (0,0) -> frame (1,2).
+    const offset = (1 * 4 + 2) * 4;
+    expect(Array.from(rgba.subarray(offset, offset + 4))).toEqual([0, 255, 128, 255]);
+    expect(Array.from(rgba.subarray(0, 4))).toEqual([0, 0, 0, 0]);
   });
 });
