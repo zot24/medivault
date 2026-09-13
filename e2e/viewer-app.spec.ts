@@ -9,6 +9,11 @@ const fixtures = path.resolve(import.meta.dirname, "../shared/fixtures");
 // them together always lands in the same study card.
 const FIXTURE_STUDY_UID = "1.2.826.0.1.3680043.8.498.study.1";
 
+// mini-ct-mp-0{1..4}.dcm: a synthetic 2-phase x 2-slice series (plan 04).
+// Upload order is phase-major with no explicit phase tag, mirroring the
+// reference disc: slice locations 20, 10, 20, 10 -> 2 phases of 2.
+const MULTIPHASE_STUDY_UID = "1.2.826.0.1.3680043.8.498.study.mp";
+
 test.skip(
   !appBase,
   "Set E2E_BASE_URL to a running app (demo@medivault.app / demo123, or E2E_EMAIL / E2E_PASSWORD) to upload fixtures and open the viewer.",
@@ -136,4 +141,61 @@ test("hides the slice chrome for a single-image record", async ({ page }) => {
   await expect(page.getByText("Single image.")).toBeVisible();
   await expect(page.getByTestId("dicom-slice-index")).not.toBeVisible();
   await expect(page.getByTestId("dicom-slice-slider")).not.toBeVisible();
+});
+
+test("shows a phase select and holds the slice steady while cine-ing through phases", async ({
+  page,
+}) => {
+  await page.goto("/login");
+  await page
+    .getByTestId("input-login-email")
+    .fill(process.env.E2E_EMAIL ?? "demo@medivault.app");
+  await page
+    .getByTestId("input-login-password")
+    .fill(process.env.E2E_PASSWORD ?? "demo123");
+  await page.getByTestId("button-login-submit").click();
+  await page.waitForURL(/\/(dashboard|documents)/);
+
+  await page.goto("/documents");
+  await page.getByTestId("button-upload-document").click();
+  await page.getByTestId("input-upload-title").fill("Synthetic multi-phase CT");
+  await page.getByTestId("input-upload-date").fill("2026-09-12");
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByTestId("button-choose-upload-files").click();
+  const dialog = await chooser;
+  await dialog.setFiles(
+    ["01", "02", "03", "04"].map((n) => path.join(fixtures, `mini-ct-mp-${n}.dcm`)),
+  );
+  const uploaded = page.waitForResponse(
+    (response) => response.url().includes("/api/documents") && response.request().method() === "POST",
+  );
+  await page.getByTestId("button-upload-submit").click();
+  await uploaded;
+  // The upload mutation doesn't invalidate the studies query, so a freshly
+  // uploaded series needs a reload to show up in "Imaging Studies" (a
+  // pre-existing gap, unrelated to this plan).
+  await page.reload();
+
+  const studyCard = page.getByTestId(`study-card-${MULTIPHASE_STUDY_UID}`);
+  await expect(studyCard).toBeVisible({ timeout: 30_000 });
+  await studyCard.getByTestId(`button-open-study-${MULTIPHASE_STUDY_UID}`).click();
+
+  await page.waitForURL(`**/studies/${encodeURIComponent(MULTIPHASE_STUDY_UID)}`);
+  const view = page.locator('[data-testid^="button-view-series-"]').first();
+  await view.click();
+
+  const phaseSelect = page.getByTestId("dicom-phase-select");
+  await expect(phaseSelect).toBeVisible();
+  const options = phaseSelect.locator("option");
+  await expect(options).toHaveCount(2);
+  await expect(page.getByTestId("dicom-viewer-error")).toHaveCount(0);
+
+  const canvas = page.getByTestId("dicom-viewer-canvas");
+  await expect(canvas).toBeVisible();
+  await expect(page.getByTestId("dicom-slice-index")).toHaveText(/1 \/ 2 · Phase 1/);
+
+  // Switching phase keeps the same slice index (only the phase changes) so
+  // wall motion at one anatomical slice can be compared across the cycle.
+  await phaseSelect.selectOption("1");
+  await expect(page.getByTestId("dicom-slice-index")).toHaveText(/1 \/ 2 · Phase 2/);
 });
