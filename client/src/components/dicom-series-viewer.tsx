@@ -164,6 +164,7 @@ export default function DicomSeriesViewer({
   const isMono = current?.kind === "mono16";
   const sliceLabel = count === 0 ? "0 / 0" : `${sliceIndex + 1} / ${count}`;
   const loading = count > 0 && loaded < count;
+  const single = count === 1;
 
   const step = (delta: number) =>
     setSliceIndex((value) => stepSliceIndex(value, delta, count));
@@ -185,8 +186,9 @@ export default function DicomSeriesViewer({
         <DialogHeader>
           <DialogTitle>{focus?.title ?? "DICOM series"}</DialogTitle>
           <DialogDescription>
-            Stay in this dialog. Use the slider, the mouse wheel, or the arrow
-            keys to move through slices.
+            {single
+              ? "Single image."
+              : "Stay in this dialog. Use the slider, the mouse wheel, or the arrow keys to move through slices."}
           </DialogDescription>
         </DialogHeader>
         {error ? (
@@ -218,7 +220,11 @@ export default function DicomSeriesViewer({
               )}
             </div>
             <div className="flex items-center justify-between gap-4">
-              <label className="text-sm text-foreground-muted" htmlFor="dicom-slice">
+              <label
+                className="text-sm text-foreground-muted"
+                htmlFor="dicom-slice"
+                hidden={single}
+              >
                 Slice{" "}
                 <span data-testid="dicom-slice-index">{sliceLabel}</span>
                 {loading && (
@@ -255,8 +261,9 @@ export default function DicomSeriesViewer({
               onChange={(event) => setSliceIndex(Number(event.target.value))}
               className="w-full"
               data-testid="dicom-slice-slider"
+              hidden={single}
             />
-            {loading && (
+            {loading && !single && (
               <div className="h-1 w-full rounded bg-surface-1" aria-hidden="true">
                 <div
                   className="h-1 rounded bg-primary transition-[width]"

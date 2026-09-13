@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { format } from "date-fns";
 import type { Symptom } from "@shared/schema";
+import { localDate } from "@shared/upload-kinds";
 
 export default function Symptoms() {
   const { toast } = useToast();
@@ -320,7 +321,7 @@ export default function Symptoms() {
                     <p className="text-sm text-foreground-muted">This Month</p>
                     <p className="text-lg font-bold text-foreground">
                       {symptoms.filter(symptom => {
-                        const sympDate = new Date(symptom.dateRecorded);
+                        const sympDate = localDate(symptom.dateRecorded);
                         const now = new Date();
                         return sympDate.getMonth() === now.getMonth() && sympDate.getFullYear() === now.getFullYear();
                       }).length}
@@ -514,7 +515,7 @@ export default function Symptoms() {
                     <div className="flex items-center text-sm text-foreground-muted">
                       <Calendar className="mr-2 h-4 w-4" />
                       <span>
-                        {format(new Date(symptom.dateRecorded), "MMM d, yyyy")}
+                        {format(localDate(symptom.dateRecorded), "MMM d, yyyy")}
                       </span>
                     </div>
                     
