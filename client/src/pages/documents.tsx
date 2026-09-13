@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { documentStats, filterStudies } from "@shared/studies";
 import {
   Plus,
   Search,
@@ -65,15 +66,9 @@ export default function Documents() {
   // per series.
   const plainDocuments = documents?.filter((doc) => !doc.dicomMeta) ?? [];
   const studyList = studies ?? [];
-  const totalItemCount = plainDocuments.length + studyList.length;
-  const isThisMonth = (date: Date | string) => {
-    const value = new Date(date);
-    const now = new Date();
-    return value.getMonth() === now.getMonth() && value.getFullYear() === now.getFullYear();
-  };
-  const thisMonthCount =
-    plainDocuments.filter((doc) => doc.createdAt && isThisMonth(doc.createdAt)).length +
-    studyList.filter((study) => study.documentDate && isThisMonth(study.documentDate)).length;
+  const studyFilter = { searchQuery, documentType: filterType };
+  const stats = documentStats(plainDocuments, studyList, studyFilter);
+  const filteredStudies = filterStudies(studyList, studyFilter);
 
   const filteredDocuments = plainDocuments.filter(doc => {
     const matchesSearch = !searchQuery ||
@@ -243,9 +238,10 @@ export default function Documents() {
           </div>
         </div>
 
-        {/* Stats Row */}
-        {totalItemCount > 0 && (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        {/* Stats Row. No "Secured" tile: every document and study is
+            private storage, so it would always equal Total. */}
+        {stats.total > 0 && (
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
             <Card className="card-sanctuary">
               <CardContent className="p-4">
                 <div className="flex items-center space-x-3">
@@ -254,7 +250,7 @@ export default function Documents() {
                   </div>
                   <div>
                     <p className="text-sm text-foreground-muted font-body">Total</p>
-                    <p className="text-xl font-bold text-foreground font-display">{totalItemCount}</p>
+                    <p className="text-xl font-bold text-foreground font-display">{stats.total}</p>
                   </div>
                 </div>
               </CardContent>
@@ -267,20 +263,7 @@ export default function Documents() {
                   </div>
                   <div>
                     <p className="text-sm text-foreground-muted font-body">Filtered</p>
-                    <p className="text-xl font-bold text-foreground font-display">{filteredDocuments.length}</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="card-sanctuary">
-              <CardContent className="p-4">
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 rounded-xl bg-primary-light flex items-center justify-center">
-                    <Shield className="h-5 w-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-foreground-muted font-body">Secured</p>
-                    <p className="text-xl font-bold text-foreground font-display">{totalItemCount}</p>
+                    <p className="text-xl font-bold text-foreground font-display">{stats.filtered}</p>
                   </div>
                 </div>
               </CardContent>
@@ -293,7 +276,7 @@ export default function Documents() {
                   </div>
                   <div>
                     <p className="text-sm text-foreground-muted font-body">This Month</p>
-                    <p className="text-xl font-bold text-foreground font-display">{thisMonthCount}</p>
+                    <p className="text-xl font-bold text-foreground font-display">{stats.thisMonth}</p>
                   </div>
                 </div>
               </CardContent>
@@ -317,7 +300,7 @@ export default function Documents() {
             ))}
           </div>
         ) : (
-          studyList.length > 0 && (
+          filteredStudies.length > 0 && (
             <div className="mb-10">
               <h2 className="text-2xl font-semibold text-foreground mb-4 font-display">
                 Imaging Studies
@@ -326,7 +309,7 @@ export default function Documents() {
                 className="grid md:grid-cols-2 lg:grid-cols-3 gap-6"
                 data-testid="studies-grid"
               >
-                {studyList.map((study) => (
+                {filteredStudies.map((study) => (
                   <StudyCard key={study.studyInstanceUid} study={study} />
                 ))}
               </div>

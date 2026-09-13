@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { pixelFrameFromPart10, rgbaFromFrame, type DicomFrame } from "@shared/dicom-frame";
+import {
+  autoWindow,
+  isMostlyBlackAtStoredWindow,
+  pixelFrameFromPart10,
+  rgbaFromFrame,
+  type DicomFrame,
+  type DicomWindow,
+} from "@shared/dicom-frame";
 import { thumbnailCacheKey } from "@shared/thumbnail-cache";
 import { useAuth } from "@/hooks/useAuth";
 import { documentFileUrl } from "./owned-file";
@@ -50,6 +57,18 @@ function writeCache(
   }
 }
 
+/**
+ * A mono16 frame's own stored window, unless it would render almost
+ * entirely black (a text/dose-sheet page carrying a mismatched preset), in
+ * which case fall back to a min-max stretch of its actual pixel range.
+ */
+function windowFor(frame: DicomFrame): DicomWindow | undefined {
+  if (frame.kind === "mono16" && isMostlyBlackAtStoredWindow(frame)) {
+    return autoWindow(frame);
+  }
+  return undefined;
+}
+
 /** Draws a frame, letterboxed, onto a THUMBNAIL_SIZE square canvas. */
 function drawThumbnail(frame: DicomFrame): string | null {
   const source = document.createElement("canvas");
@@ -60,7 +79,7 @@ function drawThumbnail(frame: DicomFrame): string | null {
     return null;
   }
   const image = sourceContext.createImageData(frame.columns, frame.rows);
-  image.data.set(rgbaFromFrame(frame));
+  image.data.set(rgbaFromFrame(frame, windowFor(frame)));
   sourceContext.putImageData(image, 0, 0);
 
   const scale = THUMBNAIL_SIZE / Math.max(frame.rows, frame.columns);

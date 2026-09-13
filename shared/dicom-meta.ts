@@ -141,6 +141,9 @@ export function seriesLabel(meta: DicomSeriesMeta): string {
   if (meta.imageType.includes("LOCALIZER")) {
     return "Scout image";
   }
+  if (isDoseSheet(meta)) {
+    return "Dose sheet";
+  }
   if (isSecondarySnapshot(meta)) {
     const phase = phaseOf(description);
     return phase ? `Measurement snapshot, ${phase} % phase` : "Measurement snapshot";
@@ -177,6 +180,9 @@ export function seriesGroup(meta: DicomSeriesMeta): SeriesGroup {
   if (meta.imageType.includes("LOCALIZER")) {
     return "localizer";
   }
+  if (isDoseSheet(meta)) {
+    return "analysis";
+  }
   if (isSecondarySnapshot(meta)) {
     return "snapshot";
   }
@@ -203,6 +209,18 @@ function isSecondarySnapshot(meta: DicomSeriesMeta): boolean {
 
 function isSecondaryAnalysis(meta: DicomSeriesMeta): boolean {
   return meta.imageType.includes("SECONDARY") && meta.photometric === "RGB";
+}
+
+/**
+ * A CT patient-protocol / dose sheet page (Siemens ImageType often contains
+ * a value like "CT_SOM5 PROT"). Checked before `isSecondarySnapshot` so it
+ * isn't mislabelled as a measurement snapshot.
+ */
+function isDoseSheet(meta: DicomSeriesMeta): boolean {
+  return (
+    meta.imageType.some((value) => /PROT/.test(value)) ||
+    /protocol/i.test(meta.seriesDescription)
+  );
 }
 
 function phaseOf(description: string): string | null {
