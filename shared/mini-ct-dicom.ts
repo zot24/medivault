@@ -98,7 +98,8 @@ export type MiniCtOptions = {
   seriesInstanceUid?: string;
   modality?: string;
   seriesDescription?: string;
-  sliceThickness?: number;
+  /** Number for a real value; a raw string (e.g. "" or "  ") to test a blank DS element. */
+  sliceThickness?: number | string;
   /** (0008,0008) values, joined with backslash as DICOM stores them. */
   imageType?: string[];
 };

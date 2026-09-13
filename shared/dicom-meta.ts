@@ -92,13 +92,19 @@ function splitBackslash(raw: string | undefined): string[] {
 
 /**
  * First value of a DS/IS element. Scanners often write several in one
- * element ("345\\-600"); Number() on the raw string yields NaN.
+ * element ("345\\-600"); Number() on the raw string yields NaN. A present
+ * but blank or whitespace-only value (Number("") === 0) means "no value",
+ * not zero.
  */
 function firstFloat(raw: string | undefined): number | null {
   if (!raw) {
     return null;
   }
-  const value = Number(raw.split("\\")[0].trim());
+  const first = raw.split("\\")[0].trim();
+  if (first === "") {
+    return null;
+  }
+  const value = Number(first);
   return Number.isFinite(value) ? value : null;
 }
 

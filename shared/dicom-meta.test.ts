@@ -86,6 +86,16 @@ describe("readSeriesMeta", () => {
   it("returns null for bytes that are not a Part 10 file", () => {
     expect(readSeriesMeta(new Uint8Array([1, 2, 3, 4]))).toBeNull();
   });
+
+  it("treats a blank SliceThickness as absent, not zero", () => {
+    // dicom-parser trims a purely-whitespace element down to "", which the
+    // !raw guard already catches. The gap is a multi-valued element whose
+    // *first* token is blank/whitespace ("\3.0"): the element itself isn't
+    // empty, but Number("") for that first token must not read as 0.
+    const bytes = buildMiniCtDicom({ sliceThickness: "\\3.0" });
+    const meta = readSeriesMeta(new Uint8Array(bytes));
+    expect(meta?.sliceThickness).toBeNull();
+  });
 });
 
 /** Builds a fixture meta object for table-driven label/group tests below. */
