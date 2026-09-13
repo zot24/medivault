@@ -57,6 +57,35 @@ interface UploadDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+// Exported (and free of component state) so it can be unit tested directly.
+export async function postFiles(path: string, fields: FormData, files: File[]) {
+  const body = new FormData();
+  fields.forEach((value, key) => body.append(key, value));
+  for (const file of files) {
+    body.append("files", file);
+  }
+  const response = await fetch(path, {
+    method: "POST",
+    body,
+    credentials: "include",
+  });
+  if (!response.ok) {
+    let message = "Failed to upload document";
+    try {
+      const body = await response.json();
+      if (body?.message) {
+        message = body.message;
+      }
+    } catch {
+      // Body wasn't JSON; fall back to the generic message above.
+    }
+    // Keep the "{status}: {message}" shape used elsewhere (queryClient.ts's
+    // throwIfResNotOk) so isUnauthorizedError still recognizes a 401 here.
+    throw new Error(`${response.status}: ${message}`);
+  }
+  return response;
+}
+
 export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -78,32 +107,6 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
 
   const [progress, setProgress] = useState<{ sent: number; total: number } | null>(null);
   const seriesSummary = describeSeriesUpload(selectedFiles);
-
-  async function postFiles(path: string, fields: FormData, files: File[]) {
-    const body = new FormData();
-    fields.forEach((value, key) => body.append(key, value));
-    for (const file of files) {
-      body.append("files", file);
-    }
-    const response = await fetch(path, {
-      method: "POST",
-      body,
-      credentials: "include",
-    });
-    if (!response.ok) {
-      let message = "Failed to upload document";
-      try {
-        const body = await response.json();
-        if (body?.message) {
-          message = body.message;
-        }
-      } catch {
-        // Body wasn't JSON; fall back to the generic message above.
-      }
-      throw new Error(message);
-    }
-    return response;
-  }
 
   // One selection is one record. A DICOM series goes up in request-sized
   // chunks: the first creates the record, the rest append to it.
