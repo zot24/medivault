@@ -55,6 +55,9 @@ function memoryRecords(rows: MedicalDocument[] = []) {
           filePath: input.filePath,
           fileSize: input.fileSize,
           mimeType: input.mimeType,
+          instanceNumber: input.instanceNumber ?? null,
+          sliceLocation: input.sliceLocation ?? null,
+          phase: input.phase ?? null,
           createdAt: new Date("2026-09-11T00:00:00.000Z"),
         }));
         files.push(...created);
@@ -450,6 +453,77 @@ describe("createDocumentFiles series", () => {
     await files.appendOwnedFiles("owner-1", created.id, slices(3).slice(1));
 
     expect(documents[0].dicomMeta).toEqual(created.dicomMeta);
+  });
+
+  it("stores per-file position metadata read from each slice", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const input = [
+      {
+        bytes: buildMiniCtDicom({ instanceNumber: 1, imagePositionPatient: [0, 0, 30] }),
+        mimeType: "",
+        originalName: "CT000001",
+      },
+      {
+        bytes: buildMiniCtDicom({ instanceNumber: 2, imagePositionPatient: [0, 0, 20] }),
+        mimeType: "",
+        originalName: "CT000002",
+      },
+    ];
+
+    const created = await files.uploadOwnedDocument({ ...meta, files: input });
+    const listed = await files.listOwnedFiles("owner-1", created.id);
+
+    expect(listed?.map((row) => [row.instanceNumber, row.sliceLocation])).toEqual([
+      [1, 30],
+      [2, 20],
+    ]);
+  });
+
+  it("stores per-file position metadata for slices appended later", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const created = await files.uploadOwnedDocument({
+      ...meta,
+      files: [
+        {
+          bytes: buildMiniCtDicom({ instanceNumber: 1, imagePositionPatient: [0, 0, 30] }),
+          mimeType: "",
+          originalName: "CT000001",
+        },
+      ],
+    });
+
+    await files.appendOwnedFiles("owner-1", created.id, [
+      {
+        bytes: buildMiniCtDicom({ instanceNumber: 2, imagePositionPatient: [0, 0, 20] }),
+        mimeType: "",
+        originalName: "CT000002",
+      },
+    ]);
+
+    const listed = await files.listOwnedFiles("owner-1", created.id);
+    expect(listed?.map((row) => row.sliceLocation)).toEqual([30, 20]);
+  });
+
+  it("stores null position metadata for a non-DICOM upload", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+
+    const created = await files.uploadOwnedDocument({
+      ...meta,
+      files: [{ bytes: Buffer.from("%PDF-1"), mimeType: "application/pdf", originalName: "a.pdf" }],
+    });
+    const listed = await files.listOwnedFiles("owner-1", created.id);
+
+    expect(listed?.[0]).toMatchObject({
+      instanceNumber: null,
+      sliceLocation: null,
+      phase: null,
+    });
   });
 
   it("stores a null dicomMeta for a non-DICOM upload", async () => {

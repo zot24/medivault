@@ -124,6 +124,14 @@ export type MiniCtOptions = {
   sliceThickness?: number | string;
   /** (0008,0008) values, joined with backslash as DICOM stores them. */
   imageType?: string[];
+  /** (0020,0032) ImagePositionPatient: x\\y\\z. Only the third (z) value is used today. */
+  imagePositionPatient?: [number, number, number];
+  /** (0020,1041) SliceLocation, used only when imagePositionPatient is absent. */
+  sliceLocation?: number | string;
+  /** (0020,9241) NominalPercentageOfCardiacPhase. */
+  nominalCardiacPhase?: number | string;
+  /** (0018,1060) TriggerTime, in ms. */
+  triggerTime?: number | string;
   /** A single graphics overlay plane at group (6000,eeee). */
   overlay?: MiniCtOverlay;
   /**
@@ -195,9 +203,28 @@ export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
     ...(options.sliceThickness != null
       ? [explicitElement(0x0018, 0x0050, "DS", ds(options.sliceThickness))]
       : []),
+    ...(options.triggerTime != null
+      ? [explicitElement(0x0018, 0x1060, "DS", ds(options.triggerTime))]
+      : []),
     explicitElement(0x0020, 0x000d, "UI", ui(studyInstanceUid)),
     explicitElement(0x0020, 0x000e, "UI", ui(seriesInstanceUid)),
     explicitElement(0x0020, 0x0013, "IS", is(instanceNumber)),
+    ...(options.imagePositionPatient
+      ? [
+          explicitElement(
+            0x0020,
+            0x0032,
+            "DS",
+            ds(options.imagePositionPatient.join("\\")),
+          ),
+        ]
+      : []),
+    ...(options.sliceLocation != null
+      ? [explicitElement(0x0020, 0x1041, "DS", ds(options.sliceLocation))]
+      : []),
+    ...(options.nominalCardiacPhase != null
+      ? [explicitElement(0x0020, 0x9241, "DS", ds(options.nominalCardiacPhase))]
+      : []),
     explicitElement(0x0028, 0x0002, "US", us(samplesPerPixel)),
     explicitElement(0x0028, 0x0004, "CS", cs(photometric)),
     explicitElement(0x0028, 0x0010, "US", us(rows)),

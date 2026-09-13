@@ -6,7 +6,7 @@ import {
   type InsertMedicalDocument,
   type MedicalDocument,
 } from "@shared/schema";
-import { readSeriesMeta } from "@shared/dicom-meta";
+import { readFileMeta, readSeriesMeta } from "@shared/dicom-meta";
 import {
   DICOM_MIME,
   acceptedExtensions,
@@ -118,14 +118,20 @@ function fileRows(
   startPosition: number,
   files: ClassifiedFile[],
 ): InsertDocumentFile[] {
-  return files.map((file, index) => ({
-    documentId,
-    position: startPosition + index,
-    fileName: file.originalName,
-    filePath: file.key,
-    fileSize: file.bytes.length,
-    mimeType: file.mimeType,
-  }));
+  return files.map((file, index) => {
+    const fileMeta = file.mimeType === DICOM_MIME ? readFileMeta(file.bytes) : null;
+    return {
+      documentId,
+      position: startPosition + index,
+      fileName: file.originalName,
+      filePath: file.key,
+      fileSize: file.bytes.length,
+      mimeType: file.mimeType,
+      instanceNumber: fileMeta?.instanceNumber ?? null,
+      sliceLocation: fileMeta?.sliceLocation ?? null,
+      phase: fileMeta?.phase ?? null,
+    };
+  });
 }
 
 export function parseObjectBasename(raw: string): string | null {

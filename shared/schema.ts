@@ -9,6 +9,7 @@ import {
   serial,
   date,
   integer,
+  real,
   boolean,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
@@ -78,6 +79,12 @@ export const documentFiles = pgTable(
     filePath: varchar("file_path").notNull(),
     fileSize: integer("file_size").notNull(),
     mimeType: varchar("mime_type").notNull(),
+    // Per-file DICOM position metadata (shared/dicom-meta.ts readFileMeta),
+    // null for non-DICOM files. Used by shared/phases.ts to detect a
+    // multi-phase series (e.g. 10 cardiac phases x 580 slices).
+    instanceNumber: integer("instance_number"), // (0020,0013)
+    sliceLocation: real("slice_location"), // (0020,0032) z, else (0020,1041)
+    phase: real("phase"), // (0020,9241) %, else (0018,1060) ms
     createdAt: timestamp("created_at").defaultNow(),
   },
   (table) => [
