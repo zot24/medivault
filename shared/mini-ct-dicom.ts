@@ -134,6 +134,10 @@ export type MiniCtOptions = {
   nominalCardiacPhase?: number | string;
   /** (0018,1060) TriggerTime, in ms. */
   triggerTime?: number | string;
+  /** (0018,0040) CineRate, in fps. */
+  cineRate?: number | string;
+  /** (0018,1063) FrameTime, in ms. */
+  frameTime?: number | string;
   /** A single graphics overlay plane at group (6000,eeee). */
   overlay?: MiniCtOverlay;
   /**
@@ -207,6 +211,12 @@ export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
       : []),
     ...(options.triggerTime != null
       ? [explicitElement(0x0018, 0x1060, "DS", ds(options.triggerTime))]
+      : []),
+    ...(options.cineRate != null
+      ? [explicitElement(0x0018, 0x0040, "IS", ds(options.cineRate))]
+      : []),
+    ...(options.frameTime != null
+      ? [explicitElement(0x0018, 0x1063, "DS", ds(options.frameTime))]
       : []),
     explicitElement(0x0020, 0x000d, "UI", ui(studyInstanceUid)),
     explicitElement(0x0020, 0x000e, "UI", ui(seriesInstanceUid)),
@@ -301,6 +311,122 @@ function encapsulatedPixelData(fragment: Buffer): Buffer {
     tag(0xfffe, 0xe000),
     u32(even.length),
     even,
+    tag(0xfffe, 0xe0dd),
+    u32(0),
+  ]);
+}
+
+export const TRANSFER_JPEG_BASELINE = "1.2.840.10008.1.2.4.50";
+export const SOP_US_MULTIFRAME = "1.2.840.10008.5.1.4.1.1.3.1";
+
+export type MiniUsCineOptions = {
+  /** Each entry is one complete JPEG fragment (starts with FF D8). */
+  frames: Uint8Array[];
+  rows?: number;
+  columns?: number;
+  instanceNumber?: number;
+  /** 3 for color (YBR_FULL_422, the reference scanner's format) or 1 for mono. */
+  samplesPerPixel?: number;
+  photometric?: string;
+  /** (0018,0040) CineRate, in fps. */
+  frameRate?: number;
+  /** (0018,1063) FrameTime, in ms — an alternative to frameRate. */
+  frameTime?: number;
+  studyInstanceUid?: string;
+  seriesInstanceUid?: string;
+};
+
+/**
+ * Builds an encapsulated JPEG Baseline multi-frame Ultrasound object: one
+ * Basic Offset Table entry and one fragment item per frame in `frames`, as
+ * `dicomParser.readEncapsulatedImageFrame` expects. See plan 06 (echo cine
+ * loops) and shared/dicom-frame.ts's `multiFrameSourceFromPart10`.
+ */
+export function buildMiniUsCine(options: MiniUsCineOptions): Buffer {
+  const rows = options.rows ?? 8;
+  const columns = options.columns ?? 8;
+  const instanceNumber = options.instanceNumber ?? 1;
+  const samplesPerPixel = options.samplesPerPixel ?? 3;
+  const photometric =
+    options.photometric ?? (samplesPerPixel === 3 ? "YBR_FULL_422" : "MONOCHROME2");
+  const sopInstance = `1.2.826.0.1.3680043.8.498.us.${instanceNumber}`;
+  const sopClass = SOP_US_MULTIFRAME;
+  const studyInstanceUid = options.studyInstanceUid ?? "1.2.826.0.1.3680043.8.498.study.us";
+  const seriesInstanceUid = options.seriesInstanceUid ?? "1.2.826.0.1.3680043.8.498.series.us";
+
+  const metaWithoutLength = Buffer.concat([
+    explicitElement(0x0002, 0x0001, "OB", Buffer.from([0x00, 0x01])),
+    explicitElement(0x0002, 0x0002, "UI", ui(sopClass)),
+    explicitElement(0x0002, 0x0003, "UI", ui(sopInstance)),
+    explicitElement(0x0002, 0x0010, "UI", ui(TRANSFER_JPEG_BASELINE)),
+    explicitElement(0x0002, 0x0012, "UI", ui("1.2.826.0.1.3680043.8.498.1")),
+  ]);
+  const fileMeta = Buffer.concat([
+    explicitElement(0x0002, 0x0000, "UL", u32(metaWithoutLength.length)),
+    metaWithoutLength,
+  ]);
+
+  const pixelBytes = encapsulatedMultiFramePixelData(
+    options.frames.map((frame) => Buffer.from(frame)),
+  );
+
+  const dataset = Buffer.concat([
+    explicitElement(0x0008, 0x0016, "UI", ui(sopClass)),
+    explicitElement(0x0008, 0x0018, "UI", ui(sopInstance)),
+    explicitElement(0x0008, 0x0060, "CS", cs("US")),
+    ...(options.frameRate != null
+      ? [explicitElement(0x0018, 0x0040, "IS", ds(options.frameRate))]
+      : []),
+    ...(options.frameTime != null
+      ? [explicitElement(0x0018, 0x1063, "DS", ds(options.frameTime))]
+      : []),
+    explicitElement(0x0020, 0x000d, "UI", ui(studyInstanceUid)),
+    explicitElement(0x0020, 0x000e, "UI", ui(seriesInstanceUid)),
+    explicitElement(0x0020, 0x0013, "IS", is(instanceNumber)),
+    explicitElement(0x0028, 0x0002, "US", us(samplesPerPixel)),
+    explicitElement(0x0028, 0x0004, "CS", cs(photometric)),
+    explicitElement(0x0028, 0x0008, "IS", is(options.frames.length)),
+    explicitElement(0x0028, 0x0010, "US", us(rows)),
+    explicitElement(0x0028, 0x0011, "US", us(columns)),
+    explicitElement(0x0028, 0x0100, "US", us(8)),
+    explicitElement(0x0028, 0x0101, "US", us(8)),
+    explicitElement(0x0028, 0x0102, "US", us(7)),
+    explicitElement(0x0028, 0x0103, "US", us(0)),
+    pixelBytes,
+  ]);
+
+  return Buffer.concat([Buffer.alloc(PREAMBLE), DICM, fileMeta, dataset]);
+}
+
+/**
+ * Encapsulated pixel data with a *non-empty* Basic Offset Table (one entry
+ * per frame) and one fragment item per frame — unlike `encapsulatedPixelData`
+ * above, which writes a zero-length BOT for its single always-one-frame
+ * fragment. `dicomParser.readEncapsulatedImageFrame` requires a populated
+ * BOT to find each frame's fragment.
+ */
+function encapsulatedMultiFramePixelData(frames: Buffer[]): Buffer {
+  const padded = frames.map((frame) =>
+    frame.length % 2 === 0 ? frame : Buffer.concat([frame, Buffer.from([0x00])]),
+  );
+  const offsets: number[] = [];
+  let running = 0;
+  for (const frame of padded) {
+    offsets.push(running);
+    running += 8 + frame.length; // item tag (4) + item length (4) + data
+  }
+  const basicOffsetTable = Buffer.alloc(offsets.length * 4);
+  offsets.forEach((offset, i) => basicOffsetTable.writeUInt32LE(offset, i * 4));
+
+  return Buffer.concat([
+    tag(0x7fe0, 0x0010),
+    Buffer.from("OB", "ascii"),
+    Buffer.alloc(2),
+    u32(0xffffffff),
+    tag(0xfffe, 0xe000),
+    u32(basicOffsetTable.length),
+    basicOffsetTable,
+    ...padded.flatMap((frame) => [tag(0xfffe, 0xe000), u32(frame.length), frame]),
     tag(0xfffe, 0xe0dd),
     u32(0),
   ]);
