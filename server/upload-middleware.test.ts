@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import multer from "multer";
 import { MAX_UPLOAD_BYTES } from "@shared/upload-kinds";
-import { createUploadFilesOrReject } from "./routes";
+import { createUploadFilesOrReject } from "./upload-middleware";
 
 function fakeRes() {
   const res: any = {};
