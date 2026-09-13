@@ -1,28 +1,30 @@
 import { useEffect, useState } from "react";
 import { pixelFrameFromPart10, rgbaFromFrame, type DicomFrame } from "@shared/dicom-frame";
+import { thumbnailCacheKey } from "@shared/thumbnail-cache";
+import { useAuth } from "@/hooks/useAuth";
 import { documentFileUrl } from "./owned-file";
 
 const THUMBNAIL_SIZE = 128;
 
-/** documentId:position -> data URL, or null when that file can't be drawn. */
+/** userId:documentId:position -> data URL, or null when that file can't be drawn. */
 const memoryCache = new Map<string, string | null>();
 
-function cacheKey(documentId: number, position: number): string {
-  return `${documentId}:${position}`;
-}
-
-function storageKey(documentId: number, position: number): string {
-  return `medivault:thumbnail:${documentId}:${position}`;
+function storageKey(userId: string | null, documentId: number, position: number): string {
+  return `medivault:thumbnail:${thumbnailCacheKey(userId, documentId, position)}`;
 }
 
 /** undefined means "not cached yet"; null means "cached, not drawable". */
-function readCache(documentId: number, position: number): string | null | undefined {
-  const key = cacheKey(documentId, position);
+function readCache(
+  userId: string | null,
+  documentId: number,
+  position: number,
+): string | null | undefined {
+  const key = thumbnailCacheKey(userId, documentId, position);
   if (memoryCache.has(key)) {
     return memoryCache.get(key) ?? null;
   }
   try {
-    const stored = window.sessionStorage.getItem(storageKey(documentId, position));
+    const stored = window.sessionStorage.getItem(storageKey(userId, documentId, position));
     if (stored == null) {
       return undefined;
     }
@@ -34,10 +36,15 @@ function readCache(documentId: number, position: number): string | null | undefi
   }
 }
 
-function writeCache(documentId: number, position: number, value: string | null) {
-  memoryCache.set(cacheKey(documentId, position), value);
+function writeCache(
+  userId: string | null,
+  documentId: number,
+  position: number,
+  value: string | null,
+) {
+  memoryCache.set(thumbnailCacheKey(userId, documentId, position), value);
   try {
-    window.sessionStorage.setItem(storageKey(documentId, position), value ?? "");
+    window.sessionStorage.setItem(storageKey(userId, documentId, position), value ?? "");
   } catch {
     // Quota exceeded or storage disabled — the memory cache still serves this tab.
   }
@@ -81,15 +88,19 @@ function drawThumbnail(frame: DicomFrame): string | null {
 
 /**
  * Thumbnail for one file of a document: fetched once, decoded client-side,
- * and cached in memory and sessionStorage under a document+position key.
+ * and cached in memory and sessionStorage under a user+document+position
+ * key — namespaced by the signed-in user so a thumbnail cached for one
+ * account is never handed back after another user logs into the same tab.
  * Returns null while loading and once loading finishes if the file has no
  * pixel data to draw (an SR report, for instance) — callers show a document
  * icon in that case. For a multi-phase CT volume pass
  * `Math.floor(fileCount / 2)` rather than 0, so the thumbnail is mid-chest.
  */
 export function useThumbnail(documentId: number, position = 0): string | null {
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
   const [dataUrl, setDataUrl] = useState<string | null>(
-    () => readCache(documentId, position) ?? null,
+    () => readCache(userId, documentId, position) ?? null,
   );
 
   useEffect(() => {
@@ -97,7 +108,7 @@ export function useThumbnail(documentId: number, position = 0): string | null {
       setDataUrl(null);
       return;
     }
-    const cached = readCache(documentId, position);
+    const cached = readCache(userId, documentId, position);
     if (cached !== undefined) {
       setDataUrl(cached);
       return;
@@ -122,14 +133,14 @@ export function useThumbnail(documentId: number, position = 0): string | null {
         if (cancelled) {
           return;
         }
-        writeCache(documentId, position, result);
+        writeCache(userId, documentId, position, result);
         setDataUrl(result);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [documentId, position]);
+  }, [userId, documentId, position]);
 
   return dataUrl;
 }
