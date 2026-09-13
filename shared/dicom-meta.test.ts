@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readSeriesMeta, seriesGroup, seriesLabel } from "./dicom-meta";
+import { readSeriesMeta, readSopInstanceUid, seriesGroup, seriesLabel } from "./dicom-meta";
 import { buildMiniCtDicom, buildMiniScRgbDicom } from "./mini-ct-dicom";
 
 const EXPECTED_KEYS = [
@@ -242,5 +242,18 @@ describe("seriesGroup", () => {
     ["other (fallback)", meta({ modality: "OT" }), "other"],
   ])("%s", (_name, input, expected) => {
     expect(seriesGroup(input)).toBe(expected);
+  });
+});
+
+describe("readSopInstanceUid", () => {
+  it("reads the SOP instance UID of a generated CT slice", () => {
+    const bytes = buildMiniCtDicom({ instanceNumber: 7 });
+    expect(readSopInstanceUid(new Uint8Array(bytes))).toBe(
+      "1.2.826.0.1.3680043.8.498.spike.7",
+    );
+  });
+
+  it("returns null for a non-Part-10 buffer", () => {
+    expect(readSopInstanceUid(new Uint8Array([1, 2, 3]))).toBeNull();
   });
 });

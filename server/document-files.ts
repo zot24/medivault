@@ -6,7 +6,7 @@ import {
   type InsertMedicalDocument,
   type MedicalDocument,
 } from "@shared/schema";
-import { readSeriesMeta } from "@shared/dicom-meta";
+import { readSeriesMeta, readSopInstanceUid } from "@shared/dicom-meta";
 import {
   DICOM_MIME,
   acceptedExtensions,
@@ -125,6 +125,8 @@ function fileRows(
     filePath: file.key,
     fileSize: file.bytes.length,
     mimeType: file.mimeType,
+    sopInstanceUid:
+      file.mimeType === DICOM_MIME ? readSopInstanceUid(file.bytes) : null,
   }));
 }
 

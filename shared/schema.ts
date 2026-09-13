@@ -78,6 +78,10 @@ export const documentFiles = pgTable(
     filePath: varchar("file_path").notNull(),
     fileSize: integer("file_size").notNull(),
     mimeType: varchar("mime_type").notNull(),
+    // (0008,0018) of a DICOM file; null for non-DICOM files. Lets an SR's
+    // IMAGE content items resolve to a sibling record's file — see
+    // shared/dicom-sr.ts.
+    sopInstanceUid: varchar("sop_instance_uid"),
     createdAt: timestamp("created_at").defaultNow(),
   },
   (table) => [

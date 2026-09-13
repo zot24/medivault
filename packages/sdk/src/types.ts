@@ -84,6 +84,8 @@ export interface DocumentFileEntry {
   fileName: string;
   fileSize: number;
   mimeType: string;
+  /** (0008,0018) of a DICOM file; null for non-DICOM files or when absent. */
+  sopInstanceUid: string | null;
 }
 
 export interface InsertMedicalDocument {

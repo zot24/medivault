@@ -76,6 +76,25 @@ export function readSeriesMeta(bytes: Uint8Array): DicomSeriesMeta | null {
   }
 }
 
+/**
+ * Reads one file's SOPInstanceUID (0008,0018) — stored per file so an SR's
+ * IMAGE content items can be resolved to a sibling record's file. A minimal
+ * stand-in for the fuller per-file `readFileMeta` (instanceNumber,
+ * sliceLocation, phase) that plan 04 adds; merge into that when it lands.
+ */
+export function readSopInstanceUid(bytes: Uint8Array): string | null {
+  if (!isPart10(bytes)) {
+    return null;
+  }
+  try {
+    const dataSet = dicomParser.parseDicom(bytes);
+    const sopInstanceUid = dataSet.string("x00080018");
+    return sopInstanceUid ? trimmed(sopInstanceUid) : null;
+  } catch {
+    return null;
+  }
+}
+
 function trimmed(raw: string | undefined): string {
   return (raw ?? "").trim();
 }
