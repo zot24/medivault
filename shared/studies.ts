@@ -17,6 +17,7 @@ export type StudySummary = {
 function emptyGroups(): Record<SeriesGroup, MedicalDocument[]> {
   return {
     volume: [],
+    images: [],
     snapshot: [],
     analysis: [],
     report: [],

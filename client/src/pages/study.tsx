@@ -145,6 +145,7 @@ function allSeriesOf(study: StudySummary): MedicalDocument[] {
   const { groups } = study;
   return [
     ...groups.volume,
+    ...groups.images,
     ...groups.snapshot,
     ...groups.analysis,
     ...groups.report,
@@ -203,13 +204,15 @@ function ReportsSection({
   );
 }
 
+// CT volumes (the primary one first, plan 02) followed by ultrasound
+// records (plan 06) — both draw in the same "Images" section.
 function orderedImages(study: StudySummary): MedicalDocument[] {
-  const { volume } = study.groups;
+  const { volume, images } = study.groups;
   if (!study.primary) {
-    return volume;
+    return [...volume, ...images];
   }
   const rest = volume.filter((series) => series.id !== study.primary!.id);
-  return [study.primary, ...rest];
+  return [study.primary, ...rest, ...images];
 }
 
 export default function Study({

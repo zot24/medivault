@@ -23,7 +23,8 @@ interface StudyCardProps {
 }
 
 export default function StudyCard({ study }: StudyCardProps) {
-  const thumbnailSource = study.primary ?? study.groups.snapshot[0] ?? null;
+  const thumbnailSource =
+    study.primary ?? study.groups.images[0] ?? study.groups.snapshot[0] ?? null;
   const thumbnail = useThumbnail(
     thumbnailSource?.id ?? -1,
     thumbnailSource ? thumbnailPosition(thumbnailSource) : 0,

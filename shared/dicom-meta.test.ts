@@ -13,6 +13,7 @@ const EXPECTED_KEYS = [
   "rows",
   "columns",
   "numberOfFrames",
+  "frameRate",
   "photometric",
   "transferSyntaxUid",
   "sliceThickness",
@@ -46,6 +47,24 @@ describe("readSeriesMeta", () => {
       photometric: "MONOCHROME2",
       hasOverlay: false,
     });
+  });
+
+  it("reads the frame rate from CineRate", () => {
+    const bytes = buildMiniCtDicom({ modality: "US", cineRate: 30 });
+    const meta = readSeriesMeta(new Uint8Array(bytes));
+    expect(meta?.frameRate).toBe(30);
+  });
+
+  it("falls back to 1000 / FrameTime when CineRate is absent", () => {
+    const bytes = buildMiniCtDicom({ modality: "US", frameTime: 40 });
+    const meta = readSeriesMeta(new Uint8Array(bytes));
+    expect(meta?.frameRate).toBe(25);
+  });
+
+  it("has a null frame rate when neither tag is present", () => {
+    const bytes = buildMiniCtDicom({ modality: "CT" });
+    const meta = readSeriesMeta(new Uint8Array(bytes));
+    expect(meta?.frameRate).toBeNull();
   });
 
   it("never contains any patient or date identifier — only this exact key set", () => {
@@ -174,6 +193,7 @@ function baseMeta() {
     rows: 512,
     columns: 512,
     numberOfFrames: 1,
+    frameRate: null as number | null,
     photometric: "MONOCHROME2",
     transferSyntaxUid: "1.2.840.10008.1.2.4.70",
     sliceThickness: null as number | null,
@@ -271,8 +291,13 @@ describe("seriesLabel", () => {
       "CT volume, 3 mm",
     ],
     [
-      "echo cine loop",
-      meta({ modality: "US", numberOfFrames: 40 }),
+      "echo cine loop with a known frame rate",
+      meta({ modality: "US", numberOfFrames: 63, frameRate: 30 }),
+      "Echo cine loop, 2.1 s",
+    ],
+    [
+      "echo cine loop with no frame rate in the header",
+      meta({ modality: "US", numberOfFrames: 40, frameRate: null }),
       "Echo cine loop",
     ],
     [
@@ -324,7 +349,7 @@ describe("seriesGroup", () => {
       "analysis",
     ],
     ["volume", meta({ modality: "CT", sliceThickness: 0.6 }), "volume"],
-    ["other (US)", meta({ modality: "US" }), "other"],
+    ["images (US)", meta({ modality: "US" }), "images"],
     ["other (XA)", meta({ modality: "XA" }), "other"],
     ["other (fallback)", meta({ modality: "OT" }), "other"],
   ])("%s", (_name, input, expected) => {
