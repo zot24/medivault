@@ -116,6 +116,14 @@ export type MiniCtOptions = {
   windowWidth?: number | string;
   rescaleIntercept?: number;
   rescaleSlope?: number;
+  studyInstanceUid?: string;
+  seriesInstanceUid?: string;
+  modality?: string;
+  seriesDescription?: string;
+  /** Number for a real value; a raw string (e.g. "" or "  ") to test a blank DS element. */
+  sliceThickness?: number | string;
+  /** (0008,0008) values, joined with backslash as DICOM stores them. */
+  imageType?: string[];
   /** A single graphics overlay plane at group (6000,eeee). */
   overlay?: MiniCtOverlay;
   /**
@@ -168,12 +176,27 @@ export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
             Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength),
           );
 
+  const modality = options.modality ?? "CT";
+  const studyInstanceUid =
+    options.studyInstanceUid ?? "1.2.826.0.1.3680043.8.498.study.1";
+  const seriesInstanceUid =
+    options.seriesInstanceUid ?? "1.2.826.0.1.3680043.8.498.series.1";
+
   const dataset = Buffer.concat([
+    ...(options.imageType
+      ? [explicitElement(0x0008, 0x0008, "CS", cs(options.imageType.join("\\")))]
+      : []),
     explicitElement(0x0008, 0x0016, "UI", ui(sopClass)),
     explicitElement(0x0008, 0x0018, "UI", ui(sopInstance)),
-    explicitElement(0x0008, 0x0060, "CS", cs("CT")),
-    explicitElement(0x0020, 0x000d, "UI", ui("1.2.826.0.1.3680043.8.498.study.1")),
-    explicitElement(0x0020, 0x000e, "UI", ui("1.2.826.0.1.3680043.8.498.series.1")),
+    explicitElement(0x0008, 0x0060, "CS", cs(modality)),
+    ...(options.seriesDescription
+      ? [explicitElement(0x0008, 0x103e, "LO", cs(options.seriesDescription))]
+      : []),
+    ...(options.sliceThickness != null
+      ? [explicitElement(0x0018, 0x0050, "DS", ds(options.sliceThickness))]
+      : []),
+    explicitElement(0x0020, 0x000d, "UI", ui(studyInstanceUid)),
+    explicitElement(0x0020, 0x000e, "UI", ui(seriesInstanceUid)),
     explicitElement(0x0020, 0x0013, "IS", is(instanceNumber)),
     explicitElement(0x0028, 0x0002, "US", us(samplesPerPixel)),
     explicitElement(0x0028, 0x0004, "CS", cs(photometric)),

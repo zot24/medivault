@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { useDocuments, useDeleteDocument } from "@/lib/sdk";
+import { useDocuments, useDeleteDocument, useStudies } from "@/lib/sdk";
 import Navigation from "@/components/navigation";
 import analytics from "@/lib/analytics/umami";
 import DocumentCard from "@/components/document-card";
+import StudyCard from "@/components/study-card";
 import UploadDialog from "@/components/upload-dialog";
 import CaseShareDialog from "@/components/case-share-dialog";
 import { Button } from "@/components/ui/button";
@@ -55,8 +56,26 @@ export default function Documents() {
   const { data: documents, isLoading: documentsLoading } = useDocuments(undefined, {
     enabled: isAuthenticated,
   });
+  const { data: studies, isLoading: studiesLoading } = useStudies({
+    enabled: isAuthenticated,
+  });
 
-  const filteredDocuments = documents?.filter(doc => {
+  // A DICOM series is collapsed into its study card; it doesn't also get an
+  // ordinary document card. Stats below count a study as one item, not one
+  // per series.
+  const plainDocuments = documents?.filter((doc) => !doc.dicomMeta) ?? [];
+  const studyList = studies ?? [];
+  const totalItemCount = plainDocuments.length + studyList.length;
+  const isThisMonth = (date: Date | string) => {
+    const value = new Date(date);
+    const now = new Date();
+    return value.getMonth() === now.getMonth() && value.getFullYear() === now.getFullYear();
+  };
+  const thisMonthCount =
+    plainDocuments.filter((doc) => doc.createdAt && isThisMonth(doc.createdAt)).length +
+    studyList.filter((study) => study.documentDate && isThisMonth(study.documentDate)).length;
+
+  const filteredDocuments = plainDocuments.filter(doc => {
     const matchesSearch = !searchQuery ||
       doc.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       doc.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -225,7 +244,7 @@ export default function Documents() {
         </div>
 
         {/* Stats Row */}
-        {documents && documents.length > 0 && (
+        {totalItemCount > 0 && (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             <Card className="card-sanctuary">
               <CardContent className="p-4">
@@ -235,7 +254,7 @@ export default function Documents() {
                   </div>
                   <div>
                     <p className="text-sm text-foreground-muted font-body">Total</p>
-                    <p className="text-xl font-bold text-foreground font-display">{documents.length}</p>
+                    <p className="text-xl font-bold text-foreground font-display">{totalItemCount}</p>
                   </div>
                 </div>
               </CardContent>
@@ -261,7 +280,7 @@ export default function Documents() {
                   </div>
                   <div>
                     <p className="text-sm text-foreground-muted font-body">Secured</p>
-                    <p className="text-xl font-bold text-foreground font-display">{documents.length}</p>
+                    <p className="text-xl font-bold text-foreground font-display">{totalItemCount}</p>
                   </div>
                 </div>
               </CardContent>
@@ -274,19 +293,45 @@ export default function Documents() {
                   </div>
                   <div>
                     <p className="text-sm text-foreground-muted font-body">This Month</p>
-                    <p className="text-xl font-bold text-foreground font-display">
-                      {documents.filter(doc => {
-                        if (!doc.createdAt) return false;
-                        const docDate = new Date(doc.createdAt);
-                        const now = new Date();
-                        return docDate.getMonth() === now.getMonth() && docDate.getFullYear() === now.getFullYear();
-                      }).length}
-                    </p>
+                    <p className="text-xl font-bold text-foreground font-display">{thisMonthCount}</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
           </div>
+        )}
+
+        {/* Imaging studies — a DICOM series collapses into one card here,
+            never into the ordinary document grid below. */}
+        {studiesLoading ? (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-10">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <Card key={i} className="card-sanctuary">
+                <CardContent className="p-6">
+                  <Skeleton className="h-4 w-full mb-2" />
+                  <Skeleton className="h-4 w-3/4 mb-2" />
+                  <Skeleton className="h-4 w-1/2 mb-4" />
+                  <Skeleton className="h-8 w-20 rounded-full" />
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          studyList.length > 0 && (
+            <div className="mb-10">
+              <h2 className="text-2xl font-semibold text-foreground mb-4 font-display">
+                Imaging Studies
+              </h2>
+              <div
+                className="grid md:grid-cols-2 lg:grid-cols-3 gap-6"
+                data-testid="studies-grid"
+              >
+                {studyList.map((study) => (
+                  <StudyCard key={study.studyInstanceUid} study={study} />
+                ))}
+              </div>
+            </div>
+          )
         )}
 
         {/* Documents Grid */}
@@ -313,7 +358,7 @@ export default function Documents() {
               />
             ))}
           </div>
-        ) : documents && documents.length > 0 ? (
+        ) : plainDocuments.length > 0 ? (
           <div className="text-center py-16">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary-light to-secondary/10 flex items-center justify-center mx-auto mb-6">
               <Search className="w-8 h-8 text-primary" />
@@ -334,7 +379,7 @@ export default function Documents() {
               <span className="font-body">Clear filters</span>
             </Button>
           </div>
-        ) : (
+        ) : studyList.length > 0 ? null : (
           <div className="text-center py-16">
             {/* Empty state with vault illustration */}
             <div className="relative w-32 h-32 mx-auto mb-8">

@@ -13,6 +13,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import type { DicomSeriesMeta } from "./dicom-meta";
 
 // Session storage table.
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
@@ -57,6 +58,9 @@ export const medicalDocuments = pgTable("medical_documents", {
   // A record is one document; a DICOM series is one record with many files.
   // file_name/file_path/mime_type describe the first file, file_size is the total.
   fileCount: integer("file_count").notNull().default(1),
+  // Read from the first file when it's DICOM; null otherwise. Never carries
+  // patient identifiers — see shared/dicom-meta.ts.
+  dicomMeta: jsonb("dicom_meta").$type<DicomSeriesMeta | null>(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -140,7 +144,11 @@ export const shareLinks = pgTable(
   ],
 );
 
-export const insertMedicalDocumentSchema = createInsertSchema(medicalDocuments).omit({
+export const insertMedicalDocumentSchema = createInsertSchema(medicalDocuments, {
+  // drizzle-zod can't derive a precise type for a $type<T>() jsonb column;
+  // pin it to what shared/dicom-meta.ts actually produces.
+  dicomMeta: z.custom<DicomSeriesMeta | null>().optional(),
+}).omit({
   id: true,
   createdAt: true,
   updatedAt: true,

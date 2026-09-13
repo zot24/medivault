@@ -15,6 +15,7 @@ import {
   parseRawToken,
 } from "./share-links";
 import { insertSymptomSchema } from "@shared/schema";
+import { groupIntoStudies } from "@shared/studies";
 import { z } from "zod";
 
 function uploadedFiles(req: any): UploadFile[] {
@@ -112,6 +113,19 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error) {
       console.error("Error fetching documents:", error);
       res.status(500).json({ message: "Failed to fetch documents" });
+    }
+  });
+
+  // Records grouped into studies by dicomMeta.studyInstanceUid; records
+  // without dicomMeta (non-DICOM documents) are not studies.
+  app.get('/api/studies', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.id;
+      const documents = await storage.getMedicalDocuments(userId);
+      res.json(groupIntoStudies(documents));
+    } catch (error) {
+      console.error("Error fetching studies:", error);
+      res.status(500).json({ message: "Failed to fetch studies" });
     }
   });
 
