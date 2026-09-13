@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { postFiles } from "./upload-dialog";
+import { postFiles, withoutStatusPrefix } from "./upload-dialog";
 import { isUnauthorizedError } from "@/lib/authUtils";
 
 function jsonResponse(status: number, body: unknown) {
@@ -38,5 +38,17 @@ describe("postFiles", () => {
 
     expect((error as Error).message).toBe("413: File too large. Maximum is 50 MB per file.");
     expect(isUnauthorizedError(error as Error)).toBe(false);
+  });
+});
+
+describe("withoutStatusPrefix", () => {
+  it("strips the leading status code so the toast doesn't show it", () => {
+    expect(withoutStatusPrefix("413: File too large. Maximum is 50 MB per file.")).toBe(
+      "File too large. Maximum is 50 MB per file.",
+    );
+  });
+
+  it("leaves a message with no status prefix unchanged", () => {
+    expect(withoutStatusPrefix("Failed to upload document")).toBe("Failed to upload document");
   });
 });

@@ -86,6 +86,13 @@ export async function postFiles(path: string, fields: FormData, files: File[]) {
   return response;
 }
 
+// The "{status}: " prefix on thrown Errors (see postFiles above) is there so
+// isUnauthorizedError can recognize a 401 — it isn't meant for the user, so
+// strip it before showing a message in a toast.
+export function withoutStatusPrefix(message: string): string {
+  return message.replace(/^\d{3}: /, "");
+}
+
 export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -179,7 +186,7 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
       }
       toast({
         title: "Error",
-        description: error.message || "Failed to upload document",
+        description: withoutStatusPrefix(error.message) || "Failed to upload document",
         variant: "destructive",
       });
     },
