@@ -80,6 +80,8 @@ export const TRANSFER_JPEG_LOSSLESS = "1.2.840.10008.1.2.4.70";
 export const TRANSFER_RLE = "1.2.840.10008.1.2.5";
 export const SOP_CT_IMAGE = "1.2.840.10008.5.1.4.1.1.2";
 export const SOP_SECONDARY_CAPTURE = "1.2.840.10008.5.1.4.1.1.7";
+export const SOP_COMPREHENSIVE_SR = "1.2.840.10008.5.1.4.1.1.88.33";
+export const SOP_BASIC_TEXT_SR = "1.2.840.10008.5.1.4.1.1.88.11";
 
 export type MiniCtTransfer =
   | typeof TRANSFER_EXPLICIT_LE
@@ -501,5 +503,124 @@ class JpegBitWriter {
     }
     return Buffer.from(this.out);
   }
+}
+
+/** One node of a Structured Report content tree, as given to buildMiniSr. */
+export type MiniSrNode = {
+  type: string;
+  name?: string;
+  text?: string;
+  value?: number;
+  unit?: string;
+  code?: string;
+  imageRef?: string;
+  children?: MiniSrNode[];
+};
+
+export type MiniSrOptions = {
+  title: string;
+  nodes: MiniSrNode[];
+  sopClass?: string;
+  studyInstanceUid?: string;
+  seriesInstanceUid?: string;
+  instanceNumber?: number;
+};
+
+/** Wraps one item's dataset bytes with the (FFFE,E000) item tag and a defined length. */
+function sqItem(datasetBytes: Buffer): Buffer {
+  return Buffer.concat([tag(0xfffe, 0xe000), u32(datasetBytes.length), datasetBytes]);
+}
+
+/** A defined-length SQ element containing `items`, each one item's dataset bytes. */
+function sq(group: number, element: number, items: Buffer[]): Buffer {
+  return explicitElement(
+    group,
+    element,
+    "SQ",
+    Buffer.concat(items.map(sqItem)),
+  );
+}
+
+/** ConceptNameCodeSequence (0040,A043), one item carrying only CodeMeaning (0008,0104). */
+function conceptNameCodeSequence(meaning: string): Buffer {
+  return sq(0x0040, 0xa043, [explicitElement(0x0008, 0x0104, "LO", cs(meaning))]);
+}
+
+/** One SR content item's dataset bytes: ValueType, name, value, and nested ContentSequence. */
+function contentItem(node: MiniSrNode): Buffer {
+  const parts: Buffer[] = [explicitElement(0x0040, 0xa040, "CS", cs(node.type))];
+  if (node.name) {
+    parts.push(conceptNameCodeSequence(node.name));
+  }
+  if (node.type === "TEXT" && node.text != null) {
+    parts.push(
+      explicitElement(0x0040, 0xa160, "UT", padEven(Buffer.from(node.text, "ascii"))),
+    );
+  }
+  if (node.type === "NUM" && node.value != null) {
+    const measuredItem: Buffer[] = [explicitElement(0x0040, 0xa30a, "DS", ds(node.value))];
+    if (node.unit) {
+      measuredItem.push(
+        sq(0x0040, 0x08ea, [explicitElement(0x0008, 0x0100, "SH", cs(node.unit))]),
+      );
+    }
+    parts.push(sq(0x0040, 0xa300, [Buffer.concat(measuredItem)]));
+  }
+  if (node.type === "CODE" && node.code) {
+    parts.push(sq(0x0040, 0xa168, [explicitElement(0x0008, 0x0104, "LO", cs(node.code))]));
+  }
+  if (node.type === "IMAGE" && node.imageRef) {
+    parts.push(sq(0x0008, 0x1199, [explicitElement(0x0008, 0x1155, "UI", ui(node.imageRef))]));
+  }
+  if (node.children && node.children.length > 0) {
+    parts.push(sq(0x0040, 0xa730, node.children.map(contentItem)));
+  }
+  return Buffer.concat(parts);
+}
+
+/**
+ * Builds a Structured Report file: no pixel data, explicit VR little-endian,
+ * a root content item (title) whose ContentSequence holds `nodes`. Sequences
+ * use defined lengths throughout, matching what the reference scanner writes.
+ */
+export function buildMiniSr(options: MiniSrOptions): Buffer {
+  const sopClass = options.sopClass ?? SOP_COMPREHENSIVE_SR;
+  const instanceNumber = options.instanceNumber ?? 1;
+  const sopInstance = `1.2.826.0.1.3680043.8.498.sr.${instanceNumber}`;
+  const transferSyntax = TRANSFER_EXPLICIT_LE;
+
+  const metaWithoutLength = Buffer.concat([
+    explicitElement(0x0002, 0x0001, "OB", Buffer.from([0x00, 0x01])),
+    explicitElement(0x0002, 0x0002, "UI", ui(sopClass)),
+    explicitElement(0x0002, 0x0003, "UI", ui(sopInstance)),
+    explicitElement(0x0002, 0x0010, "UI", ui(transferSyntax)),
+    explicitElement(0x0002, 0x0012, "UI", ui("1.2.826.0.1.3680043.8.498.1")),
+  ]);
+  const fileMeta = Buffer.concat([
+    explicitElement(0x0002, 0x0000, "UL", u32(metaWithoutLength.length)),
+    metaWithoutLength,
+  ]);
+
+  const studyInstanceUid =
+    options.studyInstanceUid ?? "1.2.826.0.1.3680043.8.498.study.1";
+  const seriesInstanceUid =
+    options.seriesInstanceUid ?? "1.2.826.0.1.3680043.8.498.series.sr";
+
+  const parts: Buffer[] = [
+    explicitElement(0x0008, 0x0016, "UI", ui(sopClass)),
+    explicitElement(0x0008, 0x0018, "UI", ui(sopInstance)),
+    explicitElement(0x0008, 0x0060, "CS", cs("SR")),
+    explicitElement(0x0020, 0x000d, "UI", ui(studyInstanceUid)),
+    explicitElement(0x0020, 0x000e, "UI", ui(seriesInstanceUid)),
+    explicitElement(0x0020, 0x0013, "IS", is(instanceNumber)),
+    explicitElement(0x0040, 0xa040, "CS", cs("CONTAINER")),
+    conceptNameCodeSequence(options.title),
+  ];
+  if (options.nodes.length > 0) {
+    parts.push(sq(0x0040, 0xa730, options.nodes.map(contentItem)));
+  }
+  const dataset = Buffer.concat(parts);
+
+  return Buffer.concat([Buffer.alloc(PREAMBLE), DICM, fileMeta, dataset]);
 }
 
