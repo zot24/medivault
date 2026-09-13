@@ -33,7 +33,7 @@ import { format } from "date-fns";
 import type { MedicalDocument, Symptom } from "@shared/schema";
 import DicomSeriesViewer from "@/components/dicom-series-viewer";
 import { ownedFileUrl } from "@/lib/owned-file";
-import { isDicomDocument } from "@shared/upload-kinds";
+import { isDicomDocument, localDate } from "@shared/upload-kinds";
 
 export default function Dashboard() {
   const { toast } = useToast();
@@ -172,7 +172,7 @@ export default function Dashboard() {
         type: 'document',
         title: doc.title,
         subtitle: doc.doctorName || doc.facilityName || 'Medical document',
-        date: new Date(doc.createdAt || doc.documentDate),
+        date: doc.createdAt ? new Date(doc.createdAt) : localDate(doc.documentDate),
         documentType: doc.documentType,
         originalId: doc.id,
       });
@@ -184,7 +184,7 @@ export default function Dashboard() {
         type: 'symptom',
         title: symptom.symptomName,
         subtitle: symptom.location || symptom.duration || 'Symptom logged',
-        date: new Date(symptom.dateRecorded),
+        date: localDate(symptom.dateRecorded),
         severity: symptom.severity,
         originalId: symptom.id,
       });
@@ -201,7 +201,7 @@ export default function Dashboard() {
     const avgSeverity = symptoms.reduce((sum, s) => sum + s.severity, 0) / symptoms.length;
     const highSeverityCount = symptoms.filter(s => s.severity >= 7).length;
     const thisMonthCount = symptoms.filter(s => {
-      const date = new Date(s.dateRecorded);
+      const date = localDate(s.dateRecorded);
       const now = new Date();
       return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
     }).length;
@@ -533,7 +533,7 @@ export default function Dashboard() {
                           <h5 className="font-medium text-foreground mb-1 font-body truncate">{document.title}</h5>
                           <p className="text-sm text-foreground-muted font-body truncate">
                             {document.doctorName ? `${document.doctorName} • ` : ''}
-                            {format(new Date(document.documentDate), 'MMM d, yyyy')}
+                            {format(localDate(document.documentDate), 'MMM d, yyyy')}
                           </p>
                         </div>
                         <div className="flex items-center space-x-3 flex-shrink-0">
