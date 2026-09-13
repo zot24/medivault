@@ -59,6 +59,31 @@ function phaseChipLabel(label: string): string {
   return label.startsWith("Phase") ? label : `Phase ${label}`;
 }
 
+/**
+ * How many of `positions` have ever been loaded, per `loadedPositions` — not
+ * how many are currently resident in the bounded frame cache. A phase larger
+ * than the cache budget keeps evicting earlier frames as later ones load, so
+ * cache residency can never reach the phase's full count (plan 04's bounded
+ * cache); an ever-loaded set can.
+ */
+export function countLoaded(positions: number[], loadedPositions: ReadonlySet<number>): number {
+  let count = 0;
+  for (const position of positions) {
+    if (loadedPositions.has(position)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/** Percentage for the loading progress bar, capped at 100. */
+export function loadProgressPercent(loadedInPhase: number, count: number): number {
+  if (count <= 0) {
+    return 0;
+  }
+  return Math.min(100, (loadedInPhase / count) * 100);
+}
+
 function blitFrame(
   canvas: HTMLCanvasElement,
   frame: DicomFrame,
@@ -99,6 +124,9 @@ export default function DicomSeriesViewer({
   const activeWorkersRef = useRef(0);
   const inflightRef = useRef<Set<number>>(new Set());
   const cancelledRef = useRef(false);
+  // Positions ever loaded for this document, independent of whether the
+  // bounded frame cache has since evicted them -- see `countLoaded`.
+  const loadedPositionsRef = useRef<Set<number>>(new Set());
 
   const [positions, setPositions] = useState<number[]>([]);
   const [phases, setPhases] = useState<Phase[] | null>(null);
@@ -193,6 +221,7 @@ export default function DicomSeriesViewer({
           return;
         }
         cacheRef.current.set(absolute, entry);
+        loadedPositionsRef.current.add(absolute);
         setLoaded((current) => current + 1);
       } catch (caught: unknown) {
         if (!cancelledRef.current && !(caught instanceof DOMException && caught.name === "AbortError")) {
@@ -211,6 +240,7 @@ export default function DicomSeriesViewer({
     frameCostRef.current = null;
     drawnRef.current = null;
     inflightRef.current = new Set();
+    loadedPositionsRef.current = new Set();
     activeWorkersRef.current = 0;
     cancelledRef.current = false;
     setPositions([]);
@@ -335,7 +365,7 @@ export default function DicomSeriesViewer({
       : currentPhase
         ? `${sliceIndex + 1} / ${count} · ${phaseChipLabel(currentPhase.label)}`
         : `${sliceIndex + 1} / ${count}`;
-  const loadedInPhase = positions.filter((position) => cacheRef.current.has(position)).length;
+  const loadedInPhase = countLoaded(positions, loadedPositionsRef.current);
   const loading = count > 0 && loadedInPhase < count;
   const single = count === 1;
 
@@ -477,7 +507,7 @@ export default function DicomSeriesViewer({
               <div className="h-1 w-full rounded bg-surface-1" aria-hidden="true">
                 <div
                   className="h-1 rounded bg-primary transition-[width]"
-                  style={{ width: `${(loadedInPhase / count) * 100}%` }}
+                  style={{ width: `${loadProgressPercent(loadedInPhase, count)}%` }}
                 />
               </div>
             )}
