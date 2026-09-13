@@ -220,6 +220,25 @@ describe("seriesLabel", () => {
       "Analysis charts",
     ],
     [
+      "dose sheet, matched by ImageType containing PROT",
+      meta({
+        imageType: ["DERIVED", "SECONDARY", "OTHER", "CT_SOM5", "PROT"],
+        photometric: "MONOCHROME2",
+        numberOfFrames: 1,
+      }),
+      "Dose sheet",
+    ],
+    [
+      "dose sheet, matched by a Spanish protocol series description",
+      meta({
+        imageType: ["DERIVED", "SECONDARY"],
+        photometric: "MONOCHROME2",
+        numberOfFrames: 1,
+        seriesDescription: "Protocolo de paciente",
+      }),
+      "Dose sheet",
+    ],
+    [
       "CT volume at best diastole",
       meta({
         modality: "CT",
@@ -264,8 +283,8 @@ describe("seriesLabel", () => {
     ["angiography run", meta({ modality: "XA" }), "Angiography run"],
     [
       "anything else, with a description",
-      meta({ modality: "OT", seriesDescription: "Protocolo de paciente" }),
-      "Protocolo de paciente",
+      meta({ modality: "OT", seriesDescription: "Cardiac_Function_Global_Findings" }),
+      "Cardiac_Function_Global_Findings",
     ],
     ["anything else, no description", meta({ modality: "OT" }), "OT"],
   ])("%s", (_name, input, expected) => {
@@ -293,6 +312,15 @@ describe("seriesGroup", () => {
     [
       "analysis",
       meta({ imageType: ["DERIVED", "SECONDARY"], photometric: "RGB" }),
+      "analysis",
+    ],
+    [
+      "dose sheet groups as analysis, not snapshot",
+      meta({
+        imageType: ["DERIVED", "SECONDARY", "CT_SOM5", "PROT"],
+        photometric: "MONOCHROME2",
+        numberOfFrames: 1,
+      }),
       "analysis",
     ],
     ["volume", meta({ modality: "CT", sliceThickness: 0.6 }), "volume"],

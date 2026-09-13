@@ -14,6 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { seriesLabel } from "@shared/dicom-meta";
+import { groupReports } from "@shared/studies";
+import { localDate } from "@shared/upload-kinds";
 import { ArrowLeft, Eye, FileText, ScanLine } from "lucide-react";
 
 function Thumbnail({
@@ -138,6 +140,56 @@ function Section({
   );
 }
 
+function ReportsSection({
+  records,
+  onView,
+}: {
+  records: MedicalDocument[];
+  onView: (series: MedicalDocument) => void;
+}) {
+  const rows = groupReports(records);
+  if (rows.length === 0) {
+    return null;
+  }
+  return (
+    <div className="mb-8" data-testid="study-section-reports">
+      <h2 className="text-lg font-semibold text-foreground mb-3 font-display">Reports</h2>
+      <div className="space-y-2">
+        {rows.map((row) => (
+          <div
+            key={row.key}
+            className="flex items-center gap-4 p-3 rounded-xl border border-border hover:border-primary/30 hover:bg-surface-1 transition-colors"
+            data-testid={`report-row-${row.representative.id}`}
+          >
+            <Thumbnail document={row.representative} className="w-16 h-16" />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <TypeBadge
+                  document={row.representative}
+                  testId={`report-modality-${row.representative.id}`}
+                />
+              </div>
+              <p className="font-medium text-foreground font-body truncate">
+                {row.count > 1 ? `${row.label} · ${row.count} files` : row.label}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onView(row.representative)}
+              className="border-border text-foreground hover:bg-surface-1 flex-shrink-0"
+              data-testid={`button-view-report-${row.representative.id}`}
+            >
+              <Eye className="mr-2 h-4 w-4" />
+              <span className="font-body">View</span>
+            </Button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function orderedImages(study: StudySummary): MedicalDocument[] {
   const { volume } = study.groups;
   if (!study.primary) {
@@ -232,7 +284,7 @@ export default function Study({
             {study.studyDescription || "Imaging study"}
           </h1>
           <p className="text-foreground-muted font-body">
-            {study.documentDate && format(new Date(study.documentDate), "MMMM d, yyyy")}
+            {study.documentDate && format(localDate(study.documentDate), "MMMM d, yyyy")}
             {" · "}
             {study.seriesCount === 1 ? "1 series" : `${study.seriesCount} series`}
             {" · "}
@@ -248,7 +300,7 @@ export default function Study({
           layout="grid"
         />
         <Section title="Analysis" series={study.groups.analysis} onView={openViewer} />
-        <Section title="Reports" series={study.groups.report} onView={openViewer} />
+        <ReportsSection records={study.groups.report} onView={openViewer} />
         <Section
           title="Other"
           series={[...study.groups.localizer, ...study.groups.other]}
