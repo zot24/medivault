@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { DicomSeriesMeta } from "./dicom-meta";
 import type { MedicalDocument } from "./schema";
-import { groupIntoStudies, primarySeries } from "./studies";
+import { documentStats, groupIntoStudies, groupReports, primarySeries } from "./studies";
+
+const BASIC_TEXT_SR = "1.2.840.10008.5.1.4.1.1.88.11";
 
 let nextId = 1;
 
@@ -191,5 +193,162 @@ describe("primarySeries", () => {
     });
 
     expect(primarySeries([small, big])).toBe(big);
+  });
+});
+
+describe("groupReports", () => {
+  it("labels a Basic Text SR record as a written report", () => {
+    const report = record({
+      dicomMeta: {
+        modality: "SR",
+        sopClassUid: BASIC_TEXT_SR,
+        seriesDescription: "Radiology Report",
+        seriesNumber: 1975,
+      },
+    });
+
+    const [row] = groupReports([report]);
+
+    expect(row.label).toBe("Written report");
+    expect(row.count).toBe(1);
+    expect(row.representative).toBe(report);
+  });
+
+  it("collapses written reports sharing seriesDescription and seriesNumber into one row with a count", () => {
+    const reports = [1, 2, 3].map(() =>
+      record({
+        dicomMeta: {
+          modality: "SR",
+          sopClassUid: BASIC_TEXT_SR,
+          seriesDescription: "Radiology Report",
+          seriesNumber: 1975,
+        },
+      }),
+    );
+
+    const rows = groupReports(reports);
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ label: "Written report", count: 3 });
+    expect(rows[0].representative).toBe(reports[0]);
+  });
+
+  it("keeps other SR reports separate and labelled via seriesLabel when they don't share description and number", () => {
+    const calciumScore = record({
+      dicomMeta: {
+        modality: "SR",
+        sopClassUid: "1.2.840.10008.5.1.4.1.1.88.22",
+        seriesDescription: "CT Calcium Scoring",
+        seriesNumber: 1025,
+      },
+    });
+    const cardiacFunction = record({
+      dicomMeta: {
+        modality: "SR",
+        sopClassUid: "1.2.840.10008.5.1.4.1.1.88.22",
+        seriesDescription: "Cardiac Function",
+        seriesNumber: 1034,
+      },
+    });
+
+    const rows = groupReports([calciumScore, cardiacFunction]);
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({ label: "Report — CT Calcium Scoring", count: 1 });
+    expect(rows[1]).toMatchObject({ label: "Report — Cardiac Function", count: 1 });
+  });
+});
+
+describe("documentStats", () => {
+  it("counts an ordinary document and a study as one item each", () => {
+    const doc = record({ dicomMeta: null });
+    const [study] = groupIntoStudies([record({ dicomMeta: { studyInstanceUid: "s" } })]);
+
+    const stats = documentStats([doc], [study], { searchQuery: "", documentType: "all" });
+
+    expect(stats.total).toBe(2);
+  });
+
+  it("counts a study as filtered when the search matches one of its series", () => {
+    const [study] = groupIntoStudies([
+      record({
+        dicomMeta: {
+          studyInstanceUid: "s",
+          seriesDescription: "DS_CorCTA 0.6 Bv40 3 BestDiast 77 %",
+        },
+      }),
+    ]);
+
+    const matching = documentStats([], [study], {
+      searchQuery: "corcta",
+      documentType: "all",
+    });
+    const nonMatching = documentStats([], [study], {
+      searchQuery: "nope",
+      documentType: "all",
+    });
+
+    expect(matching.filtered).toBe(1);
+    expect(nonMatching.filtered).toBe(0);
+  });
+
+  it("excludes studies once a specific document-type filter is applied", () => {
+    const [study] = groupIntoStudies([record({ dicomMeta: { studyInstanceUid: "s" } })]);
+
+    const stats = documentStats([], [study], { searchQuery: "", documentType: "lab_result" });
+
+    expect(stats.filtered).toBe(0);
+  });
+
+  it("matches an ordinary document by title, description, doctor, or facility", () => {
+    const doc = record({
+      dicomMeta: null,
+      title: "Blood panel",
+      description: null,
+      doctorName: "Dr. Rivera",
+      facilityName: null,
+    });
+
+    expect(
+      documentStats([doc], [], { searchQuery: "rivera", documentType: "all" }).filtered,
+    ).toBe(1);
+    expect(
+      documentStats([doc], [], { searchQuery: "nope", documentType: "all" }).filtered,
+    ).toBe(0);
+  });
+
+  it("counts items whose date falls in the current local month", () => {
+    const now = new Date();
+    const thisMonthIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-15`;
+    const lastYearIso = `${now.getFullYear() - 1}-01-15`;
+    const doc = record({ dicomMeta: null, createdAt: now });
+    const [thisMonthStudy] = groupIntoStudies([
+      record({ documentDate: thisMonthIso, dicomMeta: { studyInstanceUid: "a" } }),
+    ]);
+    const [oldStudy] = groupIntoStudies([
+      record({ documentDate: lastYearIso, dicomMeta: { studyInstanceUid: "b" } }),
+    ]);
+
+    const stats = documentStats([doc], [thisMonthStudy, oldStudy], {
+      searchQuery: "",
+      documentType: "all",
+    });
+
+    expect(stats.thisMonth).toBe(2);
+  });
+
+  it("reads a study's date-only documentDate as a local calendar date, not UTC midnight", () => {
+    // Regression for the "day early" bug: a date-only string parsed with
+    // `new Date(str)` reads as UTC midnight, which can land in the wrong
+    // local month at a month boundary west of UTC.
+    const now = new Date();
+    const firstOfMonthIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+    const [study] = groupIntoStudies([
+      record({ documentDate: firstOfMonthIso, dicomMeta: { studyInstanceUid: "s" } }),
+    ]);
+
+    const stats = documentStats([], [study], { searchQuery: "", documentType: "all" });
+
+    expect(stats.thisMonth).toBe(1);
   });
 });
