@@ -245,6 +245,9 @@ export async function registerRoutes(app: Express): Promise<void> {
           fileSize: file.fileSize,
           mimeType: file.mimeType,
           sopInstanceUid: file.sopInstanceUid,
+          instanceNumber: file.instanceNumber,
+          sliceLocation: file.sliceLocation,
+          phase: file.phase,
         })),
       );
     } catch (error) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readSeriesMeta, readSopInstanceUid, seriesGroup, seriesLabel } from "./dicom-meta";
+import { readFileMeta, readSeriesMeta, readSopInstanceUid, seriesGroup, seriesLabel } from "./dicom-meta";
 import { buildMiniCtDicom, buildMiniScRgbDicom } from "./mini-ct-dicom";
 
 const EXPECTED_KEYS = [
@@ -98,6 +98,65 @@ describe("readSeriesMeta", () => {
   });
 });
 
+describe("readFileMeta", () => {
+  it("reads instance number and the third value of ImagePositionPatient as slice location", () => {
+    const bytes = buildMiniCtDicom({
+      instanceNumber: 7,
+      imagePositionPatient: [-150, -150, 42.5],
+    });
+    expect(readFileMeta(new Uint8Array(bytes))).toEqual({
+      instanceNumber: 7,
+      sliceLocation: 42.5,
+      phase: null,
+    });
+  });
+
+  it("falls back to SliceLocation when ImagePositionPatient is absent", () => {
+    const bytes = buildMiniCtDicom({ instanceNumber: 2, sliceLocation: 12 });
+    expect(readFileMeta(new Uint8Array(bytes))).toEqual({
+      instanceNumber: 2,
+      sliceLocation: 12,
+      phase: null,
+    });
+  });
+
+  it("prefers ImagePositionPatient's z value over SliceLocation when both are present", () => {
+    const bytes = buildMiniCtDicom({
+      imagePositionPatient: [0, 0, 5],
+      sliceLocation: 999,
+    });
+    expect(readFileMeta(new Uint8Array(bytes))?.sliceLocation).toBe(5);
+  });
+
+  it("reads NominalPercentageOfCardiacPhase as phase", () => {
+    const bytes = buildMiniCtDicom({ nominalCardiacPhase: 70 });
+    expect(readFileMeta(new Uint8Array(bytes))?.phase).toBe(70);
+  });
+
+  it("falls back to TriggerTime (ms) when no cardiac-phase percentage is present", () => {
+    const bytes = buildMiniCtDicom({ triggerTime: 620 });
+    expect(readFileMeta(new Uint8Array(bytes))?.phase).toBe(620);
+  });
+
+  it("prefers NominalPercentageOfCardiacPhase over TriggerTime when both are present", () => {
+    const bytes = buildMiniCtDicom({ nominalCardiacPhase: 30, triggerTime: 400 });
+    expect(readFileMeta(new Uint8Array(bytes))?.phase).toBe(30);
+  });
+
+  it("returns nulls for every field when none of the tags are present", () => {
+    const bytes = buildMiniCtDicom();
+    expect(readFileMeta(new Uint8Array(bytes))).toEqual({
+      instanceNumber: 1,
+      sliceLocation: null,
+      phase: null,
+    });
+  });
+
+  it("returns null for bytes that are not a Part 10 file", () => {
+    expect(readFileMeta(new Uint8Array([1, 2, 3, 4]))).toBeNull();
+  });
+});
+
 /** Builds a fixture meta object for table-driven label/group tests below. */
 function meta(overrides: Partial<ReturnType<typeof baseMeta>> = {}) {
   return { ...baseMeta(), ...overrides };
@@ -161,6 +220,25 @@ describe("seriesLabel", () => {
       "Analysis charts",
     ],
     [
+      "dose sheet, matched by ImageType containing PROT",
+      meta({
+        imageType: ["DERIVED", "SECONDARY", "OTHER", "CT_SOM5", "PROT"],
+        photometric: "MONOCHROME2",
+        numberOfFrames: 1,
+      }),
+      "Dose sheet",
+    ],
+    [
+      "dose sheet, matched by a Spanish protocol series description",
+      meta({
+        imageType: ["DERIVED", "SECONDARY"],
+        photometric: "MONOCHROME2",
+        numberOfFrames: 1,
+        seriesDescription: "Protocolo de paciente",
+      }),
+      "Dose sheet",
+    ],
+    [
       "CT volume at best diastole",
       meta({
         modality: "CT",
@@ -205,8 +283,8 @@ describe("seriesLabel", () => {
     ["angiography run", meta({ modality: "XA" }), "Angiography run"],
     [
       "anything else, with a description",
-      meta({ modality: "OT", seriesDescription: "Protocolo de paciente" }),
-      "Protocolo de paciente",
+      meta({ modality: "OT", seriesDescription: "Cardiac_Function_Global_Findings" }),
+      "Cardiac_Function_Global_Findings",
     ],
     ["anything else, no description", meta({ modality: "OT" }), "OT"],
   ])("%s", (_name, input, expected) => {
@@ -234,6 +312,15 @@ describe("seriesGroup", () => {
     [
       "analysis",
       meta({ imageType: ["DERIVED", "SECONDARY"], photometric: "RGB" }),
+      "analysis",
+    ],
+    [
+      "dose sheet groups as analysis, not snapshot",
+      meta({
+        imageType: ["DERIVED", "SECONDARY", "CT_SOM5", "PROT"],
+        photometric: "MONOCHROME2",
+        numberOfFrames: 1,
+      }),
       "analysis",
     ],
     ["volume", meta({ modality: "CT", sliceThickness: 0.6 }), "volume"],

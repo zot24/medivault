@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { documentFileUrl } from "@/lib/owned-file";
+import { FrameCache } from "@/lib/frame-cache";
 import {
   Dialog,
   DialogContent,
@@ -23,6 +24,7 @@ import {
   sliceDeltaFromKey,
   stepSliceIndex,
 } from "@shared/upload-kinds";
+import { detectPhases, type Phase } from "@shared/phases";
 import type { MedicalDocument } from "@shared/schema";
 
 type DicomSeriesViewerProps = {
@@ -33,6 +35,54 @@ type DicomSeriesViewerProps = {
 
 /** Parallel fetches while filling the stack in the background. */
 const LOAD_CONCURRENCY = 6;
+
+/** Frames within this many positions of the current one are never evicted. */
+const PROTECT_RADIUS = 8;
+
+/** Default frame-cache budget: keeps a 5,800-slice series well under a 4 GB tab limit. */
+const CACHE_BUDGET_BYTES = 512 * 1024 * 1024;
+
+/** How often the current slice advances a phase while cine-ing through the cardiac cycle. */
+const CINE_INTERVAL_MS = 100;
+
+type FileRow = {
+  position: number;
+  instanceNumber: number | null;
+  sliceLocation: number | null;
+  phase: number | null;
+};
+
+type CachedFrame = DicomFrame & { overlays: DicomOverlay[] };
+
+/** "70 %" -> "Phase 70 %"; "Phase 1" is left as-is. */
+function phaseChipLabel(label: string): string {
+  return label.startsWith("Phase") ? label : `Phase ${label}`;
+}
+
+/**
+ * How many of `positions` have ever been loaded, per `loadedPositions` — not
+ * how many are currently resident in the bounded frame cache. A phase larger
+ * than the cache budget keeps evicting earlier frames as later ones load, so
+ * cache residency can never reach the phase's full count (plan 04's bounded
+ * cache); an ever-loaded set can.
+ */
+export function countLoaded(positions: number[], loadedPositions: ReadonlySet<number>): number {
+  let count = 0;
+  for (const position of positions) {
+    if (loadedPositions.has(position)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+/** Percentage for the loading progress bar, capped at 100. */
+export function loadProgressPercent(loadedInPhase: number, count: number): number {
+  if (count <= 0) {
+    return 0;
+  }
+  return Math.min(100, (loadedInPhase / count) * 100);
+}
 
 function blitFrame(
   canvas: HTMLCanvasElement,
@@ -62,109 +112,230 @@ export default function DicomSeriesViewer({
   onOpenChange,
 }: DicomSeriesViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const framesRef = useRef<
-    Map<number, { frame: DicomFrame; overlays: DicomOverlay[] }>
-  >(new Map());
+  const cacheRef = useRef(new FrameCache<CachedFrame>(CACHE_BUDGET_BYTES));
+  const frameCostRef = useRef<number | null>(null);
   const drawnRef = useRef<{
     frame: DicomFrame;
     preset: string;
     showOverlays: boolean;
   } | null>(null);
+  const positionsRef = useRef<number[]>([]);
   const sliceIndexRef = useRef(0);
+  const activeWorkersRef = useRef(0);
+  const inflightRef = useRef<Set<number>>(new Set());
+  const cancelledRef = useRef(false);
+  // Positions ever loaded for this document, independent of whether the
+  // bounded frame cache has since evicted them -- see `countLoaded`.
+  const loadedPositionsRef = useRef<Set<number>>(new Set());
+
+  const [positions, setPositions] = useState<number[]>([]);
+  const [phases, setPhases] = useState<Phase[] | null>(null);
+  const [selectedPhaseIndex, setSelectedPhaseIndex] = useState(0);
   const [sliceIndex, setSliceIndex] = useState(0);
-  const [count, setCount] = useState(0);
   const [loaded, setLoaded] = useState(0);
+  const [cinePlaying, setCinePlaying] = useState(false);
   const [preset, setPreset] = useState("stored");
   const [showOverlays, setShowOverlays] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const documentId = focus?.id ?? null;
 
   sliceIndexRef.current = sliceIndex;
+  positionsRef.current = positions;
+
+  function isWanted(relativeIndex: number): boolean {
+    const distance = Math.abs(relativeIndex - sliceIndexRef.current);
+    if (distance <= PROTECT_RADIUS) {
+      return true;
+    }
+    const cost = frameCostRef.current;
+    if (!cost) {
+      return true;
+    }
+    const framesInBudget = Math.max(
+      PROTECT_RADIUS * 2 + 1,
+      Math.floor(CACHE_BUDGET_BYTES / cost),
+    );
+    return distance <= Math.floor(framesInBudget / 2);
+  }
+
+  async function loadOne(position: number, signal: AbortSignal): Promise<CachedFrame> {
+    const response = await fetch(documentFileUrl(documentId!, position), {
+      credentials: "include",
+      signal,
+    });
+    if (!response.ok) {
+      throw new Error("Could not load this file.");
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const frame = pixelFrameFromPart10(bytes);
+    if (!frame) {
+      throw new Error(describeUndrawableFrame(bytes));
+    }
+    frameCostRef.current =
+      frame.rows * frame.columns * (frame.kind === "mono16" ? 2 : 3);
+    return { ...frame, overlays: overlaysFromPart10(bytes) };
+  }
+
+  function protectAroundCurrentSlice() {
+    const list = positionsRef.current;
+    const around = sliceIndexRef.current;
+    const protectedPositions: number[] = [];
+    for (
+      let relative = Math.max(0, around - PROTECT_RADIUS);
+      relative <= Math.min(list.length - 1, around + PROTECT_RADIUS);
+      relative += 1
+    ) {
+      protectedPositions.push(list[relative]);
+    }
+    cacheRef.current.protect(protectedPositions);
+  }
+
+  function kickLoaders(signal: AbortSignal) {
+    while (activeWorkersRef.current < LOAD_CONCURRENCY) {
+      activeWorkersRef.current += 1;
+      runWorker(signal).finally(() => {
+        activeWorkersRef.current -= 1;
+      });
+    }
+  }
+
+  async function runWorker(signal: AbortSignal) {
+    while (!cancelledRef.current) {
+      const list = positionsRef.current;
+      const relative = nextSliceToLoad(sliceIndexRef.current, list.length, (candidate) => {
+        const absolute = list[candidate];
+        return (
+          cacheRef.current.has(absolute) ||
+          inflightRef.current.has(absolute) ||
+          !isWanted(candidate)
+        );
+      });
+      if (relative == null) {
+        return;
+      }
+      const absolute = list[relative];
+      inflightRef.current.add(absolute);
+      try {
+        const entry = await loadOne(absolute, signal);
+        if (cancelledRef.current) {
+          return;
+        }
+        cacheRef.current.set(absolute, entry);
+        loadedPositionsRef.current.add(absolute);
+        setLoaded((current) => current + 1);
+      } catch (caught: unknown) {
+        if (!cancelledRef.current && !(caught instanceof DOMException && caught.name === "AbortError")) {
+          setError(caught instanceof Error ? caught.message : "Could not load series");
+        }
+        return;
+      } finally {
+        inflightRef.current.delete(absolute);
+      }
+    }
+  }
 
   useEffect(() => {
-    framesRef.current = new Map();
+    const controller = new AbortController();
+    cacheRef.current.clear();
+    frameCostRef.current = null;
     drawnRef.current = null;
+    inflightRef.current = new Set();
+    loadedPositionsRef.current = new Set();
+    activeWorkersRef.current = 0;
+    cancelledRef.current = false;
+    setPositions([]);
+    setPhases(null);
+    setSelectedPhaseIndex(0);
     setSliceIndex(0);
-    setCount(0);
     setLoaded(0);
+    setCinePlaying(false);
     setShowOverlays(true);
     setError(null);
     if (!open || documentId == null) {
       return;
     }
 
-    let cancelled = false;
-    const inflight = new Set<number>();
-
-    async function loadOne(position: number) {
-      const response = await fetch(documentFileUrl(documentId!, position), {
-        credentials: "include",
-      });
-      if (!response.ok) {
-        throw new Error("Could not load this file.");
-      }
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      const frame = pixelFrameFromPart10(bytes);
-      if (!frame) {
-        throw new Error(describeUndrawableFrame(bytes));
-      }
-      return { frame, overlays: overlaysFromPart10(bytes) };
-    }
-
-    // Each worker keeps pulling the slice nearest to where the user is.
-    async function worker(total: number) {
-      while (!cancelled) {
-        const position = nextSliceToLoad(
-          sliceIndexRef.current,
-          total,
-          (candidate) =>
-            framesRef.current.has(candidate) || inflight.has(candidate),
-        );
-        if (position == null) {
-          return;
-        }
-        inflight.add(position);
-        const entry = await loadOne(position);
-        inflight.delete(position);
-        if (cancelled) {
-          return;
-        }
-        framesRef.current.set(position, entry);
-        setLoaded((current) => current + 1);
-      }
-    }
-
     (async () => {
       const response = await fetch(`/api/documents/${documentId}/files`, {
         credentials: "include",
+        signal: controller.signal,
       });
       if (!response.ok) {
         throw new Error("Could not load this series.");
       }
-      const files = (await response.json()) as unknown[];
-      if (cancelled) {
+      const files = (await response.json()) as FileRow[];
+      if (cancelledRef.current) {
         return;
       }
-      setCount(files.length);
-      await Promise.all(
-        Array.from({ length: Math.min(LOAD_CONCURRENCY, files.length) }, () =>
-          worker(files.length),
-        ),
+      const detection = detectPhases(
+        files.map((file) => ({
+          position: file.position,
+          instanceNumber: file.instanceNumber,
+          sliceLocation: file.sliceLocation,
+          phase: file.phase,
+        })),
       );
+      const allPositions = files.map((file) => file.position);
+      setPhases(detection?.phases ?? null);
+      setPositions(detection ? detection.phases[0].positions : allPositions);
+      kickLoaders(controller.signal);
     })().catch((caught: unknown) => {
-      if (!cancelled) {
+      if (!cancelledRef.current) {
         setError(caught instanceof Error ? caught.message : "Could not load series");
       }
     });
 
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
+      controller.abort();
+      cacheRef.current.clear();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, documentId]);
+
+  // Selecting a phase swaps which positions the slider ranges over. The
+  // slice index itself is kept (clamped) rather than reset, so cine-ing
+  // through phases holds the same anatomical slice steady across phases —
+  // that's the point of wall-motion review.
+  useEffect(() => {
+    if (!phases) {
+      return;
+    }
+    const nextPositions = phases[selectedPhaseIndex]?.positions ?? [];
+    setPositions(nextPositions);
+    setSliceIndex((current) => Math.min(current, Math.max(nextPositions.length - 1, 0)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPhaseIndex, phases]);
+
+  // Resumes background loading whenever the visible window moves (scrolling
+  // the slider, changing phase) instead of only once on open.
+  useEffect(() => {
+    if (!open || documentId == null || positions.length === 0) {
+      return;
+    }
+    protectAroundCurrentSlice();
+    const controller = new AbortController();
+    kickLoaders(controller.signal);
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sliceIndex, positions]);
+
+  // Space bar cines through phases at the current slice — how cardiologists
+  // scan for wall motion. Stops automatically if phases go away.
+  useEffect(() => {
+    if (!cinePlaying || !phases || phases.length < 2) {
+      return;
+    }
+    const id = setInterval(() => {
+      setSelectedPhaseIndex((index) => (index + 1) % phases.length);
+    }, CINE_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [cinePlaying, phases]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    const entry = framesRef.current.get(sliceIndex);
+    const absolute = positions[sliceIndex];
+    const entry = absolute == null ? undefined : cacheRef.current.get(absolute);
     if (!canvas || !entry) {
       return;
     }
@@ -172,22 +343,30 @@ export default function DicomSeriesViewer({
     const drawn = drawnRef.current;
     if (
       drawn &&
-      drawn.frame === entry.frame &&
+      drawn.frame === entry &&
       drawn.preset === preset &&
       drawn.showOverlays === showOverlays
     ) {
       return;
     }
-    drawnRef.current = { frame: entry.frame, preset, showOverlays };
-    blitFrame(canvas, entry.frame, preset, entry.overlays, showOverlays);
-  }, [sliceIndex, preset, loaded, showOverlays]);
+    drawnRef.current = { frame: entry, preset, showOverlays };
+    blitFrame(canvas, entry, preset, entry.overlays, showOverlays);
+  }, [sliceIndex, positions, preset, loaded, showOverlays]);
 
-  const currentEntry = framesRef.current.get(sliceIndex);
-  const current = currentEntry?.frame;
+  const currentAbsolute = positions[sliceIndex];
+  const current = currentAbsolute == null ? undefined : cacheRef.current.get(currentAbsolute);
   const isMono = current?.kind === "mono16";
-  const hasOverlays = (currentEntry?.overlays.length ?? 0) > 0;
-  const sliceLabel = count === 0 ? "0 / 0" : `${sliceIndex + 1} / ${count}`;
-  const loading = count > 0 && loaded < count;
+  const hasOverlays = (current?.overlays.length ?? 0) > 0;
+  const count = positions.length;
+  const currentPhase = phases ? phases[selectedPhaseIndex] : null;
+  const sliceLabel =
+    count === 0
+      ? "0 / 0"
+      : currentPhase
+        ? `${sliceIndex + 1} / ${count} · ${phaseChipLabel(currentPhase.label)}`
+        : `${sliceIndex + 1} / ${count}`;
+  const loadedInPhase = countLoaded(positions, loadedPositionsRef.current);
+  const loading = count > 0 && loadedInPhase < count;
   const single = count === 1;
 
   const step = (delta: number) =>
@@ -200,11 +379,15 @@ export default function DicomSeriesViewer({
         data-testid="dicom-series-viewer"
         onKeyDown={(event) => {
           const delta = sliceDeltaFromKey(event.key);
-          if (delta == null || count < 2) {
+          if (delta != null && count >= 2) {
+            event.preventDefault();
+            step(delta);
             return;
           }
-          event.preventDefault();
-          step(delta);
+          if (event.key === " " && phases && phases.length >= 2) {
+            event.preventDefault();
+            setCinePlaying((playing) => !playing);
+          }
         }}
       >
         <DialogHeader>
@@ -212,7 +395,7 @@ export default function DicomSeriesViewer({
           <DialogDescription>
             {single
               ? "Single image."
-              : "Stay in this dialog. Use the slider, the mouse wheel, or the arrow keys to move through slices."}
+              : "Stay in this dialog. Use the slider, the mouse wheel, or the arrow keys to move through slices. Space bar cines through phases."}
           </DialogDescription>
         </DialogHeader>
         {error ? (
@@ -221,6 +404,26 @@ export default function DicomSeriesViewer({
           </p>
         ) : (
           <div className="space-y-4">
+            {phases && (
+              <label className="flex items-center gap-2 text-sm text-foreground-muted">
+                Phase
+                <select
+                  className="rounded-md border border-border bg-surface-1 px-2 py-1 text-sm text-foreground"
+                  value={selectedPhaseIndex}
+                  onChange={(event) => {
+                    setCinePlaying(false);
+                    setSelectedPhaseIndex(Number(event.target.value));
+                  }}
+                  data-testid="dicom-phase-select"
+                >
+                  {phases.map((phase, index) => (
+                    <option key={phase.key} value={index}>
+                      {phase.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <div className="relative flex justify-center bg-black rounded-lg overflow-hidden">
               <canvas
                 ref={canvasRef}
@@ -253,7 +456,7 @@ export default function DicomSeriesViewer({
                 <span data-testid="dicom-slice-index">{sliceLabel}</span>
                 {loading && (
                   <span className="ml-2 text-foreground-subtle" data-testid="dicom-loaded-count">
-                    · loaded {loaded} / {count}
+                    · loaded {loadedInPhase} / {count}
                   </span>
                 )}
               </label>
@@ -304,7 +507,7 @@ export default function DicomSeriesViewer({
               <div className="h-1 w-full rounded bg-surface-1" aria-hidden="true">
                 <div
                   className="h-1 rounded bg-primary transition-[width]"
-                  style={{ width: `${(loaded / count) * 100}%` }}
+                  style={{ width: `${loadProgressPercent(loadedInPhase, count)}%` }}
                 />
               </div>
             )}

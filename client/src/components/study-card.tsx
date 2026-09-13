@@ -6,6 +6,7 @@ import { ChevronRight, Layers, ScanLine } from "lucide-react";
 import type { StudySummary } from "@/lib/sdk";
 import { useThumbnail } from "@/lib/thumbnails";
 import { thumbnailPosition } from "@/lib/study-thumbnail";
+import { localDate } from "@shared/upload-kinds";
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024 * 1024) {
@@ -65,7 +66,7 @@ export default function StudyCard({ study }: StudyCardProps) {
 
         <div className="space-y-2 mb-4 text-sm text-foreground-muted font-body">
           {study.documentDate && (
-            <div>{format(new Date(study.documentDate), "MMM d, yyyy")}</div>
+            <div>{format(localDate(study.documentDate), "MMM d, yyyy")}</div>
           )}
           <div className="flex items-center">
             <Layers className="mr-2 h-4 w-4 text-primary" />

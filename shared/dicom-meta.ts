@@ -1,4 +1,4 @@
-import dicomParser from "dicom-parser";
+import dicomParser, { type DataSet } from "dicom-parser";
 import { isPart10 } from "./upload-kinds";
 
 /**
@@ -77,22 +77,71 @@ export function readSeriesMeta(bytes: Uint8Array): DicomSeriesMeta | null {
 }
 
 /**
- * Reads one file's SOPInstanceUID (0008,0018) — stored per file so an SR's
- * IMAGE content items can be resolved to a sibling record's file. A minimal
- * stand-in for the fuller per-file `readFileMeta` (instanceNumber,
- * sliceLocation, phase) that plan 04 adds; merge into that when it lands.
+ * Per-file metadata, read from every file of a series (unlike DicomSeriesMeta,
+ * which is read only from the first). Position fields drive phase detection
+ * (shared/phases.ts); sopInstanceUid lets an SR's IMAGE content items resolve
+ * to a sibling record's file (shared/dicom-sr.ts).
  */
-export function readSopInstanceUid(bytes: Uint8Array): string | null {
+export type DicomFileMeta = {
+  sopInstanceUid: string | null; // (0008,0018)
+  instanceNumber: number | null; // (0020,0013)
+  sliceLocation: number | null; // third value of (0020,0032), else (0020,1041)
+  phase: number | null; // (0020,9241) %, else (0018,1060) ms
+};
+
+export function readFileMeta(bytes: Uint8Array): DicomFileMeta | null {
   if (!isPart10(bytes)) {
     return null;
   }
   try {
     const dataSet = dicomParser.parseDicom(bytes);
     const sopInstanceUid = dataSet.string("x00080018");
-    return sopInstanceUid ? trimmed(sopInstanceUid) : null;
+    return {
+      sopInstanceUid: sopInstanceUid ? trimmed(sopInstanceUid) : null,
+      instanceNumber: firstInt(dataSet.string("x00200013")),
+      sliceLocation: sliceLocationOf(dataSet),
+      phase: phaseOfDataSet(dataSet),
+    };
   } catch {
     return null;
   }
+}
+
+/** Just the SOPInstanceUID (0008,0018) of one file; null when unreadable. */
+export function readSopInstanceUid(bytes: Uint8Array): string | null {
+  return readFileMeta(bytes)?.sopInstanceUid ?? null;
+}
+
+function sliceLocationOf(dataSet: DataSet): number | null {
+  const fromPosition = nthFloat(dataSet.string("x00200032"), 2);
+  if (fromPosition != null) {
+    return fromPosition;
+  }
+  return firstFloat(dataSet.string("x00201041"));
+}
+
+function phaseOfDataSet(dataSet: DataSet): number | null {
+  const nominalPercentage = firstFloat(dataSet.string("x00209241"));
+  if (nominalPercentage != null) {
+    return nominalPercentage;
+  }
+  return firstFloat(dataSet.string("x00181060"));
+}
+
+/**
+ * Nth (0-based) value of a multi-valued DS/IS element. Like firstFloat, a
+ * present-but-blank token means "no value", not zero.
+ */
+function nthFloat(raw: string | undefined, index: number): number | null {
+  if (!raw) {
+    return null;
+  }
+  const token = (raw.split("\\")[index] ?? "").trim();
+  if (token === "") {
+    return null;
+  }
+  const value = Number(token);
+  return Number.isFinite(value) ? value : null;
 }
 
 function trimmed(raw: string | undefined): string {
@@ -160,6 +209,9 @@ export function seriesLabel(meta: DicomSeriesMeta): string {
   if (meta.imageType.includes("LOCALIZER")) {
     return "Scout image";
   }
+  if (isDoseSheet(meta)) {
+    return "Dose sheet";
+  }
   if (isSecondarySnapshot(meta)) {
     const phase = phaseOf(description);
     return phase ? `Measurement snapshot, ${phase} % phase` : "Measurement snapshot";
@@ -196,6 +248,9 @@ export function seriesGroup(meta: DicomSeriesMeta): SeriesGroup {
   if (meta.imageType.includes("LOCALIZER")) {
     return "localizer";
   }
+  if (isDoseSheet(meta)) {
+    return "analysis";
+  }
   if (isSecondarySnapshot(meta)) {
     return "snapshot";
   }
@@ -222,6 +277,18 @@ function isSecondarySnapshot(meta: DicomSeriesMeta): boolean {
 
 function isSecondaryAnalysis(meta: DicomSeriesMeta): boolean {
   return meta.imageType.includes("SECONDARY") && meta.photometric === "RGB";
+}
+
+/**
+ * A CT patient-protocol / dose sheet page (Siemens ImageType often contains
+ * a value like "CT_SOM5 PROT"). Checked before `isSecondarySnapshot` so it
+ * isn't mislabelled as a measurement snapshot.
+ */
+function isDoseSheet(meta: DicomSeriesMeta): boolean {
+  return (
+    meta.imageType.some((value) => /PROT/.test(value)) ||
+    /protocol/i.test(meta.seriesDescription)
+  );
 }
 
 function phaseOf(description: string): string | null {
