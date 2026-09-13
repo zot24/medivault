@@ -267,6 +267,24 @@ function firstDecimal(raw: string | undefined): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+/**
+ * A frame's RGBA, with any overlay planes burned in — the "frame + overlays
+ * → RGBA" step, factored out so the thumbnail and the viewer render a
+ * secondary-capture page's overlay-only content (e.g. the CT dose sheet, or
+ * a measurement snapshot's drawn line) identically and cannot drift apart.
+ */
+export function renderFrameRgba(
+  frame: DicomFrame,
+  overlays: DicomOverlay[],
+  window?: DicomWindow,
+): Uint8ClampedArray {
+  const rgba = rgbaFromFrame(frame, window);
+  if (overlays.length > 0) {
+    compositeOverlays(rgba, frame.rows, frame.columns, overlays);
+  }
+  return rgba;
+}
+
 export function rgbaFromFrame(
   frame: DicomFrame,
   window?: DicomWindow,
@@ -588,16 +606,30 @@ const MOSTLY_BLACK_THRESHOLD = 0.95;
  * would render more than 95% of its pixels pure black — a sign the preset
  * belongs to a different kind of image (e.g. a dose-sheet/text page carrying
  * a CT windowing preset meant for a much wider dynamic range).
+ *
+ * Always false when the frame has zero dynamic range (every pixel equal —
+ * e.g. a secondary-capture page whose content lives entirely in an overlay
+ * plane, so its pixel data is all zero): there is no "wrong preset" to
+ * recover from by auto-windowing a constant image, so this must not treat
+ * that as the mismatched-preset case.
  */
 export function isMostlyBlackAtStoredWindow(frame: DicomMono16Frame): boolean {
   const slope = frame.rescaleSlope === 0 ? 1 : frame.rescaleSlope;
   const low =
     (frame.windowCenter - frame.windowWidth / 2 - frame.rescaleIntercept) / slope;
   let black = 0;
+  let min = Infinity;
+  let max = -Infinity;
   for (let i = 0; i < frame.pixels.length; i++) {
-    if (frame.pixels[i] <= low) {
+    const value = frame.pixels[i];
+    if (value <= low) {
       black++;
     }
+    if (value < min) min = value;
+    if (value > max) max = value;
+  }
+  if (max <= min) {
+    return false;
   }
   return black / frame.pixels.length > MOSTLY_BLACK_THRESHOLD;
 }

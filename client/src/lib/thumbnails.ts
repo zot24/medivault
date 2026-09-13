@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import {
   autoWindow,
   isMostlyBlackAtStoredWindow,
+  overlaysFromPart10,
   pixelFrameFromPart10,
-  rgbaFromFrame,
+  renderFrameRgba,
   type DicomFrame,
+  type DicomOverlay,
   type DicomWindow,
 } from "@shared/dicom-frame";
 import { thumbnailCacheKey } from "@shared/thumbnail-cache";
@@ -70,7 +72,7 @@ function windowFor(frame: DicomFrame): DicomWindow | undefined {
 }
 
 /** Draws a frame, letterboxed, onto a THUMBNAIL_SIZE square canvas. */
-function drawThumbnail(frame: DicomFrame): string | null {
+function drawThumbnail(frame: DicomFrame, overlays: DicomOverlay[]): string | null {
   const source = document.createElement("canvas");
   source.width = frame.columns;
   source.height = frame.rows;
@@ -79,7 +81,7 @@ function drawThumbnail(frame: DicomFrame): string | null {
     return null;
   }
   const image = sourceContext.createImageData(frame.columns, frame.rows);
-  image.data.set(rgbaFromFrame(frame, windowFor(frame)));
+  image.data.set(renderFrameRgba(frame, overlays, windowFor(frame)));
   sourceContext.putImageData(image, 0, 0);
 
   const scale = THUMBNAIL_SIZE / Math.max(frame.rows, frame.columns);
@@ -145,7 +147,7 @@ export function useThumbnail(documentId: number, position = 0): string | null {
       }
       const bytes = new Uint8Array(await response.arrayBuffer());
       const frame = pixelFrameFromPart10(bytes);
-      return frame ? drawThumbnail(frame) : null;
+      return frame ? drawThumbnail(frame, overlaysFromPart10(bytes)) : null;
     })()
       .catch(() => null)
       .then((result) => {
