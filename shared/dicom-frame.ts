@@ -1,4 +1,4 @@
-import dicomParser from "dicom-parser";
+import dicomParser, { type DataSet } from "dicom-parser";
 import { Decoder } from "jpeg-lossless-decoder-js";
 import { isPart10 } from "./upload-kinds";
 
@@ -128,14 +128,23 @@ export function overlaysFromPart10(bytes: Uint8Array): DicomOverlay[] {
   if (!isPart10(bytes)) {
     return [];
   }
+  let dataSet: DataSet;
   try {
-    const dataSet = dicomParser.parseDicom(bytes);
-    const overlays: DicomOverlay[] = [];
-    for (
-      let group = OVERLAY_GROUP_FIRST;
-      group <= OVERLAY_GROUP_LAST;
-      group += 2
-    ) {
+    dataSet = dicomParser.parseDicom(bytes);
+  } catch {
+    return [];
+  }
+
+  const overlays: DicomOverlay[] = [];
+  for (
+    let group = OVERLAY_GROUP_FIRST;
+    group <= OVERLAY_GROUP_LAST;
+    group += 2
+  ) {
+    // Each plane is read independently: a malformed or truncated plane (bad
+    // rows/columns, a short data element, a corrupt origin) is skipped, but
+    // does not discard the planes that came before or after it.
+    try {
       const prefix = `x${group.toString(16).padStart(4, "0")}`;
       const rows = dataSet.uint16(`${prefix}0010`);
       const columns = dataSet.uint16(`${prefix}0011`);
@@ -154,11 +163,11 @@ export function overlaysFromPart10(bytes: Uint8Array): DicomOverlay[] {
         originColumn,
         bits: unpackOverlayBits(bytes, dataElement, rows * columns),
       });
+    } catch {
+      continue;
     }
-    return overlays;
-  } catch {
-    return [];
   }
+  return overlays;
 }
 
 /** Overlay Origin (60xx,0050) is VR SS: two signed 16-bit values, never text. */
@@ -178,6 +187,12 @@ function unpackOverlayBits(
   dataElement: { dataOffset: number; length: number },
   pixelCount: number,
 ): Uint8Array {
+  const expectedBytes = Math.ceil(pixelCount / 8);
+  if (dataElement.length < expectedBytes) {
+    throw new Error(
+      `overlay data too short: need ${expectedBytes} bytes for ${pixelCount} pixels, got ${dataElement.length}`,
+    );
+  }
   const raw = bytes.subarray(
     dataElement.dataOffset,
     dataElement.dataOffset + dataElement.length,

@@ -94,6 +94,11 @@ export type MiniCtOverlay = {
   originColumn?: number;
   /** One byte per pixel, 0 or 1, row-major. */
   pixels: Uint8Array;
+  /**
+   * Overrides the bytes written for (60xx,3000) instead of packing `pixels`.
+   * Used to build a plane with truncated/corrupt overlay data.
+   */
+  rawOverlayData?: Buffer;
 };
 
 export type MiniCtOptions = {
@@ -113,6 +118,11 @@ export type MiniCtOptions = {
   rescaleSlope?: number;
   /** A single graphics overlay plane at group (6000,eeee). */
   overlay?: MiniCtOverlay;
+  /**
+   * Multiple overlay planes, written at groups 0x6000, 0x6002, ... in order.
+   * Takes precedence over `overlay` when both are given.
+   */
+  overlays?: MiniCtOverlay[];
 };
 
 export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
@@ -181,17 +191,27 @@ export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
     ...(options.rescaleSlope != null
       ? [explicitElement(0x0028, 0x1053, "DS", ds(options.rescaleSlope))]
       : []),
-    ...(options.overlay ? [overlayElements(options.overlay)] : []),
+    ...overlaysFor(options).map((overlay, i) =>
+      overlayElements(overlay, 0x6000 + i * 2),
+    ),
     pixelBytes,
   ]);
 
   return Buffer.concat([Buffer.alloc(PREAMBLE), DICM, fileMeta, dataset]);
 }
 
+function overlaysFor(options: MiniCtOptions): MiniCtOverlay[] {
+  if (options.overlays) {
+    return options.overlays;
+  }
+  return options.overlay ? [options.overlay] : [];
+}
+
 /** Emits the six elements of one graphics overlay plane at group (6000,eeee). */
 function overlayElements(overlay: MiniCtOverlay, group = 0x6000): Buffer {
   const originRow = overlay.originRow ?? 1;
   const originColumn = overlay.originColumn ?? 1;
+  const data = overlay.rawOverlayData ?? packOverlayBits(overlay.pixels);
   return Buffer.concat([
     explicitElement(group, 0x0010, "US", us(overlay.rows)),
     explicitElement(group, 0x0011, "US", us(overlay.columns)),
@@ -199,7 +219,7 @@ function overlayElements(overlay: MiniCtOverlay, group = 0x6000): Buffer {
     explicitElement(group, 0x0050, "SS", ss([originRow, originColumn])),
     explicitElement(group, 0x0100, "US", us(1)),
     explicitElement(group, 0x0102, "US", us(0)),
-    explicitElement(group, 0x3000, "OW", packOverlayBits(overlay.pixels)),
+    explicitElement(group, 0x3000, "OW", data),
   ]);
 }
 

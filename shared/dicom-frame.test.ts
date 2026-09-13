@@ -281,6 +281,29 @@ describe("overlaysFromPart10", () => {
     const [overlay] = overlaysFromPart10(new Uint8Array(bytes));
     expect(overlay).toMatchObject({ originRow: 2, originColumn: 3 });
   });
+
+  it("skips a truncated plane but still returns the valid ones", () => {
+    const validPixels = new Uint8Array(4 * 4);
+    validPixels[1 * 4 + 2] = 1;
+    const bytes = buildMiniCtDicom({
+      overlays: [
+        // Group 0x6000: a normal, valid plane.
+        { rows: 4, columns: 4, pixels: validPixels },
+        // Group 0x6002: declares 4x4 (needs 2 bytes packed) but only
+        // supplies 1 byte of overlay data.
+        {
+          rows: 4,
+          columns: 4,
+          pixels: new Uint8Array(4 * 4),
+          rawOverlayData: Buffer.from([0x00]),
+        },
+      ],
+    });
+
+    const overlays = overlaysFromPart10(new Uint8Array(bytes));
+    expect(overlays).toHaveLength(1);
+    expect(overlays[0].bits[1 * 4 + 2]).toBe(1);
+  });
 });
 
 describe("compositeOverlays", () => {
