@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { documentFileUrl } from "@/lib/owned-file";
 import { FrameCache } from "@/lib/frame-cache";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -11,12 +12,14 @@ import {
 import {
   CT_WINDOW_PRESETS,
   describeUndrawableFrame,
+  multiFrameSourceFromPart10,
   overlaysFromPart10,
   pixelFrameFromPart10,
   renderFrameRgba,
   windowForPreset,
   type DicomFrame,
   type DicomOverlay,
+  type EncapsulatedJpegSource,
 } from "@shared/dicom-frame";
 import {
   nextSliceToLoad,
@@ -43,6 +46,16 @@ const CACHE_BUDGET_BYTES = 512 * 1024 * 1024;
 
 /** How often the current slice advances a phase while cine-ing through the cardiac cycle. */
 const CINE_INTERVAL_MS = 100;
+
+/** Decoded ultrasound cine frame cache budget — one loop's bitmaps at a time (plan 06). */
+const CINE_BITMAP_BUDGET_BYTES = 128 * 1024 * 1024;
+
+type CachedBitmap = {
+  kind: "bitmap";
+  rows: number;
+  columns: number;
+  bitmap: ImageBitmap;
+};
 
 type FileRow = {
   position: number;
@@ -81,6 +94,34 @@ export function loadProgressPercent(loadedInPhase: number, count: number): numbe
     return 0;
   }
   return Math.min(100, (loadedInPhase / count) * 100);
+}
+
+/**
+ * The frame a cine loop should be showing after `elapsedMs` of playback at
+ * `frameRate` fps, looping back to the start once it runs past the last
+ * frame (plan 06 section C).
+ */
+export function cineFrameAtElapsed(
+  elapsedMs: number,
+  frameRate: number,
+  frameCount: number,
+): number {
+  if (frameCount <= 0) {
+    return 0;
+  }
+  const framesElapsed = Math.floor((elapsedMs / 1000) * frameRate);
+  return framesElapsed % frameCount;
+}
+
+/** Draws a decoded ultrasound cine frame — no window/overlay compositing applies to it. */
+function blitBitmap(canvas: HTMLCanvasElement, bitmap: ImageBitmap) {
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return;
+  }
+  context.drawImage(bitmap, 0, 0);
 }
 
 function blitFrame(
@@ -123,6 +164,26 @@ export default function DicomSeriesViewer({
   // Positions ever loaded for this document, independent of whether the
   // bounded frame cache has since evicted them -- see `countLoaded`.
   const loadedPositionsRef = useRef<Set<number>>(new Set());
+  // One encapsulated JPEG source per multi-frame ultrasound position, kept
+  // alongside (not inside) cacheRef: pixelFrameFromPart10 returns null for
+  // these, so they never occupy a CachedFrame slot (plan 06).
+  const cineSourcesRef = useRef<Map<number, EncapsulatedJpegSource>>(new Map());
+  // Decoded bitmaps for the *currently open* cine loop only; cleared (and
+  // each bitmap closed) whenever the current position changes.
+  const cineBitmapsRef = useRef(
+    new FrameCache<CachedBitmap>(CINE_BITMAP_BUDGET_BYTES, {
+      dispose: (entry) => entry.bitmap.close(),
+    }),
+  );
+  const cinePreloadTokenRef = useRef(0);
+  // The position cine state was last reset for, and the position (if any)
+  // preloading has already started for — so the preload effect below reacts
+  // exactly once to a real position change and exactly once to that
+  // position's source becoming available, not on every unrelated
+  // background-load tick (`loaded` ticks constantly while a CT volume
+  // streams in).
+  const cineResetPositionRef = useRef<number | null>(null);
+  const cinePreloadStartedRef = useRef<number | null>(null);
 
   const [positions, setPositions] = useState<number[]>([]);
   const [phases, setPhases] = useState<Phase[] | null>(null);
@@ -133,6 +194,11 @@ export default function DicomSeriesViewer({
   const [preset, setPreset] = useState("stored");
   const [showOverlays, setShowOverlays] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Ultrasound cine playback (plan 06) — independent of the CT phase-cine
+  // state above, which cines across *positions*, not frames of one file.
+  const [cineFrameIndex, setCineFrameIndex] = useState(0);
+  const [cineLoopPlaying, setCineLoopPlaying] = useState(false);
+  const [cinePreloaded, setCinePreloaded] = useState(0);
   const documentId = focus?.id ?? null;
 
   sliceIndexRef.current = sliceIndex;
@@ -154,7 +220,10 @@ export default function DicomSeriesViewer({
     return distance <= Math.floor(framesInBudget / 2);
   }
 
-  async function loadOne(position: number, signal: AbortSignal): Promise<CachedFrame> {
+  async function loadOne(
+    position: number,
+    signal: AbortSignal,
+  ): Promise<CachedFrame | EncapsulatedJpegSource> {
     const response = await fetch(documentFileUrl(documentId!, position), {
       credentials: "include",
       signal,
@@ -164,12 +233,18 @@ export default function DicomSeriesViewer({
     }
     const bytes = new Uint8Array(await response.arrayBuffer());
     const frame = pixelFrameFromPart10(bytes);
-    if (!frame) {
-      throw new Error(describeUndrawableFrame(bytes));
+    if (frame) {
+      frameCostRef.current =
+        frame.rows * frame.columns * (frame.kind === "mono16" ? 2 : 3);
+      return { ...frame, overlays: overlaysFromPart10(bytes) };
     }
-    frameCostRef.current =
-      frame.rows * frame.columns * (frame.kind === "mono16" ? 2 : 3);
-    return { ...frame, overlays: overlaysFromPart10(bytes) };
+    // JPEG Baseline multi-frame ultrasound (plan 06): not a pixelFrameFromPart10
+    // shape, but every frame is a complete JPEG the browser decodes itself.
+    const cine = multiFrameSourceFromPart10(bytes);
+    if (cine) {
+      return cine;
+    }
+    throw new Error(describeUndrawableFrame(bytes));
   }
 
   function protectAroundCurrentSlice() {
@@ -202,6 +277,7 @@ export default function DicomSeriesViewer({
         const absolute = list[candidate];
         return (
           cacheRef.current.has(absolute) ||
+          cineSourcesRef.current.has(absolute) ||
           inflightRef.current.has(absolute) ||
           !isWanted(candidate)
         );
@@ -216,7 +292,11 @@ export default function DicomSeriesViewer({
         if (cancelledRef.current) {
           return;
         }
-        cacheRef.current.set(absolute, entry);
+        if (entry.kind === "jpeg-frames") {
+          cineSourcesRef.current.set(absolute, entry);
+        } else {
+          cacheRef.current.set(absolute, entry);
+        }
         loadedPositionsRef.current.add(absolute);
         setLoaded((current) => current + 1);
       } catch (caught: unknown) {
@@ -237,6 +317,10 @@ export default function DicomSeriesViewer({
     drawnRef.current = null;
     inflightRef.current = new Set();
     loadedPositionsRef.current = new Set();
+    cineSourcesRef.current = new Map();
+    cineBitmapsRef.current.clear();
+    cineResetPositionRef.current = null;
+    cinePreloadStartedRef.current = null;
     activeWorkersRef.current = 0;
     cancelledRef.current = false;
     setPositions([]);
@@ -247,6 +331,9 @@ export default function DicomSeriesViewer({
     setCinePlaying(false);
     setShowOverlays(true);
     setError(null);
+    setCineFrameIndex(0);
+    setCineLoopPlaying(false);
+    setCinePreloaded(0);
     if (!open || documentId == null) {
       return;
     }
@@ -285,6 +372,7 @@ export default function DicomSeriesViewer({
       cancelledRef.current = true;
       controller.abort();
       cacheRef.current.clear();
+      cineBitmapsRef.current.clear();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, documentId]);
@@ -328,6 +416,99 @@ export default function DicomSeriesViewer({
     return () => clearInterval(id);
   }, [cinePlaying, phases]);
 
+  // Ultrasound cine playback (plan 06): as soon as the current position
+  // resolves to a jpeg-frames source, preload every one of its frames
+  // (createImageBitmap on each already-downloaded fragment — no extra
+  // network fetch) so Play never stalls mid-loop. Resets only when the
+  // current position itself changes, not on every unrelated background load.
+  useEffect(() => {
+    const absolute = positions[sliceIndex] ?? null;
+    if (absolute !== cineResetPositionRef.current) {
+      cineResetPositionRef.current = absolute;
+      cinePreloadStartedRef.current = null;
+      cineBitmapsRef.current.clear();
+      setCineFrameIndex(0);
+      setCineLoopPlaying(false);
+      setCinePreloaded(0);
+    }
+    const source = absolute == null ? undefined : cineSourcesRef.current.get(absolute);
+    if (!source || cinePreloadStartedRef.current === absolute) {
+      return;
+    }
+    cinePreloadStartedRef.current = absolute;
+    const token = ++cinePreloadTokenRef.current;
+    let cancelled = false;
+    (async () => {
+      for (let index = 0; index < source.frameCount; index += 1) {
+        if (cancelled || cinePreloadTokenRef.current !== token) {
+          return;
+        }
+        const fragment = source.frame(index);
+        const bitmap = await createImageBitmap(
+          new Blob([fragment], { type: "image/jpeg" }),
+        );
+        if (cancelled || cinePreloadTokenRef.current !== token) {
+          bitmap.close();
+          return;
+        }
+        cineBitmapsRef.current.set(index, {
+          kind: "bitmap",
+          rows: source.rows,
+          columns: source.columns,
+          bitmap,
+        });
+        setCinePreloaded((count) => count + 1);
+      }
+    })().catch(() => {
+      if (!cancelled) {
+        setError("Could not decode this cine loop.");
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sliceIndex, positions, loaded]);
+
+  // Advances the current frame by elapsed time x the loop's own frame rate,
+  // looping. Preloading (above) guarantees every bitmap it visits is ready.
+  useEffect(() => {
+    if (!cineLoopPlaying) {
+      return;
+    }
+    const absolute = positions[sliceIndex];
+    const source = absolute == null ? undefined : cineSourcesRef.current.get(absolute);
+    if (!source || !source.frameRate || source.frameCount < 2) {
+      setCineLoopPlaying(false);
+      return;
+    }
+    const frameRate = source.frameRate;
+    const frameCount = source.frameCount;
+    const start = performance.now();
+    let raf: number;
+    const tick = (now: number) => {
+      setCineFrameIndex(cineFrameAtElapsed(now - start, frameRate, frameCount));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [cineLoopPlaying, sliceIndex, positions]);
+
+  // Draws the current cine frame once its bitmap has been preloaded.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const absolute = positions[sliceIndex];
+    const hasCine = absolute != null && cineSourcesRef.current.has(absolute);
+    if (!canvas || !hasCine) {
+      return;
+    }
+    const entry = cineBitmapsRef.current.get(cineFrameIndex);
+    if (!entry) {
+      return;
+    }
+    blitBitmap(canvas, entry.bitmap);
+  }, [cineFrameIndex, sliceIndex, positions, cinePreloaded]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const absolute = positions[sliceIndex];
@@ -351,6 +532,8 @@ export default function DicomSeriesViewer({
 
   const currentAbsolute = positions[sliceIndex];
   const current = currentAbsolute == null ? undefined : cacheRef.current.get(currentAbsolute);
+  const currentCine =
+    currentAbsolute == null ? undefined : cineSourcesRef.current.get(currentAbsolute);
   const isMono = current?.kind === "mono16";
   const hasOverlays = (current?.overlays.length ?? 0) > 0;
   const count = positions.length;
@@ -364,9 +547,15 @@ export default function DicomSeriesViewer({
   const loadedInPhase = countLoaded(positions, loadedPositionsRef.current);
   const loading = count > 0 && loadedInPhase < count;
   const single = count === 1;
+  const isCinePlayable = !!currentCine && currentCine.frameRate != null && currentCine.frameCount > 1;
+  const cineLoading = !!currentCine && cinePreloaded < currentCine.frameCount;
+  const cineFrameLabel = currentCine ? `${cineFrameIndex + 1} / ${currentCine.frameCount}` : "";
+  const hasDrawnContent = current !== undefined || (currentCine !== undefined && cinePreloaded > 0);
 
   const step = (delta: number) =>
     setSliceIndex((value) => stepSliceIndex(value, delta, count));
+  const stepCineFrame = (delta: number) =>
+    setCineFrameIndex((value) => stepSliceIndex(value, delta, currentCine?.frameCount ?? 0));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -383,15 +572,32 @@ export default function DicomSeriesViewer({
           if (event.key === " " && phases && phases.length >= 2) {
             event.preventDefault();
             setCinePlaying((playing) => !playing);
+            return;
+          }
+          // Arrow keys / space bar step or play the current cine loop's
+          // frames when there's no position slider competing for them
+          // (a lone cine record — see shared/dicom-frame.ts, plan 06).
+          if (currentCine && currentCine.frameCount > 1) {
+            if (delta != null) {
+              event.preventDefault();
+              stepCineFrame(delta);
+              return;
+            }
+            if (event.key === " ") {
+              event.preventDefault();
+              setCineLoopPlaying((playing) => (playing ? false : !cineLoading));
+            }
           }
         }}
       >
         <DialogHeader>
           <DialogTitle>{focus?.title ?? "DICOM series"}</DialogTitle>
           <DialogDescription>
-            {single
-              ? "Single image."
-              : "Stay in this dialog. Use the slider, the mouse wheel, or the arrow keys to move through slices. Space bar cines through phases."}
+            {isCinePlayable
+              ? "Cine loop. Press play, or use the frame slider / arrow keys / space bar to scrub and play."
+              : single
+                ? "Single image."
+                : "Stay in this dialog. Use the slider, the mouse wheel, or the arrow keys to move through slices. Space bar cines through phases."}
           </DialogDescription>
         </DialogHeader>
         {error ? (
@@ -433,7 +639,7 @@ export default function DicomSeriesViewer({
                   step(event.deltaY > 0 ? 1 : -1);
                 }}
               />
-              {!current && (
+              {!hasDrawnContent && (
                 <p
                   className="absolute inset-0 flex items-center justify-center text-sm text-white/70"
                   data-testid="dicom-viewer-loading"
@@ -442,6 +648,58 @@ export default function DicomSeriesViewer({
                 </p>
               )}
             </div>
+            {currentCine && currentCine.frameCount > 1 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-4">
+                  <label className="text-sm text-foreground-muted">
+                    Frame{" "}
+                    <span data-testid="dicom-cine-frame-index">{cineFrameLabel}</span>
+                    {cineLoading && (
+                      <span
+                        className="ml-2 text-foreground-subtle"
+                        data-testid="dicom-cine-loading"
+                      >
+                        · loading {cinePreloaded} / {currentCine.frameCount}
+                      </span>
+                    )}
+                  </label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!isCinePlayable || cineLoading}
+                    onClick={() =>
+                      setCineLoopPlaying((playing) => (playing ? false : !cineLoading))
+                    }
+                    data-testid="dicom-play"
+                  >
+                    {cineLoopPlaying ? "Pause" : "Play"}
+                  </Button>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(currentCine.frameCount - 1, 0)}
+                  value={cineFrameIndex}
+                  onChange={(event) => {
+                    setCineLoopPlaying(false);
+                    setCineFrameIndex(Number(event.target.value));
+                  }}
+                  className="w-full"
+                  data-testid="dicom-frame-slider"
+                />
+                {cineLoading && (
+                  <div className="h-1 w-full rounded bg-surface-1" aria-hidden="true">
+                    <div
+                      className="h-1 rounded bg-primary transition-[width]"
+                      style={{
+                        width: `${loadProgressPercent(cinePreloaded, currentCine.frameCount)}%`,
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
             <div className="flex items-center justify-between gap-4">
               <label
                 className="text-sm text-foreground-muted"

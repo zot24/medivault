@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { countLoaded, loadProgressPercent } from "./dicom-series-viewer";
+import { cineFrameAtElapsed, countLoaded, loadProgressPercent } from "./dicom-series-viewer";
 import { FrameCache } from "@/lib/frame-cache";
 
 describe("countLoaded", () => {
@@ -46,5 +46,25 @@ describe("loadProgressPercent", () => {
 
   it("returns 0 when there are no positions", () => {
     expect(loadProgressPercent(0, 0)).toBe(0);
+  });
+});
+
+describe("cineFrameAtElapsed", () => {
+  it("stays on frame 0 with no elapsed time", () => {
+    expect(cineFrameAtElapsed(0, 30, 96)).toBe(0);
+  });
+
+  it("advances by elapsed time x frame rate", () => {
+    // 500ms at 30fps = 15 frames in.
+    expect(cineFrameAtElapsed(500, 30, 96)).toBe(15);
+  });
+
+  it("loops back to the start past the last frame", () => {
+    // 96 frames at 30fps is 3200ms/loop; 3300ms is 100ms (3 frames) into loop 2.
+    expect(cineFrameAtElapsed(3300, 30, 96)).toBe(3);
+  });
+
+  it("is always 0 for a single-frame source", () => {
+    expect(cineFrameAtElapsed(5000, 30, 1)).toBe(0);
   });
 });
