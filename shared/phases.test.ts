@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectPhases, type PhaseSourceFile } from "./phases";
+import { detectPhases, type PhaseDetectionResult, type PhaseSourceFile } from "./phases";
 
 function file(overrides: Partial<PhaseSourceFile> & Pick<PhaseSourceFile, "position">): PhaseSourceFile {
   return {
@@ -48,6 +48,53 @@ describe("detectPhases", () => {
     result?.phases.forEach((phase, index) => {
       expect(phase.positions).toEqual([index * 3, index * 3 + 1, index * 3 + 2]);
     });
+  });
+
+  it("groups by instanceNumber, not arrival order, when a CD folder's un-padded names shuffle upload order", () => {
+    // A phase-major series (instanceNumber 1..12, 4 phases of 3 slices,
+    // slice location cycling 30/20/10 within each phase).
+    const locations = [30, 20, 10];
+    const rows = Array.from({ length: 12 }, (_, index) => ({
+      instanceNumber: index + 1,
+      sliceLocation: locations[index % locations.length],
+    }));
+
+    // Ordered upload: arrival position equals instance order.
+    const orderedFiles: PhaseSourceFile[] = rows.map((row, index) =>
+      file({ position: index, instanceNumber: row.instanceNumber, sliceLocation: row.sliceLocation }),
+    );
+
+    // Same series read from a folder named IM1, IM2, ..., IM12: lexical
+    // filename order is 1, 10, 11, 12, 2, 3, 4, ..., 9, so the upload
+    // dialog assigns arrival positions in that scrambled order instead of
+    // instance order.
+    const lexicalInstanceOrder = [1, 10, 11, 12, 2, 3, 4, 5, 6, 7, 8, 9];
+    const shuffledFiles: PhaseSourceFile[] = lexicalInstanceOrder.map((instanceNumber, position) => {
+      const row = rows.find((candidate) => candidate.instanceNumber === instanceNumber)!;
+      return file({ position, instanceNumber, sliceLocation: row.sliceLocation });
+    });
+
+    const orderedResult = detectPhases(orderedFiles);
+    const shuffledResult = detectPhases(shuffledFiles);
+
+    // Compare by instanceNumber rather than position, since arrival
+    // position (and so which position lands in which phase) legitimately
+    // differs between the two upload orders -- what must match is which
+    // *slices* end up grouped into which phase, and in what order.
+    const byInstanceNumber = (
+      result: PhaseDetectionResult | null,
+      files: PhaseSourceFile[],
+    ) =>
+      result?.phases.map((phase) =>
+        phase.positions.map(
+          (position) => files.find((candidate) => candidate.position === position)!.instanceNumber,
+        ),
+      );
+
+    expect(shuffledResult?.phases).toHaveLength(4);
+    expect(byInstanceNumber(shuffledResult, shuffledFiles)).toEqual(
+      byInstanceNumber(orderedResult, orderedFiles),
+    );
   });
 
   it("reorders a phase's slices head-first by descending slice location", () => {

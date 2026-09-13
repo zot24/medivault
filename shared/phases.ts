@@ -88,12 +88,20 @@ function detectFromSliceLocation(files: PhaseSourceFile[]): PhaseDetectionResult
     return null;
   }
 
-  // Files arrive in upload order, which for these series is phase-major:
-  // consecutive runs of `locationCount` files are one phase.
-  const byUploadOrder = [...files].sort((a, b) => a.position - b.position);
+  // Phase-major means consecutive runs of `locationCount` files (by instance
+  // number) are one phase -- but files don't necessarily *arrive* in that
+  // order: a CD folder with un-padded names (IM1, IM2, ..., IM11) lists in
+  // lexical order, which the upload dialog then reads and assigns positions
+  // in. Sort by instanceNumber (falling back to arrival position when it's
+  // missing) before slicing into runs, rather than trusting arrival order.
+  const bySeriesOrder = [...files].sort((a, b) => {
+    const aKey = a.instanceNumber ?? a.position;
+    const bKey = b.instanceNumber ?? b.position;
+    return aKey - bKey;
+  });
   const phases: Phase[] = [];
   for (let index = 0; index < phaseCount; index += 1) {
-    const group = byUploadOrder.slice(
+    const group = bySeriesOrder.slice(
       index * locationCount,
       (index + 1) * locationCount,
     );
