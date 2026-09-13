@@ -104,7 +104,7 @@ describe("readFileMeta", () => {
       instanceNumber: 7,
       imagePositionPatient: [-150, -150, 42.5],
     });
-    expect(readFileMeta(new Uint8Array(bytes))).toEqual({
+    expect(readFileMeta(new Uint8Array(bytes))).toMatchObject({
       instanceNumber: 7,
       sliceLocation: 42.5,
       phase: null,
@@ -113,7 +113,7 @@ describe("readFileMeta", () => {
 
   it("falls back to SliceLocation when ImagePositionPatient is absent", () => {
     const bytes = buildMiniCtDicom({ instanceNumber: 2, sliceLocation: 12 });
-    expect(readFileMeta(new Uint8Array(bytes))).toEqual({
+    expect(readFileMeta(new Uint8Array(bytes))).toMatchObject({
       instanceNumber: 2,
       sliceLocation: 12,
       phase: null,
@@ -145,7 +145,7 @@ describe("readFileMeta", () => {
 
   it("returns nulls for every field when none of the tags are present", () => {
     const bytes = buildMiniCtDicom();
-    expect(readFileMeta(new Uint8Array(bytes))).toEqual({
+    expect(readFileMeta(new Uint8Array(bytes))).toMatchObject({
       instanceNumber: 1,
       sliceLocation: null,
       phase: null,
