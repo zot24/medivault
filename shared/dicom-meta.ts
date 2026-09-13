@@ -1,4 +1,4 @@
-import dicomParser from "dicom-parser";
+import dicomParser, { type DataSet } from "dicom-parser";
 import { isPart10 } from "./upload-kinds";
 
 /**
@@ -74,6 +74,65 @@ export function readSeriesMeta(bytes: Uint8Array): DicomSeriesMeta | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Per-file position metadata used for phase detection (shared/phases.ts).
+ * Read from every file of a series, unlike DicomSeriesMeta which is read
+ * only from the first.
+ */
+export type DicomFileMeta = {
+  instanceNumber: number | null; // (0020,0013)
+  sliceLocation: number | null; // third value of (0020,0032), else (0020,1041)
+  phase: number | null; // (0020,9241) %, else (0018,1060) ms
+};
+
+export function readFileMeta(bytes: Uint8Array): DicomFileMeta | null {
+  if (!isPart10(bytes)) {
+    return null;
+  }
+  try {
+    const dataSet = dicomParser.parseDicom(bytes);
+    return {
+      instanceNumber: firstInt(dataSet.string("x00200013")),
+      sliceLocation: sliceLocationOf(dataSet),
+      phase: phaseOfDataSet(dataSet),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function sliceLocationOf(dataSet: DataSet): number | null {
+  const fromPosition = nthFloat(dataSet.string("x00200032"), 2);
+  if (fromPosition != null) {
+    return fromPosition;
+  }
+  return firstFloat(dataSet.string("x00201041"));
+}
+
+function phaseOfDataSet(dataSet: DataSet): number | null {
+  const nominalPercentage = firstFloat(dataSet.string("x00209241"));
+  if (nominalPercentage != null) {
+    return nominalPercentage;
+  }
+  return firstFloat(dataSet.string("x00181060"));
+}
+
+/**
+ * Nth (0-based) value of a multi-valued DS/IS element. Like firstFloat, a
+ * present-but-blank token means "no value", not zero.
+ */
+function nthFloat(raw: string | undefined, index: number): number | null {
+  if (!raw) {
+    return null;
+  }
+  const token = (raw.split("\\")[index] ?? "").trim();
+  if (token === "") {
+    return null;
+  }
+  const value = Number(token);
+  return Number.isFinite(value) ? value : null;
 }
 
 function trimmed(raw: string | undefined): string {
