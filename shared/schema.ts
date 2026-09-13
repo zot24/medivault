@@ -79,6 +79,10 @@ export const documentFiles = pgTable(
     filePath: varchar("file_path").notNull(),
     fileSize: integer("file_size").notNull(),
     mimeType: varchar("mime_type").notNull(),
+    // (0008,0018) of a DICOM file; null for non-DICOM files. Lets an SR's
+    // IMAGE content items resolve to a sibling record's file — see
+    // shared/dicom-sr.ts.
+    sopInstanceUid: varchar("sop_instance_uid"),
     // Per-file DICOM position metadata (shared/dicom-meta.ts readFileMeta),
     // null for non-DICOM files. Used by shared/phases.ts to detect a
     // multi-phase series (e.g. 10 cardiac phases x 580 slices).

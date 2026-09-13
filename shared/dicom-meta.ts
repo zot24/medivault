@@ -77,11 +77,13 @@ export function readSeriesMeta(bytes: Uint8Array): DicomSeriesMeta | null {
 }
 
 /**
- * Per-file position metadata used for phase detection (shared/phases.ts).
- * Read from every file of a series, unlike DicomSeriesMeta which is read
- * only from the first.
+ * Per-file metadata, read from every file of a series (unlike DicomSeriesMeta,
+ * which is read only from the first). Position fields drive phase detection
+ * (shared/phases.ts); sopInstanceUid lets an SR's IMAGE content items resolve
+ * to a sibling record's file (shared/dicom-sr.ts).
  */
 export type DicomFileMeta = {
+  sopInstanceUid: string | null; // (0008,0018)
   instanceNumber: number | null; // (0020,0013)
   sliceLocation: number | null; // third value of (0020,0032), else (0020,1041)
   phase: number | null; // (0020,9241) %, else (0018,1060) ms
@@ -93,7 +95,9 @@ export function readFileMeta(bytes: Uint8Array): DicomFileMeta | null {
   }
   try {
     const dataSet = dicomParser.parseDicom(bytes);
+    const sopInstanceUid = dataSet.string("x00080018");
     return {
+      sopInstanceUid: sopInstanceUid ? trimmed(sopInstanceUid) : null,
       instanceNumber: firstInt(dataSet.string("x00200013")),
       sliceLocation: sliceLocationOf(dataSet),
       phase: phaseOfDataSet(dataSet),
@@ -101,6 +105,11 @@ export function readFileMeta(bytes: Uint8Array): DicomFileMeta | null {
   } catch {
     return null;
   }
+}
+
+/** Just the SOPInstanceUID (0008,0018) of one file; null when unreadable. */
+export function readSopInstanceUid(bytes: Uint8Array): string | null {
+  return readFileMeta(bytes)?.sopInstanceUid ?? null;
 }
 
 function sliceLocationOf(dataSet: DataSet): number | null {

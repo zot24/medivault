@@ -24,6 +24,7 @@ import {
 import type { MedicalDocument } from "@shared/schema";
 import ShareDialog from "@/components/share-dialog";
 import DicomSeriesViewer from "@/components/dicom-series-viewer";
+import SrReportView from "@/components/sr-report-view";
 import TypeBadge from "@/components/type-badge";
 import { ownedFileUrl } from "@/lib/owned-file";
 import { isDicomDocument, localDate, sliceCountLabel } from "@shared/upload-kinds";
@@ -56,6 +57,7 @@ export default function DocumentCard({
 
   const style = getDocumentTypeStyle(medicalDocument.documentType);
   const visibleTags = medicalDocument.tags ?? [];
+  const isSrReport = medicalDocument.dicomMeta?.modality === "SR";
 
   const handleDownload = () => {
     const link = window.document.createElement("a");
@@ -232,11 +234,19 @@ export default function DocumentCard({
         open={shareOpen}
         onOpenChange={setShareOpen}
       />
-      <DicomSeriesViewer
-        document={medicalDocument}
-        open={viewerOpen}
-        onOpenChange={setViewerOpen}
-      />
+      {isSrReport ? (
+        <SrReportView
+          document={medicalDocument}
+          open={viewerOpen}
+          onOpenChange={setViewerOpen}
+        />
+      ) : (
+        <DicomSeriesViewer
+          document={medicalDocument}
+          open={viewerOpen}
+          onOpenChange={setViewerOpen}
+        />
+      )}
     </Card>
   );
 }

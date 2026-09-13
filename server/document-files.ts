@@ -6,7 +6,7 @@ import {
   type InsertMedicalDocument,
   type MedicalDocument,
 } from "@shared/schema";
-import { readFileMeta, readSeriesMeta } from "@shared/dicom-meta";
+import { readFileMeta, readSeriesMeta, readSopInstanceUid } from "@shared/dicom-meta";
 import {
   DICOM_MIME,
   acceptedExtensions,
@@ -119,7 +119,8 @@ function fileRows(
   files: ClassifiedFile[],
 ): InsertDocumentFile[] {
   return files.map((file, index) => {
-    const fileMeta = file.mimeType === DICOM_MIME ? readFileMeta(file.bytes) : null;
+    const isDicom = file.mimeType === DICOM_MIME;
+    const fileMeta = isDicom ? readFileMeta(file.bytes) : null;
     return {
       documentId,
       position: startPosition + index,
@@ -127,6 +128,7 @@ function fileRows(
       filePath: file.key,
       fileSize: file.bytes.length,
       mimeType: file.mimeType,
+      sopInstanceUid: isDicom ? readSopInstanceUid(file.bytes) : null,
       instanceNumber: fileMeta?.instanceNumber ?? null,
       sliceLocation: fileMeta?.sliceLocation ?? null,
       phase: fileMeta?.phase ?? null,

@@ -55,6 +55,7 @@ function memoryRecords(rows: MedicalDocument[] = []) {
           filePath: input.filePath,
           fileSize: input.fileSize,
           mimeType: input.mimeType,
+          sopInstanceUid: input.sopInstanceUid ?? null,
           instanceNumber: input.instanceNumber ?? null,
           sliceLocation: input.sliceLocation ?? null,
           phase: input.phase ?? null,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileMeta, readSeriesMeta, seriesGroup, seriesLabel } from "./dicom-meta";
+import { readFileMeta, readSeriesMeta, readSopInstanceUid, seriesGroup, seriesLabel } from "./dicom-meta";
 import { buildMiniCtDicom, buildMiniScRgbDicom } from "./mini-ct-dicom";
 
 const EXPECTED_KEYS = [
@@ -104,7 +104,7 @@ describe("readFileMeta", () => {
       instanceNumber: 7,
       imagePositionPatient: [-150, -150, 42.5],
     });
-    expect(readFileMeta(new Uint8Array(bytes))).toEqual({
+    expect(readFileMeta(new Uint8Array(bytes))).toMatchObject({
       instanceNumber: 7,
       sliceLocation: 42.5,
       phase: null,
@@ -113,7 +113,7 @@ describe("readFileMeta", () => {
 
   it("falls back to SliceLocation when ImagePositionPatient is absent", () => {
     const bytes = buildMiniCtDicom({ instanceNumber: 2, sliceLocation: 12 });
-    expect(readFileMeta(new Uint8Array(bytes))).toEqual({
+    expect(readFileMeta(new Uint8Array(bytes))).toMatchObject({
       instanceNumber: 2,
       sliceLocation: 12,
       phase: null,
@@ -145,7 +145,7 @@ describe("readFileMeta", () => {
 
   it("returns nulls for every field when none of the tags are present", () => {
     const bytes = buildMiniCtDicom();
-    expect(readFileMeta(new Uint8Array(bytes))).toEqual({
+    expect(readFileMeta(new Uint8Array(bytes))).toMatchObject({
       instanceNumber: 1,
       sliceLocation: null,
       phase: null,
@@ -329,5 +329,18 @@ describe("seriesGroup", () => {
     ["other (fallback)", meta({ modality: "OT" }), "other"],
   ])("%s", (_name, input, expected) => {
     expect(seriesGroup(input)).toBe(expected);
+  });
+});
+
+describe("readSopInstanceUid", () => {
+  it("reads the SOP instance UID of a generated CT slice", () => {
+    const bytes = buildMiniCtDicom({ instanceNumber: 7 });
+    expect(readSopInstanceUid(new Uint8Array(bytes))).toBe(
+      "1.2.826.0.1.3680043.8.498.spike.7",
+    );
+  });
+
+  it("returns null for a non-Part-10 buffer", () => {
+    expect(readSopInstanceUid(new Uint8Array([1, 2, 3]))).toBeNull();
   });
 });

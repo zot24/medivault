@@ -74,6 +74,7 @@ function memoryDocuments(rows: MedicalDocument[] = []) {
           filePath: input.filePath,
           fileSize: input.fileSize,
           mimeType: input.mimeType,
+          sopInstanceUid: input.sopInstanceUid ?? null,
           createdAt: null,
         }));
       },
