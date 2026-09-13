@@ -580,3 +580,92 @@ export const CT_WINDOW_PRESETS: readonly CtWindowPreset[] = [
 export function windowForPreset(id: string): DicomWindow | undefined {
   return CT_WINDOW_PRESETS.find((preset) => preset.id === id)?.window;
 }
+
+const MOSTLY_BLACK_THRESHOLD = 0.95;
+
+/**
+ * True when a frame's own stored window (`windowCenter`/`windowWidth`)
+ * would render more than 95% of its pixels pure black — a sign the preset
+ * belongs to a different kind of image (e.g. a dose-sheet/text page carrying
+ * a CT windowing preset meant for a much wider dynamic range).
+ */
+export function isMostlyBlackAtStoredWindow(frame: DicomMono16Frame): boolean {
+  const slope = frame.rescaleSlope === 0 ? 1 : frame.rescaleSlope;
+  const low =
+    (frame.windowCenter - frame.windowWidth / 2 - frame.rescaleIntercept) / slope;
+  let black = 0;
+  for (let i = 0; i < frame.pixels.length; i++) {
+    if (frame.pixels[i] <= low) {
+      black++;
+    }
+  }
+  return black / frame.pixels.length > MOSTLY_BLACK_THRESHOLD;
+}
+
+const AUTO_WINDOW_BINS = 256;
+const AUTO_WINDOW_LOW_PERCENTILE = 0.01;
+const AUTO_WINDOW_HIGH_PERCENTILE = 0.99;
+
+/**
+ * A window (in the same rescaled units as `windowCenter`/`windowWidth`)
+ * stretched to the frame's own 1st-99th percentile pixel range, via a
+ * 256-bin histogram of its stored values. Used as a fallback when the
+ * file's stored window doesn't match its actual pixel data (see
+ * `isMostlyBlackAtStoredWindow`).
+ */
+export function autoWindow(frame: DicomMono16Frame): DicomWindow {
+  const slope = frame.rescaleSlope === 0 ? 1 : frame.rescaleSlope;
+  const pixels = frame.pixels;
+
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < pixels.length; i++) {
+    if (pixels[i] < min) min = pixels[i];
+    if (pixels[i] > max) max = pixels[i];
+  }
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) {
+    return { center: frame.windowCenter, width: frame.windowWidth };
+  }
+
+  const span = max - min;
+  const histogram = new Uint32Array(AUTO_WINDOW_BINS);
+  for (let i = 0; i < pixels.length; i++) {
+    const bin = Math.min(
+      AUTO_WINDOW_BINS - 1,
+      Math.floor(((pixels[i] - min) / span) * AUTO_WINDOW_BINS),
+    );
+    histogram[bin]++;
+  }
+
+  const total = pixels.length;
+  const lowTarget = total * AUTO_WINDOW_LOW_PERCENTILE;
+  const highTarget = total * AUTO_WINDOW_HIGH_PERCENTILE;
+
+  let cumulative = 0;
+  let lowBin = 0;
+  for (; lowBin < AUTO_WINDOW_BINS; lowBin++) {
+    cumulative += histogram[lowBin];
+    if (cumulative > lowTarget) {
+      break;
+    }
+  }
+
+  cumulative = 0;
+  let highBin = AUTO_WINDOW_BINS - 1;
+  for (; highBin >= 0; highBin--) {
+    cumulative += histogram[highBin];
+    if (cumulative > total - highTarget) {
+      break;
+    }
+  }
+
+  const lowStored = min + (lowBin / AUTO_WINDOW_BINS) * span;
+  const highStored = min + ((highBin + 1) / AUTO_WINDOW_BINS) * span;
+  const lowRescaled = lowStored * slope + frame.rescaleIntercept;
+  const highRescaled = highStored * slope + frame.rescaleIntercept;
+
+  return {
+    center: (lowRescaled + highRescaled) / 2,
+    width: Math.max(highRescaled - lowRescaled, 1),
+  };
+}

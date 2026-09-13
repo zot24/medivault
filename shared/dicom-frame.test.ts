@@ -1,12 +1,15 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
+  autoWindow,
   compositeOverlays,
   describeUndrawableFrame,
+  isMostlyBlackAtStoredWindow,
   overlaysFromPart10,
   pixelFrameFromPart10,
   rgbaFromFrame,
   windowForPreset,
+  type DicomMono16Frame,
 } from "./dicom-frame";
 import {
   SOP_CT_IMAGE,
@@ -231,6 +234,55 @@ describe("CT_WINDOW_PRESETS", () => {
     expect(windowForPreset("cta")).toEqual({ center: 300, width: 800 });
     expect(windowForPreset("stored")).toBeUndefined();
     expect(windowForPreset("nope")).toBeUndefined();
+  });
+});
+
+describe("isMostlyBlackAtStoredWindow", () => {
+  it("is false for a frame whose stored window covers its pixel range", () => {
+    const frame = pixelFrameFromPart10(
+      new Uint8Array(buildMiniCtDicom()),
+    ) as DicomMono16Frame;
+    expect(isMostlyBlackAtStoredWindow(frame)).toBe(false);
+  });
+
+  it("is true when the stored window sits far above the frame's actual pixel range", () => {
+    // A dose-sheet/text page: real pixel values cluster in a narrow band,
+    // but the file's own window preset (meant for a different series) is
+    // centered well above it, so every pixel clamps to black.
+    const pixels = Uint16Array.from({ length: 16 * 16 }, (_, i) => 800 + (i % 200));
+    const bytes = buildMiniCtDicom({ pixels, windowCenter: 5000, windowWidth: 1000 });
+    const frame = pixelFrameFromPart10(new Uint8Array(bytes)) as DicomMono16Frame;
+    expect(isMostlyBlackAtStoredWindow(frame)).toBe(true);
+  });
+});
+
+describe("autoWindow", () => {
+  it("stretches the window to the frame's 1st-99th percentile pixel range", () => {
+    const pixels = Uint16Array.from({ length: 16 * 16 }, (_, i) => 800 + (i % 200));
+    const bytes = buildMiniCtDicom({ pixels, windowCenter: 5000, windowWidth: 1000 });
+    const frame = pixelFrameFromPart10(new Uint8Array(bytes)) as DicomMono16Frame;
+
+    const window = autoWindow(frame);
+    const rgba = rgbaFromFrame(frame, window);
+
+    // The stored window mapped every pixel to black; the stretched window
+    // recovers visible contrast across the frame's real value range.
+    const grayValues = new Set<number>();
+    for (let i = 0; i < rgba.length; i += 4) {
+      grayValues.add(rgba[i]);
+    }
+    expect(grayValues.size).toBeGreaterThan(1);
+    expect(Math.max(...grayValues)).toBeGreaterThan(200);
+    expect(Math.min(...grayValues)).toBeLessThan(50);
+  });
+
+  it("returns a safe non-zero-width window when every pixel has the same value", () => {
+    const pixels = new Uint16Array(16 * 16).fill(500);
+    const bytes = buildMiniCtDicom({ pixels });
+    const frame = pixelFrameFromPart10(new Uint8Array(bytes)) as DicomMono16Frame;
+
+    const window = autoWindow(frame);
+    expect(window.width).toBeGreaterThan(0);
   });
 });
 
