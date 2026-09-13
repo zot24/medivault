@@ -219,7 +219,7 @@ function isSecondaryAnalysis(meta: DicomSeriesMeta): boolean {
 function isDoseSheet(meta: DicomSeriesMeta): boolean {
   return (
     meta.imageType.some((value) => /PROT/.test(value)) ||
-    /protocol|protocolo/i.test(meta.seriesDescription)
+    /protocol/i.test(meta.seriesDescription)
   );
 }
 
