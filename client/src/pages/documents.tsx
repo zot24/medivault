@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { documentStats } from "@shared/studies";
+import { documentStats, filterStudies } from "@shared/studies";
 import {
   Plus,
   Search,
@@ -66,7 +66,9 @@ export default function Documents() {
   // per series.
   const plainDocuments = documents?.filter((doc) => !doc.dicomMeta) ?? [];
   const studyList = studies ?? [];
-  const stats = documentStats(plainDocuments, studyList, { searchQuery, documentType: filterType });
+  const studyFilter = { searchQuery, documentType: filterType };
+  const stats = documentStats(plainDocuments, studyList, studyFilter);
+  const filteredStudies = filterStudies(studyList, studyFilter);
 
   const filteredDocuments = plainDocuments.filter(doc => {
     const matchesSearch = !searchQuery ||
@@ -298,7 +300,7 @@ export default function Documents() {
             ))}
           </div>
         ) : (
-          studyList.length > 0 && (
+          filteredStudies.length > 0 && (
             <div className="mb-10">
               <h2 className="text-2xl font-semibold text-foreground mb-4 font-display">
                 Imaging Studies
@@ -307,7 +309,7 @@ export default function Documents() {
                 className="grid md:grid-cols-2 lg:grid-cols-3 gap-6"
                 data-testid="studies-grid"
               >
-                {studyList.map((study) => (
+                {filteredStudies.map((study) => (
                   <StudyCard key={study.studyInstanceUid} study={study} />
                 ))}
               </div>

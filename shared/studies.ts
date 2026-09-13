@@ -235,6 +235,18 @@ function isInCurrentLocalMonth(date: Date, now: Date): boolean {
 }
 
 /**
+ * The studies shown after the search/type filter — a study is kept when any
+ * of its series matches. Used both for the "Filtered" stat tile and for the
+ * Imaging Studies grid so the two never disagree.
+ */
+export function filterStudies(
+  studies: StudySummary[],
+  filter: DocumentStatsFilter,
+): StudySummary[] {
+  return studies.filter((study) => studyMatchesFilter(study, filter));
+}
+
+/**
  * Counts for the Documents page stats row. `records` are ordinary
  * (non-DICOM) documents; a DICOM series is never counted here directly —
  * only via the `studies` it has already been grouped into (see
@@ -249,7 +261,7 @@ export function documentStats(
   const total = records.length + studies.length;
   const filtered =
     records.filter((record) => documentMatchesFilter(record, filter)).length +
-    studies.filter((study) => studyMatchesFilter(study, filter)).length;
+    filterStudies(studies, filter).length;
   const thisMonth =
     records.filter((record) => record.createdAt && isInCurrentLocalMonth(new Date(record.createdAt), now))
       .length +

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { DicomSeriesMeta } from "./dicom-meta";
 import type { MedicalDocument } from "./schema";
-import { documentStats, groupIntoStudies, groupReports, primarySeries } from "./studies";
+import {
+  documentStats,
+  filterStudies,
+  groupIntoStudies,
+  groupReports,
+  primarySeries,
+} from "./studies";
 
 const BASIC_TEXT_SR = "1.2.840.10008.5.1.4.1.1.88.11";
 
@@ -378,5 +384,49 @@ describe("documentStats", () => {
     const stats = documentStats([], [study], { searchQuery: "", documentType: "all" });
 
     expect(stats.thisMonth).toBe(1);
+  });
+});
+
+describe("filterStudies", () => {
+  it("keeps a study when the search matches one of its series, and drops it otherwise", () => {
+    const [study] = groupIntoStudies([
+      record({
+        dicomMeta: {
+          studyInstanceUid: "s",
+          seriesDescription: "DS_CorCTA 0.6 Bv40 3 BestDiast 77 %",
+        },
+      }),
+    ]);
+
+    expect(filterStudies([study], { searchQuery: "corcta", documentType: "all" })).toEqual([
+      study,
+    ]);
+    expect(filterStudies([study], { searchQuery: "nope", documentType: "all" })).toEqual([]);
+  });
+
+  it("drops every study once a specific document-type filter is applied", () => {
+    const [study] = groupIntoStudies([record({ dicomMeta: { studyInstanceUid: "s" } })]);
+
+    expect(filterStudies([study], { searchQuery: "", documentType: "lab_result" })).toEqual([]);
+  });
+
+  it("agrees with documentStats().filtered on the same input — the grid and the tile must never disagree", () => {
+    const [matching] = groupIntoStudies([
+      record({
+        dicomMeta: { studyInstanceUid: "match", seriesDescription: "Cardiac CT" },
+      }),
+    ]);
+    const [nonMatching] = groupIntoStudies([
+      record({
+        dicomMeta: { studyInstanceUid: "no-match", seriesDescription: "Renal ultrasound" },
+      }),
+    ]);
+    const filter = { searchQuery: "cardiac", documentType: "all" };
+
+    const shown = filterStudies([matching, nonMatching], filter);
+    const stats = documentStats([], [matching, nonMatching], filter);
+
+    expect(shown).toEqual([matching]);
+    expect(stats.filtered).toBe(shown.length);
   });
 });
