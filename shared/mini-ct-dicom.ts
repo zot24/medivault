@@ -68,8 +68,11 @@ function us(value: number): Buffer {
   return u16(value);
 }
 
-function ss(value: string): Buffer {
-  return padEven(Buffer.from(value, "ascii"));
+/** VR SS is binary: each value is a signed 16-bit little-endian integer, never text. */
+function ss(values: number[]): Buffer {
+  const buf = Buffer.alloc(values.length * 2);
+  values.forEach((value, i) => buf.writeInt16LE(value, i * 2));
+  return buf;
 }
 
 export const TRANSFER_EXPLICIT_LE = "1.2.840.10008.1.2.1";
@@ -193,7 +196,7 @@ function overlayElements(overlay: MiniCtOverlay, group = 0x6000): Buffer {
     explicitElement(group, 0x0010, "US", us(overlay.rows)),
     explicitElement(group, 0x0011, "US", us(overlay.columns)),
     explicitElement(group, 0x0040, "CS", cs("G")),
-    explicitElement(group, 0x0050, "SS", ss(`${originRow}\\${originColumn}`)),
+    explicitElement(group, 0x0050, "SS", ss([originRow, originColumn])),
     explicitElement(group, 0x0100, "US", us(1)),
     explicitElement(group, 0x0102, "US", us(0)),
     explicitElement(group, 0x3000, "OW", packOverlayBits(overlay.pixels)),

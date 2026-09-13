@@ -144,7 +144,8 @@ export function overlaysFromPart10(bytes: Uint8Array): DicomOverlay[] {
         continue;
       }
       const [originRow, originColumn] = overlayOrigin(
-        dataSet.string(`${prefix}0050`),
+        dataSet.int16(`${prefix}0050`, 0),
+        dataSet.int16(`${prefix}0050`, 1),
       );
       overlays.push({
         rows,
@@ -160,11 +161,14 @@ export function overlaysFromPart10(bytes: Uint8Array): DicomOverlay[] {
   }
 }
 
-function overlayOrigin(raw: string | undefined): [number, number] {
-  const [row, column] = (raw ?? "1\\1").split("\\").map(Number);
+/** Overlay Origin (60xx,0050) is VR SS: two signed 16-bit values, never text. */
+function overlayOrigin(
+  row: number | undefined,
+  column: number | undefined,
+): [number, number] {
   return [
-    Number.isFinite(row) ? row : 1,
-    Number.isFinite(column) ? column : 1,
+    Number.isFinite(row) ? (row as number) : 1,
+    Number.isFinite(column) ? (column as number) : 1,
   ];
 }
 
