@@ -150,4 +150,49 @@ describe("detectPhases", () => {
     const result = detectPhases(files);
     expect(result?.phases.map((p) => p.label)).toEqual(["140 ms", "620 ms"]);
   });
+
+  it("falls back to slice location instead of dropping files whose phase tag is missing", () => {
+    // A real-world oddity: most instances carry the phase tag, a handful
+    // don't. Distinct slice locations here (10, 20, 30) mean the
+    // slice-location fallback also can't form phases, so every file must
+    // end up on a plain, ungrouped volume rather than 2 of the 3 positions
+    // silently vanishing from every phase.
+    const files: PhaseSourceFile[] = [
+      file({ position: 0, phase: 70, sliceLocation: 10 }),
+      file({ position: 1, phase: 30, sliceLocation: 20 }),
+      file({ position: 2, phase: null, sliceLocation: 30 }),
+    ];
+
+    const result = detectPhases(files);
+    expect(result).toBeNull();
+  });
+
+  it("never drops a file's position from every phase when phase tags are partial", () => {
+    // Same partial-tag scenario, but with slice locations that repeat
+    // cleanly (10, 20, 10) so the fallback CAN form phases: every input
+    // position -- including the untagged one -- must still surface exactly
+    // once across the returned phases.
+    const files: PhaseSourceFile[] = [
+      file({ position: 0, phase: 70, sliceLocation: 20 }),
+      file({ position: 1, phase: 30, sliceLocation: 10 }),
+      file({ position: 2, phase: null, sliceLocation: 20 }),
+      file({ position: 3, phase: null, sliceLocation: 10 }),
+    ];
+
+    const result = detectPhases(files);
+    const allPositions = (result?.phases ?? []).flatMap((p) => p.positions);
+    expect(new Set(allPositions)).toEqual(new Set([0, 1, 2, 3]));
+  });
+
+  it("returns null (a plain volume) when every file shares one identical, non-null slice location", () => {
+    // Anonymization tooling zeroing spatial tags, a burned-in
+    // secondary-capture series, or repeated single-position acquisitions:
+    // locationCount === 1 must not be split into N one-slice "phases".
+    const files: PhaseSourceFile[] = Array.from({ length: 5 }, (_, index) =>
+      file({ position: index, sliceLocation: 0 }),
+    );
+
+    const result = detectPhases(files);
+    expect(result).toBeNull();
+  });
 });

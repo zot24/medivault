@@ -34,9 +34,16 @@ export function detectPhases(files: PhaseSourceFile[]): PhaseDetectionResult | n
 }
 
 function detectFromPhaseTag(files: PhaseSourceFile[]): PhaseDetectionResult | null {
-  const distinctPhases = new Set(
-    files.filter((file) => file.phase != null).map((file) => file.phase as number),
-  );
+  // A real series either tags every instance with its cardiac phase or none
+  // at all; a handful of instances missing the tag (a known real-world DICOM
+  // oddity) means the tag can't be trusted to place every file, so fall back
+  // to slice-location detection rather than silently dropping the untagged
+  // ones from every phase.
+  if (files.some((file) => file.phase == null)) {
+    return null;
+  }
+
+  const distinctPhases = new Set(files.map((file) => file.phase as number));
   if (distinctPhases.size < 2) {
     return null;
   }
@@ -44,12 +51,10 @@ function detectFromPhaseTag(files: PhaseSourceFile[]): PhaseDetectionResult | nu
   const useMilliseconds = Math.max(...Array.from(distinctPhases)) > PERCENTAGE_MAX;
   const groups = new Map<number, PhaseSourceFile[]>();
   for (const file of files) {
-    if (file.phase == null) {
-      continue;
-    }
-    const group = groups.get(file.phase) ?? [];
+    const phase = file.phase as number;
+    const group = groups.get(phase) ?? [];
     group.push(file);
-    groups.set(file.phase, group);
+    groups.set(phase, group);
   }
 
   const phases = Array.from(groups.entries())
@@ -70,7 +75,11 @@ function detectFromSliceLocation(files: PhaseSourceFile[]): PhaseDetectionResult
 
   const distinctLocations = new Set(locations as number[]);
   const locationCount = distinctLocations.size;
-  if (locationCount === 0 || files.length % locationCount !== 0) {
+  // A single shared location (e.g. anonymized/zeroed spatial tags, or a
+  // burned-in secondary-capture series) means every file trivially "repeats"
+  // the same one location; that's an ordinary N-slice volume, not N
+  // one-slice phases, so require at least 2 distinct locations to split.
+  if (locationCount < 2 || files.length % locationCount !== 0) {
     return null;
   }
 
