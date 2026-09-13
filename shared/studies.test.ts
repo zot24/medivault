@@ -233,6 +233,34 @@ describe("groupReports", () => {
     expect(rows[0].representative).toBe(reports[0]);
   });
 
+  it("keeps two distinct blank-keyed reports as separate rows instead of collapsing them", () => {
+    // Both records have a blank seriesDescription and a null seriesNumber —
+    // that's "nothing to distinguish them", not "the same report", so they
+    // must not collapse into a single row.
+    const first = record({
+      dicomMeta: {
+        modality: "SR",
+        sopClassUid: BASIC_TEXT_SR,
+        seriesDescription: "",
+        seriesNumber: null,
+      },
+    });
+    const second = record({
+      dicomMeta: {
+        modality: "SR",
+        sopClassUid: BASIC_TEXT_SR,
+        seriesDescription: "",
+        seriesNumber: null,
+      },
+    });
+
+    const rows = groupReports([first, second]);
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0].representative).toBe(first);
+    expect(rows[1].representative).toBe(second);
+  });
+
   it("keeps other SR reports separate and labelled via seriesLabel when they don't share description and number", () => {
     const calciumScore = record({
       dicomMeta: {

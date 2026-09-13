@@ -151,15 +151,23 @@ function reportLabel(record: MedicalDocument): string {
  * several near-identical DICOM objects — matched by `seriesDescription` +
  * `seriesNumber` — into one row with a total file count. Order follows
  * first appearance in `records`.
+ *
+ * Both parts of the key must be non-blank to collapse: a blank
+ * `seriesDescription` and a null `seriesNumber` are not "the same" report,
+ * they're just two records with nothing to distinguish them, so each keeps
+ * its own row (keyed by record id instead).
  */
 export function groupReports(records: MedicalDocument[]): ReportRow[] {
   const rows = new Map<string, ReportRow>();
   const order: string[] = [];
   for (const record of records) {
     const meta = record.dicomMeta;
-    const key = meta
-      ? `${meta.seriesDescription}::${meta.seriesNumber ?? ""}`
-      : `id:${record.id}`;
+    const seriesDescription = meta?.seriesDescription ?? "";
+    const seriesNumber = meta?.seriesNumber ?? "";
+    const key =
+      meta && seriesDescription !== "" && seriesNumber !== ""
+        ? `${seriesDescription}::${seriesNumber}`
+        : `id:${record.id}`;
     const existing = rows.get(key);
     if (existing) {
       existing.count += record.fileCount;
