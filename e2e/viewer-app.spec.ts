@@ -51,6 +51,12 @@ test("uploads synthetic DICOM fixtures and draws them in the viewer", async ({
   const seriesRows = page.locator('[data-testid^="series-row-"]');
   await expect(seriesRows.first()).toBeVisible();
 
+  // A DICOM record's type badge shows its modality (CT, OT, ...), not the
+  // generic documentType label — plan 02, item E.
+  const modalityBadge = page.locator('[data-testid^="series-modality-"]').first();
+  await expect(modalityBadge).toBeVisible();
+  await expect(modalityBadge).not.toHaveText("");
+
   const view = page.locator('[data-testid^="button-view-series-"]').first();
   await view.click();
 

@@ -24,6 +24,7 @@ import {
 import type { MedicalDocument } from "@shared/schema";
 import ShareDialog from "@/components/share-dialog";
 import DicomSeriesViewer from "@/components/dicom-series-viewer";
+import TypeBadge from "@/components/type-badge";
 import { ownedFileUrl } from "@/lib/owned-file";
 import { isDicomDocument, sliceCountLabel } from "@shared/upload-kinds";
 
@@ -53,14 +54,7 @@ export default function DocumentCard({
     }
   };
 
-  const getDocumentTypeLabel = (type: string) => {
-    return type.replace("_", " ").replace(/\b\w/g, l => l.toUpperCase());
-  };
-
   const style = getDocumentTypeStyle(medicalDocument.documentType);
-  const typeLabel = medicalDocument.dicomMeta
-    ? medicalDocument.dicomMeta.modality
-    : getDocumentTypeLabel(medicalDocument.documentType);
   const visibleTags = medicalDocument.tags ?? [];
 
   const handleDownload = () => {
@@ -92,9 +86,10 @@ export default function DocumentCard({
                 {medicalDocument.title}
               </h3>
               <div className="flex items-center space-x-2">
-                <span className={`badge-sage capitalize`}>
-                  {typeLabel}
-                </span>
+                <TypeBadge
+                  document={medicalDocument}
+                  testId={`document-type-${medicalDocument.id}`}
+                />
                 {visibleTags.length > 0 && (
                   <div className="flex items-center space-x-1">
                     <Shield className="h-3 w-3 text-secondary" />

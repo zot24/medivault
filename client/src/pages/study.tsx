@@ -7,6 +7,7 @@ import type { StudySummary } from "@/lib/sdk";
 import type { MedicalDocument } from "@shared/schema";
 import Navigation from "@/components/navigation";
 import DicomSeriesViewer from "@/components/dicom-series-viewer";
+import TypeBadge from "@/components/type-badge";
 import { useThumbnail } from "@/lib/thumbnails";
 import { thumbnailPosition } from "@/lib/study-thumbnail";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,9 @@ function SeriesRow({
     >
       <Thumbnail document={series} className="w-16 h-16" />
       <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <TypeBadge document={series} testId={`series-modality-${series.id}`} />
+        </div>
         <p className="font-medium text-foreground font-body truncate">{label}</p>
         {series.dicomMeta?.seriesDescription && (
           <p className="text-xs text-foreground-subtle font-body truncate">
