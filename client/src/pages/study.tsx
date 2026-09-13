@@ -7,6 +7,7 @@ import type { StudySummary } from "@/lib/sdk";
 import type { MedicalDocument } from "@shared/schema";
 import Navigation from "@/components/navigation";
 import DicomSeriesViewer from "@/components/dicom-series-viewer";
+import SrReportView from "@/components/sr-report-view";
 import TypeBadge from "@/components/type-badge";
 import { useThumbnail } from "@/lib/thumbnails";
 import { thumbnailPosition } from "@/lib/study-thumbnail";
@@ -138,6 +139,18 @@ function Section({
   );
 }
 
+function allSeriesOf(study: StudySummary): MedicalDocument[] {
+  const { groups } = study;
+  return [
+    ...groups.volume,
+    ...groups.snapshot,
+    ...groups.analysis,
+    ...groups.report,
+    ...groups.localizer,
+    ...groups.other,
+  ];
+}
+
 function orderedImages(study: StudySummary): MedicalDocument[] {
   const { volume } = study.groups;
   if (!study.primary) {
@@ -265,11 +278,21 @@ export default function Study({
         )}
       </div>
 
-      <DicomSeriesViewer
-        document={viewerDocument}
-        open={viewerOpen}
-        onOpenChange={setViewerOpen}
-      />
+      {viewerDocument?.dicomMeta?.modality === "SR" ? (
+        <SrReportView
+          document={viewerDocument}
+          open={viewerOpen}
+          onOpenChange={setViewerOpen}
+          siblingDocuments={allSeriesOf(study)}
+          onOpenSibling={openViewer}
+        />
+      ) : (
+        <DicomSeriesViewer
+          document={viewerDocument}
+          open={viewerOpen}
+          onOpenChange={setViewerOpen}
+        />
+      )}
     </div>
   );
 }
