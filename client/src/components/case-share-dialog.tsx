@@ -26,6 +26,13 @@ import {
   useSymptoms,
   type ShareTtl,
 } from "@/lib/sdk";
+import {
+  documentIdsForItems,
+  documentItemKey,
+  listDocumentItems,
+  studyLabel,
+  type DocumentItem,
+} from "@shared/studies";
 import { Copy } from "lucide-react";
 
 const LIFE_LABEL = {
@@ -43,6 +50,21 @@ function toggleId(ids: number[], id: number): number[] {
   return ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id];
 }
 
+function toggleKey(keys: string[], key: string): string[] {
+  return keys.includes(key) ? keys.filter((item) => item !== key) : [...keys, key];
+}
+
+/** A study is one line here; ticking it shares all of its series. */
+function itemTitle(item: DocumentItem): string {
+  if (item.kind === "document") {
+    return item.record.title;
+  }
+  const label = studyLabel(item.study) || "Imaging study";
+  const count =
+    item.study.seriesCount === 1 ? "1 series" : `${item.study.seriesCount} series`;
+  return `${label} (${count})`;
+}
+
 export default function CaseShareDialog({
   open,
   onOpenChange,
@@ -50,7 +72,7 @@ export default function CaseShareDialog({
   const { toast } = useToast();
   const [ttl, setTtl] = useState<ShareTtl>("24h");
   const [label, setLabel] = useState("");
-  const [documentIds, setDocumentIds] = useState<number[]>([]);
+  const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [symptomIds, setSymptomIds] = useState<number[]>([]);
   const [copiedUrl, setCopiedUrl] = useState<string | null>(null);
 
@@ -60,12 +82,19 @@ export default function CaseShareDialog({
   const createShare = useCreateCaseShare();
   const revokeShare = useRevokeCaseShare();
 
+  const items = listDocumentItems(documents ?? []);
+  // The share API still speaks in document ids, so a ticked study expands
+  // into every series it holds.
+  const documentIds = documentIdsForItems(
+    items.filter((item) => selectedKeys.includes(documentItemKey(item))),
+  );
+
   const handleOpenChange = (next: boolean) => {
     if (!next) {
       setCopiedUrl(null);
       setLabel("");
       setTtl("24h");
-      setDocumentIds([]);
+      setSelectedKeys([]);
       setSymptomIds([]);
     }
     onOpenChange(next);
@@ -121,24 +150,27 @@ export default function CaseShareDialog({
           <div className="space-y-2">
             <Label className="font-body">Documents</Label>
             <div className="max-h-40 overflow-y-auto space-y-2 rounded-xl border border-border p-3">
-              {(documents ?? []).length === 0 && (
+              {items.length === 0 && (
                 <p className="text-sm text-foreground-muted font-body">No documents yet.</p>
               )}
-              {(documents ?? []).map((document) => (
-                <label
-                  key={document.id}
-                  className="flex items-center gap-2 text-sm font-body text-foreground"
-                >
-                  <Checkbox
-                    checked={documentIds.includes(document.id)}
-                    onCheckedChange={() =>
-                      setDocumentIds((current) => toggleId(current, document.id))
-                    }
-                    data-testid={`case-share-doc-${document.id}`}
-                  />
-                  <span className="truncate">{document.title}</span>
-                </label>
-              ))}
+              {items.map((item) => {
+                const key = documentItemKey(item);
+                return (
+                  <label
+                    key={key}
+                    className="flex items-center gap-2 text-sm font-body text-foreground"
+                  >
+                    <Checkbox
+                      checked={selectedKeys.includes(key)}
+                      onCheckedChange={() =>
+                        setSelectedKeys((current) => toggleKey(current, key))
+                      }
+                      data-testid={`case-share-${key}`}
+                    />
+                    <span className="truncate">{itemTitle(item)}</span>
+                  </label>
+                );
+              })}
             </div>
           </div>
 

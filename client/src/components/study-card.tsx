@@ -6,6 +6,7 @@ import { ChevronRight, Layers, ScanLine } from "lucide-react";
 import type { StudySummary } from "@/lib/sdk";
 import { useThumbnail } from "@/lib/thumbnails";
 import { thumbnailPosition } from "@/lib/study-thumbnail";
+import { studyLabel } from "@shared/studies";
 import { localDate } from "@shared/upload-kinds";
 
 function formatBytes(bytes: number): string {
@@ -51,9 +52,17 @@ export default function StudyCard({ study }: StudyCardProps) {
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <h3 className="font-semibold text-foreground text-lg leading-tight mb-2 font-display truncate">
-                {study.studyDescription || "Imaging study"}
+              <h3 className="font-semibold text-foreground text-lg leading-tight mb-1 font-display truncate">
+                {studyLabel(study) || "Imaging study"}
               </h3>
+              {study.studyDescription && (
+                <p
+                  className="text-sm text-foreground-muted font-body truncate mb-2"
+                  data-testid={`study-description-${study.studyInstanceUid}`}
+                >
+                  {study.studyDescription}
+                </p>
+              )}
               <div className="flex items-center flex-wrap gap-2">
                 {study.modalities.map((modality) => (
                   <span key={modality} className="badge-sage">

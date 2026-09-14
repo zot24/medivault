@@ -107,6 +107,26 @@ test("uploads synthetic DICOM fixtures and draws them in the viewer", async ({
     });
     expect(after[3]).toBe(255);
   }
+
+  // The study is the document: the Dashboard counts a study once, however
+  // many series it holds, and its timeline entry opens the study page.
+  await page.goto("/documents");
+  const studyCards = page.locator('[data-testid^="study-card-"]');
+  await expect(studyCards.first()).toBeVisible({ timeout: 30_000 });
+  const documentCards = page.locator('[data-testid^="document-card-"]');
+  const expectedItems = (await studyCards.count()) + (await documentCards.count());
+
+  await page.goto("/dashboard");
+  await expect(page.getByTestId("text-total-records")).toHaveText(
+    String(expectedItems),
+    { timeout: 30_000 },
+  );
+
+  const timelineEntry = page.getByTestId(`timeline-item-study-${FIXTURE_STUDY_UID}`);
+  await expect(timelineEntry).toHaveCount(1);
+  await timelineEntry.click();
+  await page.waitForURL(`**/studies/${encodeURIComponent(FIXTURE_STUDY_UID)}`);
+  await expect(page.getByTestId("study-page")).toBeVisible();
 });
 
 test("hides the slice chrome for a single-image record", async ({ page }) => {
