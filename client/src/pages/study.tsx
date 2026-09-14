@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { seriesLabel } from "@shared/dicom-meta";
-import { groupReports, studyLabel, studySeries } from "@shared/studies";
+import { groupReports, studyCounts, studyLabel, studySeries } from "@shared/studies";
 import { localDate } from "@shared/upload-kinds";
 import { ArrowLeft, Eye, FileText, ScanLine } from "lucide-react";
 
@@ -156,36 +156,51 @@ function ReportsSection({
     <div className="mb-8" data-testid="study-section-reports">
       <h2 className="text-lg font-semibold text-foreground mb-3 font-display">Reports</h2>
       <div className="space-y-2">
-        {rows.map((row) => (
-          <div
-            key={row.key}
-            className="flex items-center gap-4 p-3 rounded-xl border border-border hover:border-primary/30 hover:bg-surface-1 transition-colors"
-            data-testid={`report-row-${row.representative.id}`}
-          >
-            <Thumbnail document={row.representative} className="w-16 h-16" />
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 mb-1">
-                <TypeBadge
-                  document={row.representative}
-                  testId={`report-modality-${row.representative.id}`}
-                />
-              </div>
-              <p className="font-medium text-foreground font-body truncate">
-                {row.count > 1 ? `${row.label} · ${row.count} files` : row.label}
-              </p>
-            </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => onView(row.representative)}
-              className="border-border text-foreground hover:bg-surface-1 flex-shrink-0"
-              data-testid={`button-view-report-${row.representative.id}`}
+        {rows.map((row) => {
+          // "reason" only exists on the empty-report/opaque variants — this
+          // doubles as the type guard that lets TS narrow it below.
+          const nothingToShow = "reason" in row.viewability ? row.viewability : null;
+          return (
+            <div
+              key={row.key}
+              className="flex items-center gap-4 p-3 rounded-xl border border-border hover:border-primary/30 hover:bg-surface-1 transition-colors"
+              data-testid={`report-row-${row.representative.id}`}
             >
-              <Eye className="mr-2 h-4 w-4" />
-              <span className="font-body">View</span>
-            </Button>
-          </div>
-        ))}
+              <Thumbnail document={row.representative} className="w-16 h-16" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <TypeBadge
+                    document={row.representative}
+                    testId={`report-modality-${row.representative.id}`}
+                  />
+                </div>
+                <p className="font-medium text-foreground font-body truncate">
+                  {row.count > 1 ? `${row.label} · ${row.count} files` : row.label}
+                </p>
+                {nothingToShow && (
+                  <p
+                    className="text-sm text-foreground-subtle font-body"
+                    data-testid={`report-nothing-to-display-${row.representative.id}`}
+                  >
+                    Nothing to display — {nothingToShow.reason}
+                  </p>
+                )}
+              </div>
+              {!nothingToShow && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => onView(row.representative)}
+                  className="border-border text-foreground hover:bg-surface-1 flex-shrink-0"
+                  data-testid={`button-view-report-${row.representative.id}`}
+                >
+                  <Eye className="mr-2 h-4 w-4" />
+                  <span className="font-body">View</span>
+                </Button>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -259,6 +274,8 @@ export default function Study({
     );
   }
 
+  const counts = studyCounts(study);
+
   return (
     <div className="min-h-screen bg-background" data-testid="study-page">
       <Navigation />
@@ -291,12 +308,14 @@ export default function Study({
               {study.studyDescription}
             </p>
           )}
-          <p className="text-foreground-muted font-body">
+          <p className="text-foreground-muted font-body" data-testid="text-study-counts">
             {study.documentDate && format(localDate(study.documentDate), "MMMM d, yyyy")}
             {" · "}
-            {study.seriesCount === 1 ? "1 series" : `${study.seriesCount} series`}
+            {counts.seriesCount === 1 ? "1 series" : `${counts.seriesCount} series`}
             {" · "}
-            {study.fileCount === 1 ? "1 image" : `${study.fileCount} images`}
+            {counts.viewableCount} viewable
+            {" · "}
+            {counts.fileCount === 1 ? "1 image" : `${counts.fileCount} images`}
           </p>
         </div>
 

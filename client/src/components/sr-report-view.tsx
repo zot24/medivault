@@ -21,8 +21,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { flattenMeasurements, formatMeasurement, parseSr, type SrNode } from "@shared/dicom-sr";
+import { flattenMeasurements, formatMeasurement, parseSr, srViewability, type SrNode } from "@shared/dicom-sr";
 import type { MedicalDocument } from "@shared/schema";
+import { EMPTY_REPORT_REASON, OPAQUE_VENDOR_SESSION_REASON } from "@shared/viewability";
 
 type SrReportViewProps = {
   document: MedicalDocument | null;
@@ -160,7 +161,21 @@ export default function SrReportView({
   }, [open, documentId]);
 
   const measurements = report ? flattenMeasurements(report.nodes) : [];
-  const hasContent = (report?.nodes.length ?? 0) > 0;
+  // The row that opens this dialog already hides itself for an
+  // empty-report/opaque record (plan 11, part B); this is the fallback for
+  // a deep link or a stale list that still opens one — same sentence, this
+  // time from the actual parse rather than the cheap per-record guess.
+  const contentKind = report ? srViewability(report) : null;
+  const hasContent = contentKind === "report";
+  const nothingToDisplayReason =
+    contentKind === "empty-report"
+      ? EMPTY_REPORT_REASON
+      : contentKind === "opaque"
+        ? OPAQUE_VENDOR_SESSION_REASON
+        : null;
+  const nothingToDisplayMessage = nothingToDisplayReason
+    ? `Nothing to display — ${nothingToDisplayReason}`
+    : "This report has no readable content.";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -170,7 +185,7 @@ export default function SrReportView({
           <DialogDescription>
             {hasContent
               ? "Findings read from this report's content tree."
-              : "This report has no readable content."}
+              : nothingToDisplayMessage}
           </DialogDescription>
         </DialogHeader>
 
@@ -184,7 +199,7 @@ export default function SrReportView({
           </p>
         ) : !hasContent ? (
           <p className="text-sm text-foreground-muted" data-testid="sr-report-empty">
-            This report has no readable content.
+            {nothingToDisplayMessage}
           </p>
         ) : (
           <div className="space-y-4">

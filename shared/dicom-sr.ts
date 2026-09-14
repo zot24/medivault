@@ -152,6 +152,37 @@ export function formatMeasurement(value: number, unit: string): string {
   return unit ? `${formatted} ${unit}` : formatted;
 }
 
+/**
+ * Refines `viewabilityFromMeta`'s cheap guess once the file is actually
+ * parsed (plan 11): a tree with a non-blank TEXT or a NUM value somewhere
+ * in it has something to show ("report"); a tree that parsed to zero
+ * content items really is empty ("empty-report" — the assumption
+ * `viewabilityFromMeta` makes for every Basic Text SR); anything else —
+ * the parse failed, or the tree has nodes but none of them carry readable
+ * text or a value (e.g. a vendor's private CODE-only session marker) —
+ * is "opaque".
+ */
+export function srViewability(
+  parsed: { title: string; nodes: SrNode[] } | null,
+): "report" | "empty-report" | "opaque" {
+  if (!parsed) {
+    return "opaque";
+  }
+  if (parsed.nodes.length === 0) {
+    return "empty-report";
+  }
+  return hasReadableContent(parsed.nodes) ? "report" : "opaque";
+}
+
+function hasReadableContent(nodes: SrNode[]): boolean {
+  return nodes.some(
+    (node) =>
+      (node.type === "TEXT" && !!node.text) ||
+      (node.type === "NUM" && node.value != null) ||
+      hasReadableContent(node.children),
+  );
+}
+
 function sequenceItems(dataSet: DataSet | undefined, tag: string): DataSet[] {
   if (!dataSet) {
     return [];

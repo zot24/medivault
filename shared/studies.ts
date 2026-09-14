@@ -1,6 +1,7 @@
 import type { MedicalDocument } from "./schema";
 import { seriesGroup, seriesLabel, type SeriesGroup } from "./dicom-meta";
 import { localDate } from "./upload-kinds";
+import { viewabilityFromMeta, type Viewability } from "./viewability";
 
 export type StudySummary = {
   studyInstanceUid: string;
@@ -149,6 +150,8 @@ export type ReportRow = {
   count: number;
   /** The record `onView` should open for this row. */
   representative: MedicalDocument;
+  /** Whether this row has anything to open (plan 11) — gates the View button. */
+  viewability: Viewability;
 };
 
 function reportLabel(record: MedicalDocument): string {
@@ -174,8 +177,15 @@ function reportLabel(record: MedicalDocument): string {
   return meta ? seriesLabel(meta) : record.title;
 }
 
-function isUnreadableAnalysisRow(row: ReportRow): boolean {
-  return row.label === UNREADABLE_ANALYSIS_LABEL || row.label.startsWith(`${UNREADABLE_ANALYSIS_LABEL} — `);
+/** Sort key for `groupReports`: readable reports first, then empty ones, then opaque ones. */
+function viewabilityRank(viewability: Viewability): number {
+  if (viewability.kind === "empty-report") {
+    return 1;
+  }
+  if (viewability.kind === "opaque") {
+    return 2;
+  }
+  return 0;
 }
 
 /**
@@ -189,9 +199,9 @@ function isUnreadableAnalysisRow(row: ReportRow): boolean {
  * they're just two records with nothing to distinguish them, so each keeps
  * its own row (keyed by record id instead).
  *
- * Rows labelled as unreadable analysis data (see `reportLabel`) sort after
- * every readable row, so a report with actual findings never has to be
- * scrolled past to reach it — otherwise, first-appearance order is kept.
+ * Rows sort readable reports first, then empty ones, then opaque ones (plan
+ * 11), so a report with actual findings never has to be scrolled past to
+ * reach it — otherwise, first-appearance order is kept within each tier.
  */
 export function groupReports(records: MedicalDocument[]): ReportRow[] {
   const rows = new Map<string, ReportRow>();
@@ -213,15 +223,13 @@ export function groupReports(records: MedicalDocument[]): ReportRow[] {
         label: reportLabel(record),
         count: record.fileCount,
         representative: record,
+        viewability: viewabilityFromMeta(meta ?? null, record.mimeType),
       });
       order.push(key);
     }
   }
   const ordered = order.map((key) => rows.get(key)!);
-  return [
-    ...ordered.filter((row) => !isUnreadableAnalysisRow(row)),
-    ...ordered.filter((row) => isUnreadableAnalysisRow(row)),
-  ];
+  return [...ordered].sort((a, b) => viewabilityRank(a.viewability) - viewabilityRank(b.viewability));
 }
 
 export type DocumentStatsFilter = {
@@ -323,6 +331,30 @@ const GROUP_ORDER: SeriesGroup[] = [
 
 export function studySeries(study: StudySummary): MedicalDocument[] {
   return GROUP_ORDER.flatMap((group) => study.groups[group]);
+}
+
+export type StudyCounts = {
+  seriesCount: number;
+  /** Series whose viewability is "images" or "report" — has a View button. */
+  viewableCount: number;
+  fileCount: number;
+};
+
+/**
+ * Counts for the study header (plan 11): "32 series · 25 viewable · 7,556
+ * images" — how many of this study's series have anything a person can
+ * open, alongside the totals `StudySummary` already carries.
+ */
+export function studyCounts(study: StudySummary): StudyCounts {
+  const viewableCount = studySeries(study).filter((record) => {
+    const kind = viewabilityFromMeta(record.dicomMeta, record.mimeType).kind;
+    return kind === "images" || kind === "report";
+  }).length;
+  return {
+    seriesCount: study.seriesCount,
+    viewableCount,
+    fileCount: study.fileCount,
+  };
 }
 
 /**

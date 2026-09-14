@@ -290,3 +290,57 @@ test("plays a synthetic ultrasound cine loop and steps its frame label", async (
   await page.getByTestId("dicom-frame-slider").fill("0");
   await expect(frameLabel).toHaveText("1 / 2");
 });
+
+// mini-sr-empty.dcm: a synthetic Basic Text SR with zero content items,
+// built with buildMiniSr({ nodes: [] }) (plan 11) — the reference disc's
+// three "Radiology Report" objects parse the same way.
+const SR_EMPTY_STUDY_UID = "1.2.826.0.1.3680043.8.498.study.sr-empty";
+
+test("shows 'Nothing to display' and no View button for an empty Basic Text SR", async ({
+  page,
+}) => {
+  await page.goto("/login");
+  await page
+    .getByTestId("input-login-email")
+    .fill(process.env.E2E_EMAIL ?? "demo@medivault.app");
+  await page
+    .getByTestId("input-login-password")
+    .fill(process.env.E2E_PASSWORD ?? "demo123");
+  await page.getByTestId("button-login-submit").click();
+  await page.waitForURL(/\/(dashboard|documents)/);
+
+  await page.goto("/documents");
+  await page.getByTestId("button-upload-document").click();
+  await page.getByTestId("input-upload-title").fill("Synthetic empty report");
+  await page.getByTestId("input-upload-date").fill("2026-09-12");
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByTestId("button-choose-upload-files").click();
+  const dialog = await chooser;
+  await dialog.setFiles([path.join(fixtures, "mini-sr-empty.dcm")]);
+  const uploaded = page.waitForResponse(
+    (response) => response.url().includes("/api/documents") && response.request().method() === "POST",
+  );
+  await page.getByTestId("button-upload-submit").click();
+  await uploaded;
+  // See the multi-phase test above: the studies query needs a reload to
+  // pick up a freshly uploaded series (a pre-existing gap, unrelated to
+  // this plan).
+  await page.reload();
+
+  const studyCard = page.getByTestId(`study-card-${SR_EMPTY_STUDY_UID}`);
+  await expect(studyCard).toBeVisible({ timeout: 30_000 });
+  await studyCard.getByTestId(`button-open-study-${SR_EMPTY_STUDY_UID}`).click();
+
+  await page.waitForURL(`**/studies/${encodeURIComponent(SR_EMPTY_STUDY_UID)}`);
+  await expect(page.getByTestId("study-page")).toBeVisible();
+
+  const reportRow = page.locator('[data-testid^="report-row-"]').first();
+  await expect(reportRow).toBeVisible();
+  await expect(reportRow.locator('[data-testid^="report-nothing-to-display-"]')).toHaveText(
+    "Nothing to display — the disc's report entry is empty",
+  );
+  await expect(reportRow.locator('[data-testid^="button-view-report-"]')).toHaveCount(0);
+
+  // The study header's viewable count excludes this series.
+  await expect(page.getByTestId("text-study-counts")).toContainText("0 viewable");
+});

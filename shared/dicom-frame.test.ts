@@ -10,6 +10,8 @@ import {
   pixelFrameFromPart10,
   renderFrameRgba,
   rgbaFromFrame,
+  undrawableFrameHeadline,
+  undrawableFrameMessage,
   windowForPreset,
   type DicomMono16Frame,
 } from "./dicom-frame";
@@ -208,6 +210,39 @@ describe("pixelFrameFromPart10", () => {
     expect(describeUndrawableFrame(new Uint8Array(bytes))).toContain(SOP_CT_IMAGE);
     expect(describeUndrawableFrame(new Uint8Array(bytes))).toContain("MONOCHROME2");
     expect(describeUndrawableFrame(new Uint8Array(bytes))).toContain("8-bit");
+  });
+
+  it("names the SOP class in the plain-language headline", () => {
+    const bytes = buildMiniCtDicom({
+      rows: 4,
+      columns: 4,
+      bitsAllocated: 8,
+      photometric: "YBR_FULL",
+      sopClass: SOP_SECONDARY_CAPTURE,
+    });
+    expect(undrawableFrameHeadline(new Uint8Array(bytes))).toBe(
+      `This file has no viewable image content (SOP class ${SOP_SECONDARY_CAPTURE}).`,
+    );
+  });
+
+  it("drops the parenthetical when the bytes aren't even Part 10", () => {
+    expect(undrawableFrameHeadline(new Uint8Array(Buffer.from("not dicom")))).toBe(
+      "This file has no viewable image content.",
+    );
+  });
+
+  it("pairs the headline with the technical detail on a second line", () => {
+    const bytes = buildMiniCtDicom({
+      rows: 4,
+      columns: 4,
+      bitsAllocated: 8,
+      photometric: "YBR_FULL",
+      sopClass: SOP_SECONDARY_CAPTURE,
+    });
+    const message = undrawableFrameMessage(new Uint8Array(bytes));
+    const [headline, detail] = message.split("\n");
+    expect(headline).toBe(undrawableFrameHeadline(new Uint8Array(bytes)));
+    expect(detail).toBe(describeUndrawableFrame(new Uint8Array(bytes)));
   });
 });
 
