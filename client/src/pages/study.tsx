@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { seriesLabel } from "@shared/dicom-meta";
-import { groupReports } from "@shared/studies";
+import { groupReports, studyLabel, studySeries } from "@shared/studies";
 import { localDate } from "@shared/upload-kinds";
 import { ArrowLeft, Eye, FileText, ScanLine } from "lucide-react";
 
@@ -139,18 +139,6 @@ function Section({
       )}
     </div>
   );
-}
-
-function allSeriesOf(study: StudySummary): MedicalDocument[] {
-  const { groups } = study;
-  return [
-    ...groups.volume,
-    ...groups.snapshot,
-    ...groups.analysis,
-    ...groups.report,
-    ...groups.localizer,
-    ...groups.other,
-  ];
 }
 
 function ReportsSection({
@@ -293,9 +281,14 @@ export default function Study({
               </span>
             ))}
           </div>
-          <h1 className="text-foreground mb-2 font-display">
-            {study.studyDescription || "Imaging study"}
+          <h1 className="text-foreground mb-1 font-display" data-testid="text-study-label">
+            {studyLabel(study) || "Imaging study"}
           </h1>
+          {study.studyDescription && (
+            <p className="text-foreground-muted font-body mb-2" data-testid="text-study-description">
+              {study.studyDescription}
+            </p>
+          )}
           <p className="text-foreground-muted font-body">
             {study.documentDate && format(localDate(study.documentDate), "MMMM d, yyyy")}
             {" · "}
@@ -335,7 +328,7 @@ export default function Study({
           document={viewerDocument}
           open={viewerOpen}
           onOpenChange={setViewerOpen}
-          siblingDocuments={allSeriesOf(study)}
+          siblingDocuments={studySeries(study)}
           onOpenSibling={openViewer}
         />
       ) : (

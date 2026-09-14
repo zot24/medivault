@@ -13,7 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { documentStats, filterStudies } from "@shared/studies";
+import { documentStats, filterStudies, splitDocuments } from "@shared/studies";
 import {
   Plus,
   Search,
@@ -64,7 +64,7 @@ export default function Documents() {
   // A DICOM series is collapsed into its study card; it doesn't also get an
   // ordinary document card. Stats below count a study as one item, not one
   // per series.
-  const plainDocuments = documents?.filter((doc) => !doc.dicomMeta) ?? [];
+  const { ordinary: plainDocuments } = splitDocuments(documents ?? []);
   const studyList = studies ?? [];
   const studyFilter = { searchQuery, documentType: filterType };
   const stats = documentStats(plainDocuments, studyList, studyFilter);
@@ -303,7 +303,7 @@ export default function Documents() {
           filteredStudies.length > 0 && (
             <div className="mb-10">
               <h2 className="text-2xl font-semibold text-foreground mb-4 font-display">
-                Imaging Studies
+                Studies
               </h2>
               <div
                 className="grid md:grid-cols-2 lg:grid-cols-3 gap-6"
@@ -332,14 +332,19 @@ export default function Documents() {
             ))}
           </div>
         ) : filteredDocuments.length > 0 ? (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="documents-grid">
-            {filteredDocuments.map((document) => (
-              <DocumentCard
-                key={document.id}
-                document={document}
-                onDelete={handleDelete}
-              />
-            ))}
+          <div>
+            <h2 className="text-2xl font-semibold text-foreground mb-4 font-display">
+              Documents
+            </h2>
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="documents-grid">
+              {filteredDocuments.map((document) => (
+                <DocumentCard
+                  key={document.id}
+                  document={document}
+                  onDelete={handleDelete}
+                />
+              ))}
+            </div>
           </div>
         ) : plainDocuments.length > 0 ? (
           <div className="text-center py-16">
