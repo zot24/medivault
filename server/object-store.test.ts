@@ -131,4 +131,23 @@ describe("SupabaseObjectStore.getRange", () => {
 
     expect(await store.getRange(asObjectKey("owner-1/run.dcm"), 0, 9)).toBeNull();
   });
+
+  it("drains the response body on a failed range request instead of leaking the connection", async () => {
+    const arrayBuffer = vi.fn(async () => new ArrayBuffer(0));
+    const fetchImpl = vi.fn(async () => ({
+      ok: false,
+      status: 416,
+      arrayBuffer,
+    }));
+    const store = new SupabaseObjectStore(
+      "http://127.0.0.1:54421",
+      "test-service-role",
+      "medical-files",
+      fetchImpl as any,
+    );
+
+    await store.getRange(asObjectKey("owner-1/run.dcm"), 0, 9);
+
+    expect(arrayBuffer).toHaveBeenCalled();
+  });
 });

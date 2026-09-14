@@ -276,6 +276,9 @@ export class SupabaseObjectStore implements ObjectStore {
       },
     );
     if (!response.ok) {
+      // Drain the body even though we're discarding it — an unread body on
+      // a fetch Response can leave the underlying connection unreleased.
+      await response.arrayBuffer().catch(() => {});
       return null;
     }
     return Buffer.from(await response.arrayBuffer());
