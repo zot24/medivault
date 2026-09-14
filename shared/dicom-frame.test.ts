@@ -261,6 +261,21 @@ describe("window and rescale", () => {
     const lung = rgbaFromFrame(frame, { center: -600, width: 1500 });
     expect(lung[0]).toBe(255);
   });
+
+  it("does not apply mono8's '-1' high-edge adjustment to mono16 (CT/MR) frames", () => {
+    // mono8's window formula subtracts 1 from the high edge so a window
+    // exactly spanning the 8-bit range doesn't clip 255 (see the mono8
+    // describe block below) — that's specific to mono8; applying it to
+    // mono16 would shift existing CT/MR windowing (out of plan 07's scope).
+    const pixels = new Uint16Array(16 * 16).fill(4);
+    const bytes = buildMiniCtDicom({ pixels, windowCenter: 0, windowWidth: 10 });
+
+    const rgba = rgbaFromFrame(pixelFrameFromPart10(new Uint8Array(bytes))!);
+
+    // No -1: low = -5, high = 5, span = 10 -> (4 - -5) / 10 * 255 = 229.5 -> 230.
+    // With the mono8 adjustment wrongly applied: high = 4, span = 9 -> 255 (clipped).
+    expect(rgba[0]).toBe(230);
+  });
 });
 
 describe("rgbaFromFrame on mono8", () => {

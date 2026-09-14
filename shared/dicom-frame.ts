@@ -489,11 +489,12 @@ export function rgbaFromFrame(
   const slope = frame.kind === "mono8" || frame.rescaleSlope === 0 ? 1 : frame.rescaleSlope;
   const intercept = frame.kind === "mono8" ? 0 : frame.rescaleIntercept;
   const low = (center - width / 2 - intercept) / slope;
-  // -1: a window of `width` spans exactly `width` distinct code values
-  // (DICOM VOI LUT convention), so its highest value is width-1 above low —
-  // without this a window sized to the full 8-bit range (e.g. 128/256)
-  // clips value 255 to just short of white.
-  const high = (center + width / 2 - intercept) / slope - 1;
+  // -1, mono8 only: a window of `width` spans exactly `width` distinct code
+  // values (DICOM VOI LUT convention), so its highest value is width-1
+  // above low — without this a window sized to the full 8-bit range (e.g.
+  // 128/256) clips value 255 to just short of white. Scoped to mono8 so it
+  // doesn't shift existing mono16 (CT/MR) windowing, which predates it.
+  const high = (center + width / 2 - intercept) / slope - (frame.kind === "mono8" ? 1 : 0);
   const span = Math.max(high - low, 1e-6);
   for (let i = 0; i < frame.pixels.length; i++) {
     const gray = Math.max(
