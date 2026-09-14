@@ -2,11 +2,17 @@ import { describe, expect, it } from "vitest";
 import type { DicomSeriesMeta } from "./dicom-meta";
 import type { MedicalDocument } from "./schema";
 import {
+  documentIdsForItems,
+  documentItemDate,
+  documentItemKey,
   documentStats,
   filterStudies,
   groupIntoStudies,
   groupReports,
+  listDocumentItems,
   primarySeries,
+  splitDocuments,
+  studyLabel,
 } from "./studies";
 
 const BASIC_TEXT_SR = "1.2.840.10008.5.1.4.1.1.88.11";
@@ -501,5 +507,168 @@ describe("filterStudies", () => {
 
     expect(shown).toEqual([matching]);
     expect(stats.filtered).toBe(shown.length);
+  });
+});
+
+describe("splitDocuments", () => {
+  it("sends records with dicomMeta to studies and the rest to ordinary", () => {
+    const pdf = record({ dicomMeta: null, title: "Blood panel" });
+    const series = record({ dicomMeta: { studyInstanceUid: "s" } });
+
+    const { ordinary, studies } = splitDocuments([pdf, series]);
+
+    expect(ordinary).toEqual([pdf]);
+    expect(studies).toHaveLength(1);
+    expect(studies[0].studyInstanceUid).toBe("s");
+  });
+
+  it("never returns a record with dicomMeta under ordinary", () => {
+    const records = [
+      record({ dicomMeta: null }),
+      record({ dicomMeta: { studyInstanceUid: "a" } }),
+      record({ dicomMeta: { studyInstanceUid: "b" } }),
+      record({ dicomMeta: null }),
+    ];
+
+    const { ordinary } = splitDocuments(records);
+
+    expect(ordinary).toHaveLength(2);
+    expect(ordinary.every((doc) => doc.dicomMeta === null)).toBe(true);
+  });
+
+  it("collapses the three series of one study into a single study", () => {
+    const series = [1, 2, 3].map(() => record({ dicomMeta: { studyInstanceUid: "s" } }));
+
+    const { ordinary, studies } = splitDocuments(series);
+
+    expect(ordinary).toEqual([]);
+    expect(studies).toHaveLength(1);
+    expect(studies[0].seriesCount).toBe(3);
+  });
+});
+
+describe("listDocumentItems", () => {
+  it("returns one item per study and one per ordinary document", () => {
+    const pdf = record({ dicomMeta: null });
+    const series = [1, 2, 3].map(() => record({ dicomMeta: { studyInstanceUid: "s" } }));
+
+    const items = listDocumentItems([pdf, ...series]);
+
+    expect(items).toHaveLength(2);
+    expect(items.filter((item) => item.kind === "study")).toHaveLength(1);
+    expect(items.filter((item) => item.kind === "document")).toHaveLength(1);
+  });
+
+  it("counts a 32-series study as one item", () => {
+    const series = Array.from({ length: 32 }, () =>
+      record({ dicomMeta: { studyInstanceUid: "big" } }),
+    );
+
+    expect(listDocumentItems(series)).toHaveLength(1);
+  });
+
+  it("sorts items by date descending, dating a study by its earliest series", () => {
+    const older = record({ dicomMeta: null, documentDate: "2026-01-05" });
+    const newer = record({ dicomMeta: null, documentDate: "2026-03-05" });
+    const studySeries = [
+      record({ documentDate: "2026-02-20", dicomMeta: { studyInstanceUid: "s" } }),
+      record({ documentDate: "2026-02-01", dicomMeta: { studyInstanceUid: "s" } }),
+    ];
+
+    const items = listDocumentItems([older, ...studySeries, newer]);
+
+    expect(items.map(documentItemDate)).toEqual([
+      "2026-03-05",
+      "2026-02-01",
+      "2026-01-05",
+    ]);
+  });
+
+  it("gives every item a stable key so a list never falls back to indexes", () => {
+    const pdf = record({ dicomMeta: null });
+    const series = record({ dicomMeta: { studyInstanceUid: "s" } });
+
+    const keys = listDocumentItems([pdf, series]).map(documentItemKey);
+
+    expect(new Set(keys).size).toBe(2);
+    expect(keys).toContain("study-s");
+    expect(keys).toContain(`document-${pdf.id}`);
+  });
+});
+
+describe("studyLabel", () => {
+  function studyOf(modality: string, studyDescription: string) {
+    const [study] = groupIntoStudies([
+      record({ dicomMeta: { studyInstanceUid: "s", modality, studyDescription } }),
+    ]);
+    return study;
+  }
+
+  const cases: Array<[string, string, string]> = [
+    ["CT", "CorCTA cardiaco", "Coronary CT angiography"],
+    ["CT", "Coronarias", "Coronary CT angiography"],
+    ["CT", "Torax", "CT scan"],
+    ["CT", "", "CT scan"],
+    ["US", "Ecocardiograma", "Echocardiogram"],
+    ["US", "Echo stress", "Echocardiogram"],
+    ["US", "Cardio doppler", "Echocardiogram"],
+    ["US", "Abdomen", "Ultrasound"],
+    ["XA", "Cateterismo", "Cardiac catheterization"],
+    ["XA", "Coronariografia", "Cardiac catheterization"],
+    ["XA", "Miembro inferior", "Angiography"],
+  ];
+
+  it.each(cases)(
+    "labels a %s study described as '%s' as '%s'",
+    (modality, description, expected) => {
+      expect(studyLabel(studyOf(modality, description))).toBe(expected);
+    },
+  );
+
+  it("falls back to the raw study description for a modality with no human label", () => {
+    expect(studyLabel(studyOf("MR", "Cardiac MRI"))).toBe("Cardiac MRI");
+  });
+
+  it("falls back to the modality when there is no description either", () => {
+    expect(studyLabel(studyOf("MR", ""))).toBe("MR");
+  });
+
+  it("labels a mixed CT + SR study by its imaging modality, not the report one", () => {
+    const [study] = groupIntoStudies([
+      record({
+        dicomMeta: { studyInstanceUid: "s", modality: "SR", studyDescription: "CorCTA" },
+      }),
+      record({
+        dicomMeta: { studyInstanceUid: "s", modality: "CT", studyDescription: "CorCTA" },
+      }),
+    ]);
+
+    expect(studyLabel(study)).toBe("Coronary CT angiography");
+  });
+});
+
+describe("documentIdsForItems", () => {
+  it("expands a study into every one of its series ids", () => {
+    const series = [1, 2, 3].map(() => record({ dicomMeta: { studyInstanceUid: "s" } }));
+    const items = listDocumentItems(series);
+
+    expect(documentIdsForItems(items).sort()).toEqual(series.map((s) => s.id).sort());
+  });
+
+  it("keeps an ordinary document as its own id", () => {
+    const pdf = record({ dicomMeta: null });
+
+    expect(documentIdsForItems(listDocumentItems([pdf]))).toEqual([pdf.id]);
+  });
+
+  it("returns no ids for no items", () => {
+    expect(documentIdsForItems([])).toEqual([]);
+  });
+
+  it("never repeats an id when the same item is listed twice", () => {
+    const series = [1, 2].map(() => record({ dicomMeta: { studyInstanceUid: "s" } }));
+    const items = listDocumentItems(series);
+
+    expect(documentIdsForItems([...items, ...items])).toEqual(series.map((s) => s.id));
   });
 });
