@@ -1,3 +1,4 @@
+import dicomParser from "dicom-parser";
 import { describe, expect, it } from "vitest";
 import { readFileMeta, readSeriesMeta, readSopInstanceUid, seriesGroup, seriesLabel } from "./dicom-meta";
 import { buildMiniCtDicom, buildMiniScRgbDicom } from "./mini-ct-dicom";
@@ -173,6 +174,48 @@ describe("readFileMeta", () => {
 
   it("returns null for bytes that are not a Part 10 file", () => {
     expect(readFileMeta(new Uint8Array([1, 2, 3, 4]))).toBeNull();
+  });
+});
+
+describe("readFileMeta frameIndex", () => {
+  it("computes a frame index for an uncompressed multi-frame file, offsets read from the parsed element", () => {
+    const bytes = buildMiniCtDicom({
+      rows: 4,
+      columns: 4,
+      bitsAllocated: 8,
+      frames: 2,
+      windowCenter: 100,
+      windowWidth: 200,
+      pixels8: Uint8Array.from({ length: 32 }, (_, i) => i),
+    });
+
+    const meta = readFileMeta(new Uint8Array(bytes));
+    // Not hard-coded: read independently from a full parse of the same bytes.
+    const dataSet = dicomParser.parseDicom(new Uint8Array(bytes));
+
+    expect(meta?.frameIndex).toEqual({
+      pixelDataOffset: dataSet.elements.x7fe00010.dataOffset,
+      frameBytes: 16, // 4 x 4 x 1 sample x 8 bits / 8
+      numberOfFrames: 2,
+      bitsAllocated: 8,
+      windowCenter: 100,
+      windowWidth: 200,
+    });
+  });
+
+  it("is null for a single-frame file", () => {
+    const bytes = buildMiniCtDicom();
+    expect(readFileMeta(new Uint8Array(bytes))?.frameIndex).toBeNull();
+  });
+
+  it("is null for a compressed multi-frame transfer syntax", () => {
+    // JPEG Lossless is a compressed transfer syntax; a frame is not a fixed
+    // byte range in it, so no frame index applies even with frames declared.
+    const bytes = buildMiniCtDicom({
+      transferSyntax: "1.2.840.10008.1.2.4.70",
+      frames: 2,
+    });
+    expect(readFileMeta(new Uint8Array(bytes))?.frameIndex).toBeNull();
   });
 });
 

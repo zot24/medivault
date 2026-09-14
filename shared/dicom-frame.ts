@@ -40,7 +40,23 @@ export type DicomRgb8Frame = {
   pixels: Uint8Array;
 };
 
-export type DicomFrame = DicomMono16Frame | DicomRgb8Frame;
+/**
+ * One frame of an uncompressed 8-bit monochrome multi-frame file (plan 07:
+ * angiography cine runs), read as a fixed byte range from the server's
+ * frame endpoint rather than decoded from a whole Part 10 file — see
+ * server/document-files.ts's openOwnedFrame. Always slope 1 / intercept 0:
+ * an 8-bit stored value has no rescale to real-world units.
+ */
+export type DicomMono8Frame = {
+  kind: "mono8";
+  rows: number;
+  columns: number;
+  pixels: Uint8Array;
+  windowCenter: number;
+  windowWidth: number;
+};
+
+export type DicomFrame = DicomMono16Frame | DicomRgb8Frame | DicomMono8Frame;
 
 export function pixelFrameFromPart10(bytes: Uint8Array): DicomFrame | null {
   if (!isPart10(bytes)) {
@@ -467,11 +483,17 @@ export function rgbaFromFrame(
     return rgba;
   }
   // Window in rescaled units, mapped back to stored values so the loop stays integer-cheap.
+  // mono8 has no rescale (slope 1, intercept 0) — an 8-bit stored value already is the display value.
   const center = window?.center ?? frame.windowCenter;
   const width = window?.width ?? frame.windowWidth;
-  const slope = frame.rescaleSlope === 0 ? 1 : frame.rescaleSlope;
-  const low = (center - width / 2 - frame.rescaleIntercept) / slope;
-  const high = (center + width / 2 - frame.rescaleIntercept) / slope;
+  const slope = frame.kind === "mono8" || frame.rescaleSlope === 0 ? 1 : frame.rescaleSlope;
+  const intercept = frame.kind === "mono8" ? 0 : frame.rescaleIntercept;
+  const low = (center - width / 2 - intercept) / slope;
+  // -1: a window of `width` spans exactly `width` distinct code values
+  // (DICOM VOI LUT convention), so its highest value is width-1 above low —
+  // without this a window sized to the full 8-bit range (e.g. 128/256)
+  // clips value 255 to just short of white.
+  const high = (center + width / 2 - intercept) / slope - 1;
   const span = Math.max(high - low, 1e-6);
   for (let i = 0; i < frame.pixels.length; i++) {
     const gray = Math.max(

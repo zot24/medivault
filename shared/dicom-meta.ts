@@ -50,7 +50,10 @@ export function readSeriesMeta(bytes: Uint8Array): DicomSeriesMeta | null {
     return null;
   }
   try {
-    const dataSet = dicomParser.parseDicom(bytes);
+    // untilTag: every field this function reads comes before the pixel data
+    // element, so this is safe on just the first megabyte or so of a large
+    // file too — see readFileMeta's comment below.
+    const dataSet = dicomParser.parseDicom(bytes, { untilTag: "x7fe00010" });
     const studyInstanceUid = dataSet.string("x0020000d");
     const seriesInstanceUid = dataSet.string("x0020000e");
     const sopClassUid = dataSet.string("x00080016");
@@ -86,29 +89,88 @@ export function readSeriesMeta(bytes: Uint8Array): DicomSeriesMeta | null {
  * (shared/phases.ts); sopInstanceUid lets an SR's IMAGE content items resolve
  * to a sibling record's file (shared/dicom-sr.ts).
  */
+/**
+ * Where an uncompressed multi-frame file's pixel data lives, so a frame can
+ * be read as a fixed byte range (plan 07: HTTP range reads for angiography
+ * cine runs) without decoding or holding the whole file. Present only for
+ * an uncompressed transfer syntax with NumberOfFrames > 1 — see
+ * UNCOMPRESSED_FRAME_TRANSFER_SYNTAXES.
+ */
+export type DicomFrameIndex = {
+  pixelDataOffset: number; // byte offset of (7FE0,0010)'s value, from readFileMeta's dataSet.elements
+  frameBytes: number; // rows * columns * samplesPerPixel * bitsAllocated / 8
+  numberOfFrames: number; // (0028,0008)
+  bitsAllocated: number; // (0028,0100)
+  // The file's own window preset, needed by the frame endpoint (server/routes.ts)
+  // without re-parsing the file on every request.
+  windowCenter: number; // (0028,1050), default 128 (mid-range for 8-bit)
+  windowWidth: number; // (0028,1051), default 256
+};
+
 export type DicomFileMeta = {
   sopInstanceUid: string | null; // (0008,0018)
   instanceNumber: number | null; // (0020,0013)
   sliceLocation: number | null; // third value of (0020,0032), else (0020,1041)
   phase: number | null; // (0020,9241) %, else (0018,1060) ms
+  frameIndex: DicomFrameIndex | null;
 };
+
+/** Uncompressed transfer syntaxes: a frame is a fixed byte range, no decoding needed. */
+const UNCOMPRESSED_FRAME_TRANSFER_SYNTAXES = new Set([
+  "1.2.840.10008.1.2", // implicit VR little endian
+  "1.2.840.10008.1.2.1", // explicit VR little endian
+  "1.2.840.10008.1.2.2", // explicit VR big endian
+]);
 
 export function readFileMeta(bytes: Uint8Array): DicomFileMeta | null {
   if (!isPart10(bytes)) {
     return null;
   }
   try {
-    const dataSet = dicomParser.parseDicom(bytes);
+    // untilTag stops parsing at the pixel data element's header (tag, VR,
+    // length) without reading its value — the element's dataOffset is set
+    // regardless, so this is safe to call on just the first megabyte or so
+    // of a 100 MB file (see readFileMeta's callers in server/document-files.ts).
+    const dataSet = dicomParser.parseDicom(bytes, { untilTag: "x7fe00010" });
     const sopInstanceUid = dataSet.string("x00080018");
     return {
       sopInstanceUid: sopInstanceUid ? trimmed(sopInstanceUid) : null,
       instanceNumber: firstInt(dataSet.string("x00200013")),
       sliceLocation: sliceLocationOf(dataSet),
       phase: phaseOfDataSet(dataSet),
+      frameIndex: frameIndexOfDataSet(dataSet),
     };
   } catch {
     return null;
   }
+}
+
+function frameIndexOfDataSet(dataSet: DataSet): DicomFrameIndex | null {
+  const transferSyntax = dataSet.string("x00020010") ?? "";
+  const numberOfFrames = firstInt(dataSet.string("x00280008")) ?? 1;
+  const pixelElement = dataSet.elements.x7fe00010;
+  if (
+    !UNCOMPRESSED_FRAME_TRANSFER_SYNTAXES.has(transferSyntax) ||
+    numberOfFrames <= 1 ||
+    !pixelElement
+  ) {
+    return null;
+  }
+  const rows = dataSet.uint16("x00280010");
+  const columns = dataSet.uint16("x00280011");
+  if (!rows || !columns) {
+    return null;
+  }
+  const samplesPerPixel = dataSet.uint16("x00280002") ?? 1;
+  const bitsAllocated = dataSet.uint16("x00280100") ?? 16;
+  return {
+    pixelDataOffset: pixelElement.dataOffset,
+    frameBytes: (rows * columns * samplesPerPixel * bitsAllocated) / 8,
+    numberOfFrames,
+    bitsAllocated,
+    windowCenter: firstFloat(dataSet.string("x00281050")) ?? 128,
+    windowWidth: firstFloat(dataSet.string("x00281051")) ?? 256,
+  };
 }
 
 /** Just the SOPInstanceUID (0008,0018) of one file; null when unreadable. */

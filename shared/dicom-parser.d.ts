@@ -19,7 +19,10 @@ declare module "dicom-parser" {
     elements: Record<string, Element>;
   };
 
-  export function parseDicom(data: Uint8Array): DataSet;
+  export function parseDicom(
+    data: Uint8Array,
+    options?: { untilTag?: string },
+  ): DataSet;
   export function readEncapsulatedImageFrame(
     dataSet: DataSet,
     pixelDataElement: Element,

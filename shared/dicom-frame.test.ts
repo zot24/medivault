@@ -263,6 +263,46 @@ describe("window and rescale", () => {
   });
 });
 
+describe("rgbaFromFrame on mono8", () => {
+  it("maps 0 -> 0 and 255 -> 255 under window 128/256 (plan 07 angiography frames)", () => {
+    const frame = {
+      kind: "mono8" as const,
+      rows: 1,
+      columns: 2,
+      pixels: Uint8Array.from([0, 255]),
+      windowCenter: 128,
+      windowWidth: 256,
+    };
+
+    const rgba = rgbaFromFrame(frame);
+
+    expect(rgba[0]).toBe(0);
+    expect(rgba[1]).toBe(0);
+    expect(rgba[2]).toBe(0);
+    expect(rgba[3]).toBe(255);
+    expect(rgba[4]).toBe(255);
+    expect(rgba[5]).toBe(255);
+    expect(rgba[6]).toBe(255);
+    expect(rgba[7]).toBe(255);
+  });
+
+  it("applies no rescale (slope 1, intercept 0) — an override window is used directly", () => {
+    const frame = {
+      kind: "mono8" as const,
+      rows: 1,
+      columns: 1,
+      pixels: Uint8Array.from([100]),
+      windowCenter: 128,
+      windowWidth: 256,
+    };
+
+    // window 100/20 -> low 90, high 109: (100-90)/19 * 255 ~= 134, ignoring
+    // the frame's own stored window (128/256, which would give 100).
+    const rgba = rgbaFromFrame(frame, { center: 100, width: 20 });
+    expect(rgba[0]).toBe(134);
+  });
+});
+
 describe("CT_WINDOW_PRESETS", () => {
   it("resolves a preset id to a window and 'stored' to undefined", () => {
     expect(windowForPreset("cta")).toEqual({ center: 300, width: 800 });

@@ -149,11 +149,23 @@ describe("sliceDeltaFromKey", () => {
 
 describe("fitsUploadCap", () => {
   it("accepts a 12 MiB object that the old 10 MiB cap would reject", () => {
-    expect(fitsUploadCap(12 * 1024 * 1024)).toBe(true);
+    expect(fitsUploadCap(12 * 1024 * 1024, "application/pdf")).toBe(true);
   });
 
   it("rejects an object larger than the documented 50 MiB spike cap", () => {
-    expect(fitsUploadCap(50 * 1024 * 1024 + 1)).toBe(false);
+    expect(fitsUploadCap(50 * 1024 * 1024 + 1, "application/pdf")).toBe(false);
+  });
+
+  it("rejects a 51 MB pdf", () => {
+    expect(fitsUploadCap(51 * 1024 * 1024, "application/pdf")).toBe(false);
+  });
+
+  it("accepts a 200 MB dicom file, above the pdf/image cap", () => {
+    expect(fitsUploadCap(200 * 1024 * 1024, "application/dicom")).toBe(true);
+  });
+
+  it("rejects a 300 MB dicom file, above the dicom cap", () => {
+    expect(fitsUploadCap(300 * 1024 * 1024, "application/dicom")).toBe(false);
   });
 });
 

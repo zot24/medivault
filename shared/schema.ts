@@ -14,7 +14,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import type { DicomSeriesMeta } from "./dicom-meta";
+import type { DicomFrameIndex, DicomSeriesMeta } from "./dicom-meta";
 
 // Session storage table.
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
@@ -89,6 +89,11 @@ export const documentFiles = pgTable(
     instanceNumber: integer("instance_number"), // (0020,0013)
     sliceLocation: real("slice_location"), // (0020,0032) z, else (0020,1041)
     phase: real("phase"), // (0020,9241) %, else (0018,1060) ms
+    // Set only for an uncompressed multi-frame file (plan 07 angiography
+    // runs) — see shared/dicom-meta.ts readFileMeta. Lets the frame endpoint
+    // (server/routes.ts) serve one frame as an HTTP range read instead of
+    // decoding or holding the whole file.
+    frameIndex: jsonb("frame_index").$type<DicomFrameIndex | null>(),
     createdAt: timestamp("created_at").defaultNow(),
   },
   (table) => [
