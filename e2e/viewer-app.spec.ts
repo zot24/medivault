@@ -251,7 +251,9 @@ test("plays a synthetic ultrasound cine loop and steps its frame label", async (
 
   const play = page.getByTestId("dicom-play");
   await expect(play).toBeVisible();
-  await expect(play).toBeEnabled({ timeout: 15_000 }); // preload completes
+  // Nothing to preload: frames are decoded on demand from fragments that
+  // are already in memory, so play is live as soon as the loop is indexed.
+  await expect(play).toBeEnabled({ timeout: 15_000 });
 
   const frameLabel = page.getByTestId("dicom-cine-frame-index");
   await expect(frameLabel).toHaveText("1 / 2");

@@ -114,6 +114,37 @@ describe("FrameCache", () => {
     expect(closed).toEqual([0]);
   });
 
+  it("re-admits an evicted frame, so a dropped bitmap can just be decoded again", () => {
+    // The cine viewer keeps only a few decoded bitmaps at a time (plan 06),
+    // so eviction has to be recoverable: the compressed JPEG fragment is
+    // still in memory, and the frame is decoded and set again on demand
+    // rather than being lost for the rest of the loop.
+    const closed: number[] = [];
+    type Bitmapish = CacheableFrame & { id: number };
+    const bitmap = (id: number): Bitmapish => ({
+      id,
+      rows: ROWS,
+      columns: COLUMNS,
+      kind: "bitmap",
+    });
+    // 8x8 bitmap = 256 bytes; budget fits two.
+    const cache = new FrameCache<Bitmapish>(2 * ROWS * COLUMNS * 4, {
+      dispose: (entry) => closed.push(entry.id),
+    });
+    cache.set(0, bitmap(0));
+    cache.set(1, bitmap(1));
+    cache.set(2, bitmap(2)); // evicts and closes 0
+
+    expect(cache.has(0)).toBe(false);
+    expect(closed).toEqual([0]);
+
+    cache.set(0, bitmap(0)); // decoded again from the fragment
+
+    expect(cache.get(0)?.id).toBe(0);
+    expect(cache.has(2)).toBe(true);
+    expect(closed).toEqual([0, 1]); // re-admitting 0 evicted the now-oldest 1
+  });
+
   it("disposes a replaced entry when the same position is set again", () => {
     const closed: number[] = [];
     const cache = new FrameCache<CacheableFrame & { id: number }>(3 * FRAME_COST, {

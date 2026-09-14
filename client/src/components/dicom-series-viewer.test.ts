@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { cineFrameAtElapsed, countLoaded, loadProgressPercent } from "./dicom-series-viewer";
+import {
+  cineFrameAtElapsed,
+  cineFramesToDecode,
+  countLoaded,
+  loadProgressPercent,
+} from "./dicom-series-viewer";
 import { FrameCache } from "@/lib/frame-cache";
 
 describe("countLoaded", () => {
@@ -66,5 +71,44 @@ describe("cineFrameAtElapsed", () => {
 
   it("is always 0 for a single-frame source", () => {
     expect(cineFrameAtElapsed(5000, 30, 1)).toBe(0);
+  });
+});
+
+describe("cineFramesToDecode", () => {
+  const none = () => false;
+  const all = () => true;
+
+  it("asks for the frame on screen when its bitmap is not resident", () => {
+    expect(cineFramesToDecode(7, 96, 0, none)).toEqual([7]);
+  });
+
+  it("asks for nothing when the frame on screen is already decoded", () => {
+    expect(cineFramesToDecode(7, 96, 0, all)).toEqual([]);
+  });
+
+  it("prefetches the frames just ahead, current one first", () => {
+    expect(cineFramesToDecode(7, 96, 3, none)).toEqual([7, 8, 9, 10]);
+  });
+
+  it("wraps the prefetch window around the end of the loop", () => {
+    // Playback loops, so the frames after the last one are the first ones.
+    expect(cineFramesToDecode(94, 96, 3, none)).toEqual([94, 95, 0, 1]);
+  });
+
+  it("skips frames already decoded and keeps the rest in order", () => {
+    const resident = new Set([8, 10]);
+    expect(cineFramesToDecode(7, 96, 3, (index) => resident.has(index))).toEqual([7, 9]);
+  });
+
+  it("never asks for the same frame twice in a loop shorter than the window", () => {
+    expect(cineFramesToDecode(1, 3, 8, none)).toEqual([1, 2, 0]);
+  });
+
+  it("asks for nothing when there are no frames", () => {
+    expect(cineFramesToDecode(0, 0, 4, none)).toEqual([]);
+  });
+
+  it("normalises a current index outside the loop", () => {
+    expect(cineFramesToDecode(5, 4, 0, none)).toEqual([1]);
   });
 });
