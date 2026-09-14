@@ -27,13 +27,65 @@ import {
   Sun,
   AlertCircle,
   ExternalLink,
-  Eye
+  Eye,
+  ScanLine
 } from "lucide-react";
 import { format } from "date-fns";
 import type { MedicalDocument, Symptom } from "@shared/schema";
 import DicomSeriesViewer from "@/components/dicom-series-viewer";
 import { ownedFileUrl } from "@/lib/owned-file";
 import { isDicomDocument, localDate } from "@shared/upload-kinds";
+import {
+  documentItemDate,
+  documentItemKey,
+  listDocumentItems,
+  studyLabel,
+  studySeries,
+  type DocumentItem,
+} from "@shared/studies";
+
+/**
+ * The dashboard counts, lists and links documents — and a whole imaging
+ * study is one document, so nothing below ever reads a series directly.
+ */
+function itemLabel(item: DocumentItem): string {
+  return item.kind === "study" ? studyLabel(item.study) : item.record.title;
+}
+
+function studySummaryLine(seriesCount: number, fileCount: number): string {
+  return [
+    seriesCount === 1 ? "1 series" : `${seriesCount} series`,
+    fileCount === 1 ? "1 image" : `${fileCount} images`,
+  ].join(" · ");
+}
+
+function itemSubtitle(item: DocumentItem): string {
+  if (item.kind === "study") {
+    return studySummaryLine(item.study.seriesCount, item.study.fileCount);
+  }
+  return item.record.doctorName || item.record.facilityName || "Medical document";
+}
+
+/** A study wears its modalities (CT, US, XA…); a document its type. */
+function itemBadges(item: DocumentItem): string[] {
+  return item.kind === "study"
+    ? item.study.modalities
+    : [item.record.documentType.replace("_", " ")];
+}
+
+/** Most recent upload behind an item — a study is as fresh as its newest series. */
+function itemUploadedAt(item: DocumentItem): number {
+  const records = item.kind === "study" ? studySeries(item.study) : [item.record];
+  return records.reduce((latest, record) => {
+    const at = record.createdAt ? new Date(record.createdAt).getTime() : 0;
+    return at > latest ? at : latest;
+  }, 0);
+}
+
+function isInCurrentMonth(date: Date): boolean {
+  const now = new Date();
+  return date.getMonth() === now.getMonth() && date.getFullYear() === now.getFullYear();
+}
 
 export default function Dashboard() {
   const { toast } = useToast();
@@ -135,24 +187,25 @@ export default function Dashboard() {
     });
   };
 
-  const recentDocuments = React.useMemo(() => {
-    if (!allDocuments) return undefined;
-    return [...allDocuments]
-      .sort((a, b) => {
-        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return dateB - dateA;
-      })
-      .slice(0, 5);
-  }, [allDocuments]);
+  // One item per ordinary document and one per study — the single list the
+  // tiles, the timeline and the recent rows all read.
+  const documentItems = React.useMemo(
+    () => listDocumentItems(allDocuments ?? []),
+    [allDocuments],
+  );
 
-  const lastUploadDate = React.useMemo(() => {
-    if (!allDocuments || allDocuments.length === 0) return null;
-    const sortedDocs = [...allDocuments]
-      .filter(doc => doc.createdAt)
-      .sort((a, b) => new Date(b.createdAt!).getTime() - new Date(a.createdAt!).getTime());
-    return sortedDocs[0]?.createdAt || null;
-  }, [allDocuments]);
+  const recentItems = React.useMemo(() => documentItems.slice(0, 5), [documentItems]);
+
+  const lastActivity = React.useMemo(() => {
+    let latest: { item: DocumentItem; at: number } | null = null;
+    for (const item of documentItems) {
+      const at = itemUploadedAt(item);
+      if (at > 0 && (!latest || at > latest.at)) {
+        latest = { item, at };
+      }
+    }
+    return latest;
+  }, [documentItems]);
 
   const activityTimeline = React.useMemo(() => {
     const activities: Array<{
@@ -161,20 +214,26 @@ export default function Dashboard() {
       title: string;
       subtitle: string;
       date: Date;
+      badges: string[];
       severity?: number;
-      documentType?: string;
-      originalId: number;
+      item?: DocumentItem;
     }> = [];
 
-    allDocuments?.forEach(doc => {
+    documentItems.forEach(item => {
       activities.push({
-        id: `doc-${doc.id}`,
+        id: documentItemKey(item),
         type: 'document',
-        title: doc.title,
-        subtitle: doc.doctorName || doc.facilityName || 'Medical document',
-        date: doc.createdAt ? new Date(doc.createdAt) : localDate(doc.documentDate),
-        documentType: doc.documentType,
-        originalId: doc.id,
+        title: itemLabel(item),
+        subtitle: itemSubtitle(item),
+        // A study is dated by the scan, not by the day it was uploaded.
+        date:
+          item.kind === 'study'
+            ? localDate(item.study.documentDate)
+            : item.record.createdAt
+              ? new Date(item.record.createdAt)
+              : localDate(item.record.documentDate),
+        badges: itemBadges(item),
+        item,
       });
     });
 
@@ -185,15 +244,15 @@ export default function Dashboard() {
         title: symptom.symptomName,
         subtitle: symptom.location || symptom.duration || 'Symptom logged',
         date: localDate(symptom.dateRecorded),
+        badges: [],
         severity: symptom.severity,
-        originalId: symptom.id,
       });
     });
 
     return activities
       .sort((a, b) => b.date.getTime() - a.date.getTime())
       .slice(0, 8);
-  }, [allDocuments, symptoms]);
+  }, [documentItems, symptoms]);
 
   const symptomStats = React.useMemo(() => {
     if (!symptoms || symptoms.length === 0) return null;
@@ -217,19 +276,21 @@ export default function Dashboard() {
     window.open(ownedFileUrl(doc.filePath), "_blank");
   };
 
-  const handleDocumentClick = (doc: MedicalDocument) => {
-    openDocument(doc);
+  // A study opens its study page; a series is never opened from here.
+  const handleItemClick = (item: DocumentItem) => {
+    if (item.kind === 'study') {
+      setLocation(`/studies/${encodeURIComponent(item.study.studyInstanceUid)}`);
+      return;
+    }
+    openDocument(item.record);
   };
 
   const handleTimelineClick = (activity: typeof activityTimeline[0]) => {
-    if (activity.type === 'document') {
-      const doc = allDocuments?.find(d => d.id === activity.originalId);
-      if (doc) {
-        openDocument(doc);
-      }
-    } else {
-      setLocation('/symptoms');
+    if (activity.item) {
+      handleItemClick(activity.item);
+      return;
     }
+    setLocation('/symptoms');
   };
 
   if (isLoading) {
@@ -260,24 +321,11 @@ export default function Dashboard() {
     return null;
   }
 
-  const totalDocuments = allDocuments?.length || 0;
-  const documentsThisMonth = allDocuments?.filter(doc => {
-    if (!doc.createdAt) return false;
-    const docDate = new Date(doc.createdAt);
-    const now = new Date();
-    return docDate.getMonth() === now.getMonth() && docDate.getFullYear() === now.getFullYear();
-  }).length || 0;
-
-  const documentTypes = allDocuments?.reduce((acc, doc) => {
-    acc[doc.documentType] = (acc[doc.documentType] || 0) + 1;
-    return acc;
-  }, {} as Record<string, number>) || {};
-
-  const mostCommonType = Object.keys(documentTypes).length > 0
-    ? Object.keys(documentTypes).reduce((a, b) =>
-        documentTypes[a] > documentTypes[b] ? a : b
-      )
-    : null;
+  const totalDocuments = documentItems.length;
+  // Dated by the document itself, not by the day it was uploaded.
+  const documentsThisMonth = documentItems.filter(item =>
+    isInCurrentMonth(localDate(documentItemDate(item))),
+  ).length;
 
   const upcomingAppointments = appointments.filter(apt => new Date(apt.date) > new Date());
   const hasUpcomingAppointment = upcomingAppointments.length > 0;
@@ -320,7 +368,12 @@ export default function Dashboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-foreground-muted mb-1 font-body">Health Records</p>
-                    <p className="text-3xl font-bold text-foreground font-display">{totalDocuments}</p>
+                    <p
+                      className="text-3xl font-bold text-foreground font-display"
+                      data-testid="text-total-records"
+                    >
+                      {totalDocuments}
+                    </p>
                     <p className="text-xs text-foreground-subtle mt-1 font-body group-hover:text-primary transition-colors">View all documents →</p>
                   </div>
                   <div className="w-12 h-12 rounded-xl bg-primary-light flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
@@ -373,12 +426,17 @@ export default function Dashboard() {
                 <div>
                   <p className="text-sm text-foreground-muted mb-1 font-body">Last Activity</p>
                   <p className="text-xl font-bold text-foreground font-display">
-                    {lastUploadDate
-                      ? format(new Date(lastUploadDate), 'MMM d')
+                    {lastActivity
+                      ? format(new Date(lastActivity.at), 'MMM d')
                       : 'No activity'
                     }
                   </p>
-                  <p className="text-xs text-foreground-subtle mt-1 font-body">Recent update</p>
+                  <p
+                    className="text-xs text-foreground-subtle mt-1 font-body truncate"
+                    data-testid="text-last-activity-label"
+                  >
+                    {lastActivity ? itemLabel(lastActivity.item) : 'Recent update'}
+                  </p>
                 </div>
                 <div className="w-12 h-12 rounded-xl bg-secondary/10 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
                   <Clock className="text-secondary h-6 w-6" />
@@ -411,6 +469,7 @@ export default function Dashboard() {
                       key={activity.id}
                       onClick={() => handleTimelineClick(activity)}
                       className="flex items-start gap-4 relative p-3 -ml-3 rounded-xl cursor-pointer hover:bg-surface-1 transition-all duration-200 group"
+                      data-testid={`timeline-item-${activity.id}`}
                     >
                       <div className={`relative z-10 w-9 h-9 rounded-lg flex items-center justify-center transition-transform duration-200 group-hover:scale-110 ${
                         activity.type === 'document'
@@ -436,7 +495,13 @@ export default function Dashboard() {
                         <div className="flex items-center justify-between gap-4">
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
-                              <p className="font-medium text-foreground capitalize font-body truncate">{activity.title}</p>
+                              <p
+                                className={`font-medium text-foreground font-body truncate ${
+                                  activity.type === 'symptom' ? 'capitalize' : ''
+                                }`}
+                              >
+                                {activity.title}
+                              </p>
                               {activity.type === 'document' && (
                                 <ExternalLink className="h-3 w-3 text-foreground-subtle opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
                               )}
@@ -447,11 +512,15 @@ export default function Dashboard() {
                             <p className="text-xs text-foreground-subtle font-body">
                               {format(activity.date, 'MMM d, yyyy')}
                             </p>
-                            {activity.type === 'document' && activity.documentType && (
-                              <span className="badge-sage mt-1 inline-block capitalize text-xs">
-                                {activity.documentType.replace('_', ' ')}
+                            {activity.badges.map((badge) => (
+                              <span
+                                key={badge}
+                                className="badge-sage mt-1 ml-1 inline-block capitalize text-xs"
+                                data-testid={`timeline-badge-${activity.id}`}
+                              >
+                                {badge}
                               </span>
-                            )}
+                            ))}
                             {activity.type === 'symptom' && activity.severity && (
                               <span className={`inline-block mt-1 px-2 py-0.5 text-xs rounded-full font-body ${
                                 activity.severity >= 7 ? 'bg-rose-100 text-rose-600 dark:bg-rose-900/30 dark:text-rose-400' :
@@ -514,32 +583,42 @@ export default function Dashboard() {
                       </div>
                     ))}
                   </div>
-                ) : recentDocuments && recentDocuments.length > 0 ? (
+                ) : recentItems.length > 0 ? (
                   <div className="space-y-3">
-                    {recentDocuments.map((document) => (
+                    {recentItems.map((item) => (
                       <div
-                        key={document.id}
-                        onClick={() => handleDocumentClick(document)}
+                        key={documentItemKey(item)}
+                        onClick={() => handleItemClick(item)}
                         className="flex items-center p-4 bg-surface-1 rounded-xl border border-border hover:border-primary hover:bg-primary-light/30 transition-all duration-200 cursor-pointer group"
-                        data-testid={`document-${document.id}`}
+                        data-testid={`recent-${documentItemKey(item)}`}
                         role="button"
                         tabIndex={0}
-                        onKeyDown={(e) => e.key === 'Enter' && handleDocumentClick(document)}
+                        onKeyDown={(e) => e.key === 'Enter' && handleItemClick(item)}
                       >
                         <div className="w-10 h-10 rounded-xl bg-primary-light flex items-center justify-center mr-4 group-hover:scale-110 transition-transform duration-200">
-                          <FileText className="text-primary h-5 w-5" />
+                          {item.kind === 'study' ? (
+                            <ScanLine className="text-primary h-5 w-5" />
+                          ) : (
+                            <FileText className="text-primary h-5 w-5" />
+                          )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h5 className="font-medium text-foreground mb-1 font-body truncate">{document.title}</h5>
+                          <h5 className="font-medium text-foreground mb-1 font-body truncate">{itemLabel(item)}</h5>
                           <p className="text-sm text-foreground-muted font-body truncate">
-                            {document.doctorName ? `${document.doctorName} • ` : ''}
-                            {format(localDate(document.documentDate), 'MMM d, yyyy')}
+                            {item.kind === 'study'
+                              ? `${itemSubtitle(item)} • `
+                              : item.record.doctorName
+                                ? `${item.record.doctorName} • `
+                                : ''}
+                            {format(localDate(documentItemDate(item)), 'MMM d, yyyy')}
                           </p>
                         </div>
                         <div className="flex items-center space-x-3 flex-shrink-0">
-                          <span className="badge-sage capitalize hidden sm:inline-block">
-                            {document.documentType.replace('_', ' ')}
-                          </span>
+                          {itemBadges(item).map((badge) => (
+                            <span key={badge} className="badge-sage capitalize hidden sm:inline-block">
+                              {badge}
+                            </span>
+                          ))}
                           <div className="flex items-center space-x-1 text-primary opacity-0 group-hover:opacity-100 transition-opacity">
                             <Eye className="h-4 w-4" />
                             <span className="text-xs font-medium font-body">View</span>
@@ -828,7 +907,7 @@ export default function Dashboard() {
                         ? "Start your health journey"
                         : symptomStats && symptomStats.thisMonthCount === 0
                           ? "Track symptoms regularly"
-                          : lastUploadDate && (Date.now() - new Date(lastUploadDate).getTime() > 30 * 24 * 60 * 60 * 1000)
+                          : lastActivity && (Date.now() - lastActivity.at > 30 * 24 * 60 * 60 * 1000)
                             ? "Keep your records updated"
                             : "You're on track!"
                       }
@@ -838,7 +917,7 @@ export default function Dashboard() {
                         ? "Upload your first medical document to begin building your health profile."
                         : symptomStats && symptomStats.thisMonthCount === 0
                           ? "Logging symptoms helps identify patterns and triggers over time."
-                          : lastUploadDate && (Date.now() - new Date(lastUploadDate).getTime() > 30 * 24 * 60 * 60 * 1000)
+                          : lastActivity && (Date.now() - lastActivity.at > 30 * 24 * 60 * 60 * 1000)
                             ? "It's been over 30 days since your last upload. Have any new documents to add?"
                             : "You're staying on top of your health tracking. Keep it up!"
                       }
