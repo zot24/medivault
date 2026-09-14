@@ -10,11 +10,10 @@ import {
 } from "@/components/ui/dialog";
 import {
   CT_WINDOW_PRESETS,
-  compositeOverlays,
   describeUndrawableFrame,
   overlaysFromPart10,
   pixelFrameFromPart10,
-  rgbaFromFrame,
+  renderFrameRgba,
   windowForPreset,
   type DicomFrame,
   type DicomOverlay,
@@ -98,10 +97,7 @@ function blitFrame(
     return;
   }
   const image = context.createImageData(frame.columns, frame.rows);
-  const rgba = rgbaFromFrame(frame, windowForPreset(preset));
-  if (showOverlays && overlays.length > 0) {
-    compositeOverlays(rgba, frame.rows, frame.columns, overlays);
-  }
+  const rgba = renderFrameRgba(frame, showOverlays ? overlays : [], windowForPreset(preset));
   image.data.set(rgba);
   context.putImageData(image, 0, 0);
 }
@@ -469,7 +465,7 @@ export default function DicomSeriesViewer({
                       onChange={(event) => setShowOverlays(event.target.checked)}
                       data-testid="dicom-overlay-toggle"
                     />
-                    Measurements
+                    Annotations
                   </label>
                 )}
                 {isMono && (

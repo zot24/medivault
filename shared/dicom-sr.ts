@@ -23,6 +23,15 @@ export type SrMeasurement = {
   value: number;
   unit: string;
   imageRef?: string;
+  /**
+   * The sibling TEXT identifier's text, when the measurement's parent
+   * container has one (e.g. the reference disc's CT Coronary report names
+   * each lesion in a TEXT item next to the NUM). Meant to be shown as the
+   * row's primary text, with `path` as secondary context — every row's
+   * breadcrumb otherwise ends in the same container name (e.g. "Lesion
+   * Finding") and never distinguishes them.
+   */
+  label?: string;
 };
 
 /** SR SOP classes are 1.2.840.10008.5.1.4.1.1.88.* (Basic Text, Comprehensive, ...). */
@@ -109,6 +118,9 @@ export function flattenMeasurements(nodes: SrNode[]): SrMeasurement[] {
 
 function walkMeasurements(siblings: SrNode[], path: string[], out: SrMeasurement[]) {
   const imageRef = siblings.find((node) => node.type === "IMAGE")?.imageRef;
+  const label = siblings.find(
+    (node) => node.type === "TEXT" && IDENTIFIER_NAME_RE.test(node.name),
+  )?.text;
   for (const node of siblings) {
     if (node.type === "NUM" && node.value != null) {
       out.push({
@@ -117,6 +129,7 @@ function walkMeasurements(siblings: SrNode[], path: string[], out: SrMeasurement
         value: node.value,
         unit: node.unit ?? "",
         imageRef,
+        label,
       });
     }
     if (node.children.length > 0) {
@@ -124,6 +137,19 @@ function walkMeasurements(siblings: SrNode[], path: string[], out: SrMeasurement
       walkMeasurements(node.children, childPath, out);
     }
   }
+}
+
+/** A TEXT item's name that identifies what it's naming (e.g. "Lesion Identifier"). */
+const IDENTIFIER_NAME_RE = /identifier|label|name/i;
+
+/** Rounds to at most 2 decimals and appends the unit: `2.09451 cm` -> "2.09 cm". */
+const MEASUREMENT_NUMBER_FORMAT = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 2,
+});
+
+export function formatMeasurement(value: number, unit: string): string {
+  const formatted = MEASUREMENT_NUMBER_FORMAT.format(value);
+  return unit ? `${formatted} ${unit}` : formatted;
 }
 
 function sequenceItems(dataSet: DataSet | undefined, tag: string): DataSet[] {

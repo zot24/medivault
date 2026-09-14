@@ -21,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { flattenMeasurements, parseSr, type SrNode } from "@shared/dicom-sr";
+import { flattenMeasurements, formatMeasurement, parseSr, type SrNode } from "@shared/dicom-sr";
 import type { MedicalDocument } from "@shared/schema";
 
 type SrReportViewProps = {
@@ -206,11 +206,20 @@ export default function SrReportView({
                     return (
                       <TableRow key={index} data-testid={`sr-measurement-${index}`}>
                         <TableCell className="text-foreground-muted">
-                          {measurement.path.join(" › ") || "—"}
+                          {measurement.label ? (
+                            <>
+                              <div className="text-foreground">{measurement.label}</div>
+                              <div className="text-xs text-foreground-subtle">
+                                {measurement.path.join(" › ") || "—"}
+                              </div>
+                            </>
+                          ) : (
+                            measurement.path.join(" › ") || "—"
+                          )}
                         </TableCell>
                         <TableCell>{measurement.name}</TableCell>
                         <TableCell className="text-right">
-                          {measurement.value} {measurement.unit}
+                          {formatMeasurement(measurement.value, measurement.unit)}
                         </TableCell>
                         <TableCell>
                           {sibling && onOpenSibling && (

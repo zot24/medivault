@@ -10,6 +10,7 @@ import {
 } from "./studies";
 
 const BASIC_TEXT_SR = "1.2.840.10008.5.1.4.1.1.88.11";
+const COMPREHENSIVE_SR = "1.2.840.10008.5.1.4.1.1.88.33";
 
 let nextId = 1;
 
@@ -290,6 +291,78 @@ describe("groupReports", () => {
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({ label: "Report — CT Calcium Scoring", count: 1 });
     expect(rows[1]).toMatchObject({ label: "Report — Cardiac Function", count: 1 });
+  });
+
+  it('labels a Comprehensive SR "Evidence Documents" record as unreadable analysis data, keeping the rest of the description', () => {
+    const record1 = record({
+      dicomMeta: {
+        modality: "SR",
+        sopClassUid: COMPREHENSIVE_SR,
+        seriesDescription: "Cardiac Function — Evidence Documents",
+        seriesNumber: 1178,
+      },
+    });
+
+    const [row] = groupReports([record1]);
+
+    expect(row.label).toBe("Analysis data — Cardiac Function");
+  });
+
+  it('falls back to bare "Analysis data" when nothing but the phrase remains', () => {
+    const record1 = record({
+      dicomMeta: {
+        modality: "SR",
+        sopClassUid: COMPREHENSIVE_SR,
+        seriesDescription: "Evidence Documents",
+        seriesNumber: 1178,
+      },
+    });
+
+    const [row] = groupReports([record1]);
+
+    expect(row.label).toBe("Analysis data");
+  });
+
+  it("does not relabel a Comprehensive SR whose description doesn't mention Evidence Documents", () => {
+    const record1 = record({
+      dicomMeta: {
+        modality: "SR",
+        sopClassUid: COMPREHENSIVE_SR,
+        seriesDescription: "CT Coronary",
+        seriesNumber: 1043,
+      },
+    });
+
+    const [row] = groupReports([record1]);
+
+    expect(row.label).toBe("Report — CT Coronary");
+  });
+
+  it("orders unreadable Evidence Documents rows after the readable report rows", () => {
+    const unreadable = record({
+      dicomMeta: {
+        modality: "SR",
+        sopClassUid: COMPREHENSIVE_SR,
+        seriesDescription: "Evidence Documents",
+        seriesNumber: 1178,
+      },
+    });
+    const readable = record({
+      dicomMeta: {
+        modality: "SR",
+        sopClassUid: COMPREHENSIVE_SR,
+        seriesDescription: "CT Coronary",
+        seriesNumber: 1043,
+      },
+    });
+
+    // Unreadable row passed first, in `records` order — it must still sort last.
+    const rows = groupReports([unreadable, readable]);
+
+    expect(rows.map((row) => row.label)).toEqual([
+      "Report — CT Coronary",
+      "Analysis data",
+    ]);
   });
 });
 

@@ -125,6 +125,20 @@ export function primarySeries(records: MedicalDocument[]): MedicalDocument | nul
 }
 
 const BASIC_TEXT_SR_SOP_CLASS = "1.2.840.10008.5.1.4.1.1.88.11";
+const COMPREHENSIVE_SR_SOP_CLASS = "1.2.840.10008.5.1.4.1.1.88.33";
+
+/**
+ * Vendor-private SR objects on the reference disc (e.g. the Cardiac
+ * Function and CT Coronary analyses' embedded evidence images) carry this
+ * phrase in their series description. Whether their content tree is
+ * actually readable is only known once the file is parsed (out of scope
+ * here — see plan 09); this is the cheap proxy.
+ */
+const EVIDENCE_DOCUMENTS_RE = /evidence documents/i;
+/** Separator punctuation left dangling once the phrase above is stripped out. */
+const DANGLING_SEPARATOR_RE = /^[\s\-–—:]+|[\s\-–—:]+$/g;
+
+const UNREADABLE_ANALYSIS_LABEL = "Analysis data";
 
 export type ReportRow = {
   /** Stable across renders for the same group of records. */
@@ -137,13 +151,30 @@ export type ReportRow = {
 };
 
 function reportLabel(record: MedicalDocument): string {
-  if (record.dicomMeta?.sopClassUid === BASIC_TEXT_SR_SOP_CLASS) {
+  const meta = record.dicomMeta;
+  if (meta?.sopClassUid === BASIC_TEXT_SR_SOP_CLASS) {
     // Until plan 05 renders SR content, a Basic Text SR has nothing to show
     // beyond its title — plain "Report" or "Report — <description>" reads
     // as broken rather than as "there's a written report here".
     return "Written report";
   }
-  return record.dicomMeta ? seriesLabel(record.dicomMeta) : record.title;
+  if (
+    meta?.sopClassUid === COMPREHENSIVE_SR_SOP_CLASS &&
+    EVIDENCE_DOCUMENTS_RE.test(meta.seriesDescription)
+  ) {
+    // A vendor-private blob (no readable measurements or text) — "Report —
+    // Evidence Documents" reads as a broken report rather than as "there's
+    // nothing to read here, just embedded images".
+    const rest = meta.seriesDescription
+      .replace(EVIDENCE_DOCUMENTS_RE, "")
+      .replace(DANGLING_SEPARATOR_RE, "");
+    return rest ? `${UNREADABLE_ANALYSIS_LABEL} — ${rest}` : UNREADABLE_ANALYSIS_LABEL;
+  }
+  return meta ? seriesLabel(meta) : record.title;
+}
+
+function isUnreadableAnalysisRow(row: ReportRow): boolean {
+  return row.label === UNREADABLE_ANALYSIS_LABEL || row.label.startsWith(`${UNREADABLE_ANALYSIS_LABEL} — `);
 }
 
 /**
@@ -156,6 +187,10 @@ function reportLabel(record: MedicalDocument): string {
  * `seriesDescription` and a null `seriesNumber` are not "the same" report,
  * they're just two records with nothing to distinguish them, so each keeps
  * its own row (keyed by record id instead).
+ *
+ * Rows labelled as unreadable analysis data (see `reportLabel`) sort after
+ * every readable row, so a report with actual findings never has to be
+ * scrolled past to reach it — otherwise, first-appearance order is kept.
  */
 export function groupReports(records: MedicalDocument[]): ReportRow[] {
   const rows = new Map<string, ReportRow>();
@@ -181,7 +216,11 @@ export function groupReports(records: MedicalDocument[]): ReportRow[] {
       order.push(key);
     }
   }
-  return order.map((key) => rows.get(key)!);
+  const ordered = order.map((key) => rows.get(key)!);
+  return [
+    ...ordered.filter((row) => !isUnreadableAnalysisRow(row)),
+    ...ordered.filter((row) => isUnreadableAnalysisRow(row)),
+  ];
 }
 
 export type DocumentStatsFilter = {

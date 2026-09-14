@@ -7,6 +7,7 @@ import {
   isMostlyBlackAtStoredWindow,
   overlaysFromPart10,
   pixelFrameFromPart10,
+  renderFrameRgba,
   rgbaFromFrame,
   windowForPreset,
   type DicomMono16Frame,
@@ -254,6 +255,17 @@ describe("isMostlyBlackAtStoredWindow", () => {
     const frame = pixelFrameFromPart10(new Uint8Array(bytes)) as DicomMono16Frame;
     expect(isMostlyBlackAtStoredWindow(frame)).toBe(true);
   });
+
+  it("is false for a frame with zero dynamic range, even if its constant value sits below the stored window", () => {
+    // A secondary-capture page whose content lives entirely in an overlay
+    // plane (the CT dose sheet is one) has pixel data that is all zero.
+    // Auto-windowing a constant image is meaningless, so this must not
+    // read as "mostly black due to a mismatched preset".
+    const pixels = new Uint16Array(16 * 16).fill(0);
+    const bytes = buildMiniCtDicom({ pixels, windowCenter: 5000, windowWidth: 1000 });
+    const frame = pixelFrameFromPart10(new Uint8Array(bytes)) as DicomMono16Frame;
+    expect(isMostlyBlackAtStoredWindow(frame)).toBe(false);
+  });
 });
 
 describe("autoWindow", () => {
@@ -386,5 +398,46 @@ describe("compositeOverlays", () => {
     const offset = (1 * 4 + 2) * 4;
     expect(Array.from(rgba.subarray(offset, offset + 4))).toEqual([0, 255, 128, 255]);
     expect(Array.from(rgba.subarray(0, 4))).toEqual([0, 0, 0, 0]);
+  });
+});
+
+describe("renderFrameRgba", () => {
+  it("composites overlay pixels onto an all-zero frame's RGBA", () => {
+    // A secondary-capture page whose content lives entirely in an overlay
+    // plane (pixel data all zero, one graphics plane) — the CT dose sheet
+    // is one of these; the reader-drawn measurement snapshots are another.
+    const pixels = new Uint16Array(4 * 4);
+    const overlayPixels = new Uint8Array(4 * 4);
+    overlayPixels[1 * 4 + 2] = 1;
+    const bytes = buildMiniCtDicom({
+      rows: 4,
+      columns: 4,
+      pixels,
+      overlay: { rows: 4, columns: 4, pixels: overlayPixels },
+    });
+    const frame = pixelFrameFromPart10(new Uint8Array(bytes)) as DicomMono16Frame;
+    const overlays = overlaysFromPart10(new Uint8Array(bytes));
+
+    const rgba = renderFrameRgba(frame, overlays);
+
+    const offset = (1 * 4 + 2) * 4;
+    expect(Array.from(rgba.subarray(offset, offset + 4))).toEqual([0, 255, 128, 255]);
+    // A neighbouring pixel is untouched: still plain black from the frame.
+    expect(Array.from(rgba.subarray(0, 4))).toEqual([0, 0, 0, 255]);
+  });
+
+  it("passes the window through to the underlying frame rendering", () => {
+    const pixels = new Uint16Array(16 * 16).fill(1024);
+    const bytes = buildMiniCtDicom({ pixels, rescaleIntercept: -1024, windowCenter: 0, windowWidth: 200 });
+    const frame = pixelFrameFromPart10(new Uint8Array(bytes))!;
+
+    const rgba = renderFrameRgba(frame, []);
+    expect(rgba[0]).toBe(128);
+  });
+
+  it("is a no-op composite when there are no overlays", () => {
+    const bytes = buildMiniCtDicom();
+    const frame = pixelFrameFromPart10(new Uint8Array(bytes))!;
+    expect(renderFrameRgba(frame, [])).toEqual(rgbaFromFrame(frame));
   });
 });

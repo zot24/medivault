@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { flattenMeasurements, parseSr } from "./dicom-sr";
+import { flattenMeasurements, formatMeasurement, parseSr } from "./dicom-sr";
 import {
   SOP_BASIC_TEXT_SR,
   buildMiniCtDicom,
@@ -113,6 +113,39 @@ describe("flattenMeasurements", () => {
         value: 12.4,
         unit: "cm",
         imageRef: "1.2.3.4.999",
+        label: "LAD proximal",
+      },
+    ]);
+  });
+
+  it("carries a sibling TEXT identifier as the measurement's label, distinct from the breadcrumb", () => {
+    // The reference disc's CT Coronary report nests every lesion's TEXT
+    // identifier, NUM measurement, and IMAGE evidence snapshot as siblings
+    // inside one "Lesion Finding" container — so the breadcrumb alone
+    // (ending in "Lesion Finding" for every row) never distinguishes them.
+    const bytes = buildMiniSr({
+      title: "CT Coronary",
+      nodes: [
+        {
+          type: "CONTAINER",
+          name: "Lesion Finding",
+          children: [
+            { type: "TEXT", name: "Lesion Identifier", text: "Mid LAD, 40% stenosis" },
+            { type: "NUM", name: "Diameter Stenosis", value: 40, unit: "%" },
+          ],
+        },
+      ],
+    });
+    const report = parseSr(new Uint8Array(bytes))!;
+
+    expect(flattenMeasurements(report.nodes)).toEqual([
+      {
+        path: ["Lesion Finding"],
+        name: "Diameter Stenosis",
+        value: 40,
+        unit: "%",
+        imageRef: undefined,
+        label: "Mid LAD, 40% stenosis",
       },
     ]);
   });
@@ -149,5 +182,19 @@ describe("flattenMeasurements", () => {
     const report = parseSr(new Uint8Array(bytes))!;
 
     expect(flattenMeasurements(report.nodes)).toEqual([]);
+  });
+});
+
+describe("formatMeasurement", () => {
+  it("rounds to at most 2 decimals, keeping the unit", () => {
+    expect(formatMeasurement(2.09451, "cm")).toBe("2.09 cm");
+  });
+
+  it("leaves a whole number without added decimals", () => {
+    expect(formatMeasurement(314, "mGycm")).toBe("314 mGycm");
+  });
+
+  it("omits the unit entirely when there isn't one", () => {
+    expect(formatMeasurement(0.5, "")).toBe("0.5");
   });
 });
