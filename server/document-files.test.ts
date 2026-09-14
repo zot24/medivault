@@ -681,6 +681,50 @@ describe("openOwnedFrame", () => {
     });
   });
 
+  it("reports a later file's own rows/columns, not the document's (first-file) dicomMeta", async () => {
+    // Append is a supported flow (POST /api/documents/:id/files) and a
+    // record's dicomMeta is read from its first file only and never
+    // updated (shared/dicom-meta.ts) — so a follow-up XA run with a
+    // different image size must still report its own dimensions.
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const first = buildMiniCtDicom({
+      rows: 4,
+      columns: 4,
+      bitsAllocated: 8,
+      frames: 2,
+      pixels8: twoFramePixels(),
+    });
+    const created = await files.uploadOwnedDocument({
+      ...meta,
+      files: [{ bytes: first, mimeType: "", originalName: "XA000001" }],
+    });
+
+    const secondPixels = Uint8Array.from([
+      ...Array.from({ length: 4 }, (_, i) => i),
+      ...Array.from({ length: 4 }, (_, i) => 50 + i),
+    ]);
+    const second = buildMiniCtDicom({
+      rows: 2,
+      columns: 2,
+      bitsAllocated: 8,
+      frames: 2,
+      pixels8: secondPixels,
+    });
+    await files.appendOwnedFiles("owner-1", created.id, [
+      { bytes: second, mimeType: "", originalName: "XA000002" },
+    ]);
+
+    const appendedFrame0 = await files.openOwnedFrame("owner-1", created.id, 1, 0);
+    expect(appendedFrame0).toMatchObject({ rows: 2, columns: 2 });
+    expect(appendedFrame0?.bytes.equals(Buffer.from(secondPixels.subarray(0, 4)))).toBe(true);
+
+    // The original file's frames are unaffected.
+    const originalFrame0 = await files.openOwnedFrame("owner-1", created.id, 0, 0);
+    expect(originalFrame0).toMatchObject({ rows: 4, columns: 4 });
+  });
+
   it("returns null (404-equivalent) for a frame past the end of the fixture", async () => {
     const objects = new MemoryObjectStore();
     const { records } = memoryRecords();

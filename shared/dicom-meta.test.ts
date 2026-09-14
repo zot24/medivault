@@ -1,6 +1,13 @@
 import dicomParser from "dicom-parser";
 import { describe, expect, it } from "vitest";
-import { readFileMeta, readSeriesMeta, readSopInstanceUid, seriesGroup, seriesLabel } from "./dicom-meta";
+import {
+  isUncompressedMultiFrame,
+  readFileMeta,
+  readSeriesMeta,
+  readSopInstanceUid,
+  seriesGroup,
+  seriesLabel,
+} from "./dicom-meta";
 import { buildMiniCtDicom, buildMiniScRgbDicom } from "./mini-ct-dicom";
 
 const EXPECTED_KEYS = [
@@ -198,8 +205,28 @@ describe("readFileMeta frameIndex", () => {
       frameBytes: 16, // 4 x 4 x 1 sample x 8 bits / 8
       numberOfFrames: 2,
       bitsAllocated: 8,
+      rows: 4,
+      columns: 4,
       windowCenter: 100,
       windowWidth: 200,
+    });
+  });
+
+  it("reads this file's own rows/columns, not any other file's", () => {
+    // A later file in the same series can have different dimensions than
+    // the first (server/document-files.ts's openOwnedFrame must use this,
+    // not the document's series-level dicomMeta.rows/columns).
+    const bytes = buildMiniCtDicom({
+      rows: 2,
+      columns: 8,
+      bitsAllocated: 8,
+      frames: 2,
+      pixels8: Uint8Array.from({ length: 32 }, (_, i) => i),
+    });
+
+    expect(readFileMeta(new Uint8Array(bytes))?.frameIndex).toMatchObject({
+      rows: 2,
+      columns: 8,
     });
   });
 
@@ -216,6 +243,35 @@ describe("readFileMeta frameIndex", () => {
       frames: 2,
     });
     expect(readFileMeta(new Uint8Array(bytes))?.frameIndex).toBeNull();
+  });
+});
+
+describe("isUncompressedMultiFrame", () => {
+  it("is true for an uncompressed multi-frame series", () => {
+    expect(
+      isUncompressedMultiFrame({
+        transferSyntaxUid: "1.2.840.10008.1.2.1",
+        numberOfFrames: 92,
+      }),
+    ).toBe(true);
+  });
+
+  it("is false for a single-frame series, even uncompressed", () => {
+    expect(
+      isUncompressedMultiFrame({
+        transferSyntaxUid: "1.2.840.10008.1.2.1",
+        numberOfFrames: 1,
+      }),
+    ).toBe(false);
+  });
+
+  it("is false for a compressed multi-frame series (JPEG Baseline ultrasound)", () => {
+    expect(
+      isUncompressedMultiFrame({
+        transferSyntaxUid: "1.2.840.10008.1.2.4.50",
+        numberOfFrames: 60,
+      }),
+    ).toBe(false);
   });
 });
 

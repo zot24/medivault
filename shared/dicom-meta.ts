@@ -101,6 +101,12 @@ export type DicomFrameIndex = {
   frameBytes: number; // rows * columns * samplesPerPixel * bitsAllocated / 8
   numberOfFrames: number; // (0028,0008)
   bitsAllocated: number; // (0028,0100)
+  // This file's own dimensions (0028,0010)/(0028,0011) — not necessarily the
+  // document's dicomMeta.rows/columns, which is read once from the first
+  // uploaded file and never updated when a later file with different
+  // dimensions is appended (see readSeriesMeta's comment).
+  rows: number;
+  columns: number;
   // The file's own window preset, needed by the frame endpoint (server/routes.ts)
   // without re-parsing the file on every request.
   windowCenter: number; // (0028,1050), default 128 (mid-range for 8-bit)
@@ -168,9 +174,29 @@ function frameIndexOfDataSet(dataSet: DataSet): DicomFrameIndex | null {
     frameBytes: (rows * columns * samplesPerPixel * bitsAllocated) / 8,
     numberOfFrames,
     bitsAllocated,
+    rows,
+    columns,
     windowCenter: firstFloat(dataSet.string("x00281050")) ?? 128,
     windowWidth: firstFloat(dataSet.string("x00281051")) ?? 256,
   };
+}
+
+/**
+ * True when a series' first file is an uncompressed multi-frame image (plan
+ * 07: angiography cine runs) — the same transfer-syntax and frame-count
+ * gate `frameIndexOfDataSet` uses to build a per-file DicomFrameIndex.
+ * Client code (thumbnails) checks this against series-level dicomMeta to
+ * decide whether position 0 can be fetched as a single frame range instead
+ * of the whole file — only valid at position 0, since dicomMeta describes
+ * the first file only (see readSeriesMeta's comment).
+ */
+export function isUncompressedMultiFrame(
+  meta: Pick<DicomSeriesMeta, "transferSyntaxUid" | "numberOfFrames">,
+): boolean {
+  return (
+    meta.numberOfFrames > 1 &&
+    UNCOMPRESSED_FRAME_TRANSFER_SYNTAXES.has(meta.transferSyntaxUid)
+  );
 }
 
 /** Just the SOPInstanceUID (0008,0018) of one file; null when unreadable. */

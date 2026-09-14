@@ -405,8 +405,8 @@ export function createDocumentFiles(deps: {
       }
       return {
         bytes,
-        rows: document.dicomMeta?.rows ?? 0,
-        columns: document.dicomMeta?.columns ?? 0,
+        rows: frameIndex.rows,
+        columns: frameIndex.columns,
         bitsAllocated: frameIndex.bitsAllocated,
         photometric: document.dicomMeta?.photometric || "MONOCHROME2",
         windowCenter: frameIndex.windowCenter,
