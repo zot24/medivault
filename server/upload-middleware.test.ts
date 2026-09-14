@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import multer from "multer";
-import { MAX_UPLOAD_BYTES } from "@shared/upload-kinds";
+import { MAX_DICOM_UPLOAD_BYTES } from "@shared/upload-kinds";
 import { createUploadFilesOrReject } from "./upload-middleware";
 
 function fakeRes() {
@@ -23,7 +23,7 @@ describe("createUploadFilesOrReject", () => {
 
     expect(res.status).toHaveBeenCalledWith(413);
     expect(res.json).toHaveBeenCalledWith({
-      message: `File too large. Maximum is ${MAX_UPLOAD_BYTES / 1024 / 1024} MB per file.`,
+      message: `File too large. Maximum is ${MAX_DICOM_UPLOAD_BYTES / 1024 / 1024} MB per file.`,
     });
     expect(next).not.toHaveBeenCalled();
   });

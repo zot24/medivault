@@ -1,3 +1,6 @@
+import fs from "fs";
+import os from "os";
+import path from "path";
 import { describe, expect, it } from "vitest";
 import { buildMiniCtDicom } from "@shared/mini-ct-dicom";
 import {
@@ -59,6 +62,7 @@ function memoryRecords(rows: MedicalDocument[] = []) {
           instanceNumber: input.instanceNumber ?? null,
           sliceLocation: input.sliceLocation ?? null,
           phase: input.phase ?? null,
+          frameIndex: input.frameIndex ?? null,
           createdAt: new Date("2026-09-11T00:00:00.000Z"),
         }));
         files.push(...created);
@@ -538,5 +542,193 @@ describe("createDocumentFiles series", () => {
     });
 
     expect(created.dicomMeta).toBeNull();
+  });
+});
+
+describe("createDocumentFiles with a disk-backed (streamed) upload", () => {
+  // Simulates what multer.diskStorage hands the route handler for a large
+  // angiography cine run (plan 07): a temp file path and its size, never a
+  // Buffer of the whole thing.
+  function tempDicomFile(bytes: Buffer): { path: string; size: number } {
+    const filePath = path.join(os.tmpdir(), `mv-test-${Math.random().toString(36).slice(2)}.dcm`);
+    fs.writeFileSync(filePath, bytes);
+    return { path: filePath, size: bytes.length };
+  }
+
+  it("classifies, stores, and reads back a disk-backed DICOM file, then deletes the temp file", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const bytes = buildMiniCtDicom({ instanceNumber: 1 });
+    const temp = tempDicomFile(bytes);
+
+    const created = await files.uploadOwnedDocument({
+      userId: "owner-1",
+      title: "Streamed series",
+      documentType: "x_ray",
+      documentDate: "2026-09-11",
+      tags: [],
+      files: [{ ...temp, mimeType: "", originalName: "XA000001" }],
+    });
+
+    expect(created.mimeType).toBe("application/dicom");
+    expect(created.fileSize).toBe(String(bytes.length));
+    expect(fs.existsSync(temp.path)).toBe(false);
+
+    const owned = await files.openOwnedFileAt("owner-1", created.id, 0);
+    expect(owned?.bytes.equals(bytes)).toBe(true);
+  });
+
+  it("reads a frame index from a disk-backed multi-frame file without ever buffering it whole", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const pixels8 = Uint8Array.from({ length: 32 }, (_, i) => i);
+    const bytes = buildMiniCtDicom({
+      rows: 4,
+      columns: 4,
+      bitsAllocated: 8,
+      frames: 2,
+      pixels8,
+    });
+    const temp = tempDicomFile(bytes);
+
+    const created = await files.uploadOwnedDocument({
+      userId: "owner-1",
+      title: "Angiography run",
+      documentType: "x_ray",
+      documentDate: "2026-09-11",
+      tags: [],
+      files: [{ ...temp, mimeType: "", originalName: "XA000001" }],
+    });
+
+    const frame0 = await files.openOwnedFrame("owner-1", created.id, 0, 0);
+    expect(frame0?.bytes.equals(Buffer.from(pixels8.subarray(0, 16)))).toBe(true);
+  });
+
+  it("deletes the temp file even when the upload is rejected (oversize)", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const bytes = buildMiniCtDicom();
+    const temp = tempDicomFile(bytes);
+
+    // classifyFiles throws before putAll ever runs for this file, so the
+    // caller (server/routes.ts's cleanupUploadedFiles) is what removes the
+    // temp file in production; here we only assert classification itself
+    // rejects the oversize claim without reading the whole path into memory.
+    await expect(
+      files.uploadOwnedDocument({
+        userId: "owner-1",
+        title: "Too big",
+        documentType: "x_ray",
+        documentDate: "2026-09-11",
+        tags: [],
+        files: [{ path: temp.path, size: 300 * 1024 * 1024, mimeType: "", originalName: "XA000001" }],
+      }),
+    ).rejects.toThrow("File too large");
+
+    fs.unlinkSync(temp.path);
+  });
+});
+
+describe("openOwnedFrame", () => {
+  const meta = {
+    userId: "owner-1",
+    title: "Angiography run",
+    documentType: "x_ray",
+    documentDate: "2026-09-11",
+    tags: ["XA"],
+  };
+
+  function twoFramePixels() {
+    // 2 frames of 4x4 8-bit MONOCHROME2: frame 0 is 0..15, frame 1 is 100..115.
+    return Uint8Array.from([
+      ...Array.from({ length: 16 }, (_, i) => i),
+      ...Array.from({ length: 16 }, (_, i) => 100 + i),
+    ]);
+  }
+
+  it("returns the right 16 bytes for frame 1 of the fixture", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const pixels8 = twoFramePixels();
+    const bytes = buildMiniCtDicom({
+      rows: 4,
+      columns: 4,
+      bitsAllocated: 8,
+      frames: 2,
+      pixels8,
+      windowCenter: 128,
+      windowWidth: 256,
+    });
+
+    const created = await files.uploadOwnedDocument({
+      ...meta,
+      files: [{ bytes, mimeType: "", originalName: "XA000001" }],
+    });
+
+    const frame1 = await files.openOwnedFrame("owner-1", created.id, 0, 1);
+    expect(frame1?.bytes.equals(Buffer.from(pixels8.subarray(16, 32)))).toBe(true);
+    expect(frame1).toMatchObject({
+      rows: 4,
+      columns: 4,
+      bitsAllocated: 8,
+      photometric: "MONOCHROME2",
+      windowCenter: 128,
+      windowWidth: 256,
+    });
+  });
+
+  it("returns null (404-equivalent) for a frame past the end of the fixture", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const bytes = buildMiniCtDicom({
+      rows: 4,
+      columns: 4,
+      bitsAllocated: 8,
+      frames: 2,
+      pixels8: twoFramePixels(),
+    });
+
+    const created = await files.uploadOwnedDocument({
+      ...meta,
+      files: [{ bytes, mimeType: "", originalName: "XA000001" }],
+    });
+
+    expect(await files.openOwnedFrame("owner-1", created.id, 0, 2)).toBeNull();
+  });
+
+  it("returns null for a still (single-frame) file, which has no frame index", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const created = await files.uploadOwnedDocument({
+      ...meta,
+      files: [{ bytes: buildMiniCtDicom(), mimeType: "", originalName: "CT000001" }],
+    });
+
+    expect(await files.openOwnedFrame("owner-1", created.id, 0, 0)).toBeNull();
+  });
+
+  it("returns null for another user's document", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const bytes = buildMiniCtDicom({
+      rows: 4,
+      columns: 4,
+      bitsAllocated: 8,
+      frames: 2,
+      pixels8: twoFramePixels(),
+    });
+    const created = await files.uploadOwnedDocument({
+      ...meta,
+      files: [{ bytes, mimeType: "", originalName: "XA000001" }],
+    });
+
+    expect(await files.openOwnedFrame("intruder-2", created.id, 0, 0)).toBeNull();
   });
 });

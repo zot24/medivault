@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import fs from "fs";
 import { storage } from "./storage";
 import { setupLocalAuth, isAuthenticated } from "./localAuth";
 import { createDocumentFiles, type UploadFile } from "./document-files";
@@ -18,17 +19,32 @@ import { insertSymptomSchema } from "@shared/schema";
 import { groupIntoStudies } from "@shared/studies";
 import { z } from "zod";
 
-function uploadedFiles(req: any): UploadFile[] {
+/** multer.diskStorage puts every field's files on disk (plan 07) — never a Buffer. */
+function multerFilesOf(req: any): Express.Multer.File[] {
   const groups = req.files ?? {};
-  const list: Express.Multer.File[] = [
-    ...(groups.file ?? []),
-    ...(groups.files ?? []),
-  ];
-  return list.map((file) => ({
-    bytes: file.buffer,
+  return [...(groups.file ?? []), ...(groups.files ?? [])];
+}
+
+function uploadedFiles(req: any): UploadFile[] {
+  return multerFilesOf(req).map((file) => ({
+    path: file.path,
+    size: file.size,
     mimeType: file.mimetype,
     originalName: file.originalname,
   }));
+}
+
+/**
+ * Removes every multer temp file for this request. document-files.ts's
+ * putAll already deletes a file once it has streamed it to the object
+ * store; this is the backstop for the files of a request that never got
+ * that far (rejected before or during classification, or a sibling file in
+ * the same batch failed) — multer's own temp dir is never swept on its own.
+ */
+async function cleanupUploadedFiles(req: any): Promise<void> {
+  await Promise.all(
+    multerFilesOf(req).map((file) => fs.promises.unlink(file.path).catch(() => {})),
+  );
 }
 
 function isUploadRejection(message: string): boolean {
@@ -194,6 +210,8 @@ export async function registerRoutes(app: Express): Promise<void> {
 
       console.error("Error uploading document:", error);
       res.status(500).json({ message: "Failed to upload document" });
+    } finally {
+      await cleanupUploadedFiles(req);
     }
   });
 
@@ -225,6 +243,8 @@ export async function registerRoutes(app: Express): Promise<void> {
       }
       console.error("Error appending files:", error);
       res.status(500).json({ message: "Failed to upload files" });
+    } finally {
+      await cleanupUploadedFiles(req);
     }
   });
 
@@ -248,6 +268,10 @@ export async function registerRoutes(app: Express): Promise<void> {
           instanceNumber: file.instanceNumber,
           sliceLocation: file.sliceLocation,
           phase: file.phase,
+          // Present only for an uncompressed multi-frame file (plan 07):
+          // tells the client to use the .../frames/:frame range endpoint
+          // instead of fetching the whole file.
+          numberOfFrames: file.frameIndex?.numberOfFrames ?? null,
         })),
       );
     } catch (error) {
@@ -282,6 +306,56 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.status(500).json({ message: "Failed to read file" });
     }
   });
+
+  // One frame of an uncompressed multi-frame DICOM file (plan 07:
+  // angiography cine runs), served as a fixed byte range so neither the
+  // server nor the browser ever holds the whole ~100 MB file. 404 for a
+  // position with no frame index — an encapsulated (JPEG) multi-frame file
+  // is small enough to fetch whole via GET .../files/:position instead.
+  app.get(
+    '/api/documents/:id/files/:position/frames/:frame',
+    isAuthenticated,
+    async (req: any, res) => {
+      try {
+        const documentId = parseInt(req.params.id, 10);
+        const position = parseInt(req.params.position, 10);
+        const frame = parseInt(req.params.frame, 10);
+        if (
+          !Number.isInteger(documentId) ||
+          !Number.isInteger(position) ||
+          position < 0 ||
+          !Number.isInteger(frame) ||
+          frame < 0
+        ) {
+          return res.status(404).json({ message: "Frame not found" });
+        }
+        const owned = await getDocumentFiles().openOwnedFrame(
+          req.user.id,
+          documentId,
+          position,
+          frame,
+        );
+        if (!owned) {
+          return res.status(404).json({ message: "Frame not found" });
+        }
+        res.setHeader("Content-Type", "application/octet-stream");
+        res.setHeader("X-Frame-Rows", String(owned.rows));
+        res.setHeader("X-Frame-Columns", String(owned.columns));
+        res.setHeader("X-Frame-Bits", String(owned.bitsAllocated));
+        res.setHeader("X-Frame-Photometric", owned.photometric);
+        res.setHeader("X-Window-Center", String(owned.windowCenter));
+        res.setHeader("X-Window-Width", String(owned.windowWidth));
+        res.setHeader("Cache-Control", "private, max-age=3600");
+        res.send(owned.bytes);
+      } catch (error) {
+        if (error instanceof ObjectStoreConfigError) {
+          return res.status(503).json({ message: error.message });
+        }
+        console.error("Error reading frame:", error);
+        res.status(500).json({ message: "Failed to read frame" });
+      }
+    },
+  );
 
   app.get('/api/documents/:id', isAuthenticated, async (req: any, res) => {
     try {

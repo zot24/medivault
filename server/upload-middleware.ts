@@ -1,15 +1,31 @@
 import multer from "multer";
+import os from "os";
 import {
   classifyUpload,
   isVagueUploadMime,
+  MAX_DICOM_UPLOAD_BYTES,
   MAX_FILES_PER_REQUEST,
-  MAX_UPLOAD_BYTES,
 } from "@shared/upload-kinds";
 
+// Disk, not memory: an angiography cine run is ~100 MB (plan 07), and
+// memoryStorage would buffer the whole thing per file, per concurrent
+// request. One multer instance covers both the `file` and `files` fields
+// (multer has one storage engine per instance) with the higher DICOM cap as
+// its limit; document-files.ts's classifyFiles enforces the lower
+// non-DICOM cap once the file's actual kind is known. The OS temp dir is
+// cleaned up by whoever streams the file onward (server/document-files.ts
+// putAll) or, on a request that never reaches that point, by
+// cleanupUploadedFiles in server/routes.ts.
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, os.tmpdir()),
+    filename: (_req, file, cb) => {
+      const random = Math.random().toString(36).slice(2);
+      cb(null, `medivault-upload-${Date.now()}-${random}`);
+    },
+  }),
   limits: {
-    fileSize: MAX_UPLOAD_BYTES,
+    fileSize: MAX_DICOM_UPLOAD_BYTES,
   },
   fileFilter: (_req, file, cb) => {
     const classified = classifyUpload({
@@ -54,7 +70,7 @@ export function createUploadFilesOrReject(
         return res.status(status).json({
           message:
             err.code === "LIMIT_FILE_SIZE"
-              ? `File too large. Maximum is ${MAX_UPLOAD_BYTES / 1024 / 1024} MB per file.`
+              ? `File too large. Maximum is ${MAX_DICOM_UPLOAD_BYTES / 1024 / 1024} MB per file.`
               : err.message,
         });
       }
