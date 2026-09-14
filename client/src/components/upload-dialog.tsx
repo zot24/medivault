@@ -32,6 +32,7 @@ import {
   classifyUpload,
   fitsUploadCap,
   isDicomDocument,
+  MAX_DICOM_UPLOAD_BYTES,
   MAX_FILES_PER_REQUEST,
   MAX_UPLOAD_BYTES,
   PART10_SNIFF_BYTES,
@@ -203,13 +204,12 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
     const heads: Uint8Array[] = [];
     for (const file of incoming) {
       const bytes = new Uint8Array(await file.slice(0, PART10_SNIFF_BYTES).arrayBuffer());
-      if (
-        !classifyUpload({
-          mimeType: file.type,
-          originalName: file.name,
-          bytes,
-        })
-      ) {
+      const classified = classifyUpload({
+        mimeType: file.type,
+        originalName: file.name,
+        bytes,
+      });
+      if (!classified) {
         toast({
           title: "Invalid file type",
           description:
@@ -218,10 +218,13 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
         });
         return;
       }
-      if (!fitsUploadCap(file.size)) {
+      if (!fitsUploadCap(file.size, classified.mimeType)) {
         toast({
           title: "File too large",
-          description: `Maximum file size is ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB`,
+          description:
+            classified.mimeType === "application/dicom"
+              ? `Maximum file size is ${MAX_DICOM_UPLOAD_BYTES / (1024 * 1024)}MB`
+              : `Maximum file size is ${MAX_UPLOAD_BYTES / (1024 * 1024)}MB`,
           variant: "destructive",
         });
         return;

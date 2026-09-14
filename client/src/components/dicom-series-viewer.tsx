@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { documentFileUrl } from "@/lib/owned-file";
+import { documentFileUrl, documentFrameUrl } from "@/lib/owned-file";
 import { FrameCache } from "@/lib/frame-cache";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,6 +18,7 @@ import {
   renderFrameRgba,
   windowForPreset,
   type DicomFrame,
+  type DicomMono8Frame,
   type DicomOverlay,
   type EncapsulatedJpegSource,
 } from "@shared/dicom-frame";
@@ -71,11 +72,21 @@ const CINE_INTERVAL_MS = 100;
  * reference disc holds 45 such loops. What is kept for the whole loop is its
  * *compressed* fragments (~100 KB a frame, already downloaded); bitmaps are
  * decoded on demand into this small LRU and re-decoded if they are dropped.
+ * An angiography run (plan 07) uses the same LRU: nothing pins its ~100 MB
+ * file in memory at all, so this bounds decoded/fetched frames either way.
  */
 const CINE_RESIDENT_FRAMES = 24;
 
 /** Frames decoded ahead of the one on screen while a loop is playing. */
 const CINE_PREFETCH_AHEAD = 4;
+
+/**
+ * Parallel HTTP range requests while preloading an angiography run (plan
+ * 07) — a fetch per frame has real network latency, unlike decoding an
+ * already-downloaded JPEG fragment, so filling the resident window one
+ * frame at a time would stall playback noticeably.
+ */
+const RANGE_PRELOAD_CONCURRENCY = 4;
 
 type CachedBitmap = {
   kind: "bitmap";
@@ -84,11 +95,44 @@ type CachedBitmap = {
   bitmap: ImageBitmap;
 };
 
+/** A decoded angiography frame (plan 07), windowed and rasterized up front — there is no browser-native decoder for it the way there is for JPEG. */
+type CachedRaster = {
+  kind: "raster";
+  rows: number;
+  columns: number;
+  rgba: Uint8ClampedArray;
+};
+
+type CachedCineFrame = CachedBitmap | CachedRaster;
+
+/**
+ * One playable multi-frame *file* (as opposed to CachedFrame, one *slice*):
+ * either a whole downloaded encapsulated JPEG cine (plan 06) with frames
+ * decoded on demand, or an uncompressed angiography run (plan 07) whose
+ * frames are fetched one HTTP range request at a time and never held whole.
+ */
+type CineSource = EncapsulatedJpegSource | RangeCineSource;
+
+export type RangeCineSource = {
+  kind: "range-frames";
+  rows: number;
+  columns: number;
+  frameCount: number;
+  frameRate: number | null;
+  windowCenter: number;
+  windowWidth: number;
+  /** One frame's bytes — what discovering this source costs, not the whole run (see CINE_SOURCE_BUDGET_BYTES). */
+  byteCost: number;
+  frame(index: number): Promise<Uint8Array>;
+};
+
 type FileRow = {
   position: number;
   instanceNumber: number | null;
   sliceLocation: number | null;
   phase: number | null;
+  /** Present only for an uncompressed multi-frame file (plan 07) — see server/routes.ts. */
+  numberOfFrames: number | null;
 };
 
 type CachedFrame = DicomFrame & { overlays: DicomOverlay[] };
@@ -205,6 +249,19 @@ function blitBitmap(canvas: HTMLCanvasElement, bitmap: ImageBitmap) {
   context.drawImage(bitmap, 0, 0);
 }
 
+/** Draws an already-windowed angiography frame (plan 07) — rgba came out of renderFrameRgba, not the browser's own decoder. */
+function blitRaster(canvas: HTMLCanvasElement, rows: number, columns: number, rgba: Uint8ClampedArray) {
+  canvas.width = columns;
+  canvas.height = rows;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return;
+  }
+  const image = context.createImageData(columns, rows);
+  image.data.set(rgba);
+  context.putImageData(image, 0, 0);
+}
+
 function blitFrame(
   canvas: HTMLCanvasElement,
   frame: DicomFrame,
@@ -245,22 +302,33 @@ export default function DicomSeriesViewer({
   // Positions ever loaded for this document, independent of whether the
   // bounded frame cache has since evicted them -- see `countLoaded`.
   const loadedPositionsRef = useRef<Set<number>>(new Set());
-  // One encapsulated JPEG source per multi-frame ultrasound position, kept
-  // alongside (not inside) cacheRef: pixelFrameFromPart10 returns null for
-  // these, so they never occupy a CachedFrame slot (plan 06). Bounded on
-  // its own budget, because each source pins a whole ~9.6 MB file.
+  // One cine source per multi-frame position, kept alongside (not inside)
+  // cacheRef: pixelFrameFromPart10 returns null for these, so they never
+  // occupy a CachedFrame slot. An EncapsulatedJpegSource pins a whole
+  // downloaded file (plan 06, ~9.6 MB); a RangeCineSource (plan 07) pins
+  // nothing but its own metadata — its frames are fetched on demand and
+  // never held whole. Bounded on CINE_SOURCE_BUDGET_BYTES either way.
   const cineSourcesRef = useRef(
-    new FrameCache<EncapsulatedJpegSource>(CINE_SOURCE_BUDGET_BYTES),
+    new FrameCache<CineSource>(CINE_SOURCE_BUDGET_BYTES),
   );
   // The largest cine file seen in this record, which is what sizes the
   // loaders' window over it. Largest rather than latest so a small still
   // early in the record can't widen the window for the loops after it.
   const cineCostRef = useRef<number | null>(null);
-  // Decoded bitmaps for the *currently open* cine loop only — a small LRU
+  // Decoded frames for the *currently open* cine loop only — a small LRU
   // (CINE_RESIDENT_FRAMES), not the whole loop. Built per loop because its
   // budget depends on that loop's frame size, and dropped (every bitmap
-  // closed) whenever the current position changes.
-  const cineBitmapsRef = useRef<FrameCache<CachedBitmap> | null>(null);
+  // closed) whenever the current position changes. Holds decoded JPEG
+  // bitmaps (plan 06) or rasterized angiography frames (plan 07).
+  const cineBitmapsRef = useRef<FrameCache<CachedCineFrame> | null>(null);
+  // frameCount for every position with an uncompressed frame index (plan
+  // 07), from the files list fetch — lets loadOne take the range-request
+  // path for that position without downloading the whole file to find out.
+  const rangeFrameCountRef = useRef<Map<number, number>>(new Map());
+  // Preload progress for the currently open angiography run: how many of
+  // its resident-window frames have been fetched, out of how many the
+  // preload pass wants (min(frameCount, CINE_RESIDENT_FRAMES)).
+  const rangePreloadedRef = useRef(0);
   // Bumped whenever the open loop changes; a decode in flight for an older
   // token throws its bitmap away instead of filling a cache nobody wants.
   const cineDecodeTokenRef = useRef(0);
@@ -271,6 +339,10 @@ export default function DicomSeriesViewer({
   // background-load tick (`loaded` ticks constantly while a CT volume
   // streams in).
   const cineResetPositionRef = useRef<number | null>(null);
+  // Which RangeCineSource pumpRangePreload has already been started for
+  // (plan 07), so a re-run of the effect below (e.g. `loaded` ticking)
+  // doesn't restart the bulk preload every time.
+  const rangePreloadStartedForRef = useRef<RangeCineSource | null>(null);
   // Playback state the decode pump reads *while it is running*, so it always
   // decodes around the frame that is on screen now — not the one that was
   // when it started.
@@ -293,6 +365,9 @@ export default function DicomSeriesViewer({
   // Bumped once per decoded bitmap: it is what makes the draw effect below
   // re-run when the frame it wants finally arrives.
   const [cineDecoded, setCineDecoded] = useState(0);
+  // How many of the currently-open angiography run's resident-window frames
+  // have been preloaded (plan 07) — drives the "Preloading N / M" progress.
+  const [rangePreloaded, setRangePreloaded] = useState(0);
   const documentId = focus?.id ?? null;
 
   sliceIndexRef.current = sliceIndex;
@@ -320,7 +395,14 @@ export default function DicomSeriesViewer({
   async function loadOne(
     position: number,
     signal: AbortSignal,
-  ): Promise<CachedFrame | EncapsulatedJpegSource> {
+  ): Promise<CachedFrame | CineSource> {
+    const frameCount = rangeFrameCountRef.current.get(position);
+    if (frameCount != null) {
+      // Uncompressed multi-frame (plan 07): fetch frame 0 through the range
+      // endpoint to learn rows/columns/window, without downloading the rest
+      // of a file that can be ~100 MB.
+      return loadRangeCineSource(position, frameCount, signal);
+    }
     const response = await fetch(documentFileUrl(documentId!, position), {
       credentials: "include",
       signal,
@@ -342,6 +424,51 @@ export default function DicomSeriesViewer({
       return cine;
     }
     throw new Error(describeUndrawableFrame(bytes));
+  }
+
+  async function fetchFrame(
+    position: number,
+    frame: number,
+    signal?: AbortSignal,
+  ): Promise<Response> {
+    const response = await fetch(documentFrameUrl(documentId!, position, frame), {
+      credentials: "include",
+      signal,
+    });
+    if (!response.ok) {
+      throw new Error("Could not load this frame.");
+    }
+    return response;
+  }
+
+  async function loadRangeCineSource(
+    position: number,
+    frameCount: number,
+    signal: AbortSignal,
+  ): Promise<RangeCineSource> {
+    const response = await fetchFrame(position, 0, signal);
+    const rows = Number(response.headers.get("X-Frame-Rows"));
+    const columns = Number(response.headers.get("X-Frame-Columns"));
+    const windowCenter = Number(response.headers.get("X-Window-Center"));
+    const windowWidth = Number(response.headers.get("X-Window-Width"));
+    const frame0 = new Uint8Array(await response.arrayBuffer());
+    return {
+      kind: "range-frames",
+      rows,
+      columns,
+      frameCount,
+      frameRate: focus?.dicomMeta?.frameRate ?? null,
+      windowCenter,
+      windowWidth,
+      byteCost: rows * columns,
+      async frame(index: number): Promise<Uint8Array> {
+        if (index === 0) {
+          return frame0;
+        }
+        const r = await fetchFrame(position, index);
+        return new Uint8Array(await r.arrayBuffer());
+      },
+    };
   }
 
   /** The positions within `radius` of the current one, clipped to the list. */
@@ -397,7 +524,7 @@ export default function DicomSeriesViewer({
         if (cancelledRef.current) {
           return;
         }
-        if (entry.kind === "jpeg-frames") {
+        if (entry.kind === "jpeg-frames" || entry.kind === "range-frames") {
           cineCostRef.current = Math.max(cineCostRef.current ?? 0, entry.byteCost);
           cineSourcesRef.current.set(absolute, entry);
         } else {
@@ -416,22 +543,25 @@ export default function DicomSeriesViewer({
     }
   }
 
-  /** Drops the open loop's decoded bitmaps (closing each) and stops any decode in flight. */
+  /** Drops the open loop's decoded bitmaps (closing each) and stops any decode/preload in flight. */
   function resetCineBitmaps() {
     cineDecodeTokenRef.current += 1;
     cineBitmapsRef.current?.clear();
     cineBitmapsRef.current = null;
+    rangePreloadStartedForRef.current = null;
+    rangePreloadedRef.current = 0;
+    setRangePreloaded(0);
   }
 
-  /** The bitmap LRU for this loop: CINE_RESIDENT_FRAMES frames of its own size. */
-  function cineBitmapsFor(source: EncapsulatedJpegSource): FrameCache<CachedBitmap> {
+  /** The decoded-frame LRU for this loop: CINE_RESIDENT_FRAMES frames of its own size. */
+  function cineBitmapsFor(source: CineSource): FrameCache<CachedCineFrame> {
     const existing = cineBitmapsRef.current;
     if (existing) {
       return existing;
     }
-    const created = new FrameCache<CachedBitmap>(
+    const created = new FrameCache<CachedCineFrame>(
       Math.max(1, source.rows * source.columns * 4) * CINE_RESIDENT_FRAMES,
-      { dispose: (entry) => entry.bitmap.close() },
+      { dispose: (entry) => (entry.kind === "bitmap" ? entry.bitmap.close() : undefined) },
     );
     cineBitmapsRef.current = created;
     return created;
@@ -441,9 +571,11 @@ export default function DicomSeriesViewer({
    * Decodes what playback is about to draw, one frame at a time, until the
    * window around the current frame is resident. One pump runs per loop, and
    * it re-reads the current frame on every turn — so scrubbing or pressing
-   * play mid-decode just changes what it decodes next.
+   * play mid-decode just changes what it decodes next. For an angiography
+   * run (plan 07) this is the on-demand fallback for a frame the bulk
+   * preload below hasn't reached yet or already evicted.
    */
-  function pumpCineDecode(source: EncapsulatedJpegSource) {
+  function pumpCineDecode(source: CineSource) {
     const token = cineDecodeTokenRef.current;
     if (cineDecodingRef.current === token) {
       return;
@@ -464,21 +596,16 @@ export default function DicomSeriesViewer({
         if (next == null) {
           return;
         }
-        const bitmap = await createImageBitmap(
-          new Blob([source.frame(next)], { type: "image/jpeg" }),
-        );
+        const entry = await decodeCineFrame(source, next);
         if (cancelledRef.current || token !== cineDecodeTokenRef.current) {
-          bitmap.close();
+          if (entry.kind === "bitmap") {
+            entry.bitmap.close();
+          }
           return;
         }
         // Pin the frame on screen, so prefetching ahead can never evict it.
         cache.protect([cineFrameIndexRef.current]);
-        cache.set(next, {
-          kind: "bitmap",
-          rows: source.rows,
-          columns: source.columns,
-          bitmap,
-        });
+        cache.set(next, entry);
         setCineDecoded((count) => count + 1);
       }
     })()
@@ -494,6 +621,79 @@ export default function DicomSeriesViewer({
       });
   }
 
+  /** One frame of either cine kind, decoded/fetched and ready to cache. */
+  async function decodeCineFrame(source: CineSource, index: number): Promise<CachedCineFrame> {
+    if (source.kind === "jpeg-frames") {
+      const bitmap = await createImageBitmap(
+        new Blob([source.frame(index)], { type: "image/jpeg" }),
+      );
+      return { kind: "bitmap", rows: source.rows, columns: source.columns, bitmap };
+    }
+    const pixels = await source.frame(index);
+    const frame: DicomMono8Frame = {
+      kind: "mono8",
+      rows: source.rows,
+      columns: source.columns,
+      pixels,
+      windowCenter: source.windowCenter,
+      windowWidth: source.windowWidth,
+    };
+    return {
+      kind: "raster",
+      rows: source.rows,
+      columns: source.columns,
+      rgba: renderFrameRgba(frame, []),
+    };
+  }
+
+  /**
+   * Fills the resident-frame LRU for an angiography run (plan 07) with
+   * RANGE_PRELOAD_CONCURRENCY parallel range requests, before relying on
+   * pumpCineDecode's one-at-a-time fallback — a network round trip per
+   * frame is too slow to do serially and still play smoothly.
+   */
+  function pumpRangePreload(source: RangeCineSource) {
+    const token = cineDecodeTokenRef.current;
+    const cache = cineBitmapsFor(source);
+    const total = Math.min(source.frameCount, CINE_RESIDENT_FRAMES);
+    rangePreloadedRef.current = 0;
+    setRangePreloaded(0);
+    let next = 0;
+    const claimNext = (): number | null => (next < total ? next++ : null);
+    const worker = async () => {
+      for (;;) {
+        if (cancelledRef.current || token !== cineDecodeTokenRef.current) {
+          return;
+        }
+        const index = claimNext();
+        if (index == null) {
+          return;
+        }
+        if (cache.has(index)) {
+          continue;
+        }
+        try {
+          const entry = await decodeCineFrame(source, index);
+          if (cancelledRef.current || token !== cineDecodeTokenRef.current) {
+            return;
+          }
+          cache.set(index, entry);
+          rangePreloadedRef.current += 1;
+          setRangePreloaded(rangePreloadedRef.current);
+          setCineDecoded((count) => count + 1);
+        } catch {
+          // A dropped frame during bulk preload isn't fatal — pumpCineDecode
+          // retries whatever playback actually reaches.
+        }
+      }
+    };
+    Promise.all(
+      Array.from({ length: Math.min(RANGE_PRELOAD_CONCURRENCY, total) }, worker),
+    ).catch(() => {
+      // individual worker errors are swallowed above; nothing more to do here
+    });
+  }
+
   useEffect(() => {
     const controller = new AbortController();
     cacheRef.current.clear();
@@ -505,6 +705,7 @@ export default function DicomSeriesViewer({
     cineCostRef.current = null;
     resetCineBitmaps();
     cineResetPositionRef.current = null;
+    rangeFrameCountRef.current = new Map();
     activeWorkersRef.current = 0;
     cancelledRef.current = false;
     setPositions([]);
@@ -533,6 +734,11 @@ export default function DicomSeriesViewer({
       const files = (await response.json()) as FileRow[];
       if (cancelledRef.current) {
         return;
+      }
+      for (const file of files) {
+        if (file.numberOfFrames != null && file.numberOfFrames > 1) {
+          rangeFrameCountRef.current.set(file.position, file.numberOfFrames);
+        }
       }
       const detection = detectPhases(
         files.map((file) => ({
@@ -632,6 +838,14 @@ export default function DicomSeriesViewer({
     if (!source) {
       return;
     }
+    // Angiography run (plan 07): start the bulk parallel preload once per
+    // loop, before falling through to the same on-demand pump used for
+    // ultrasound — the fallback for whatever the preload window doesn't
+    // cover (a frame past CINE_RESIDENT_FRAMES, or one evicted since).
+    if (source.kind === "range-frames" && rangePreloadStartedForRef.current !== source) {
+      rangePreloadStartedForRef.current = source;
+      pumpRangePreload(source);
+    }
     pumpCineDecode(source);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sliceIndex, positions, loaded, cineFrameIndex, cineLoopPlaying, cineDecoded]);
@@ -676,7 +890,11 @@ export default function DicomSeriesViewer({
     if (!entry) {
       return;
     }
-    blitBitmap(canvas, entry.bitmap);
+    if (entry.kind === "bitmap") {
+      blitBitmap(canvas, entry.bitmap);
+    } else {
+      blitRaster(canvas, entry.rows, entry.columns, entry.rgba);
+    }
   }, [cineFrameIndex, sliceIndex, positions, cineDecoded]);
 
   useEffect(() => {
@@ -720,6 +938,10 @@ export default function DicomSeriesViewer({
   const isCinePlayable = !!currentCine && currentCine.frameRate != null && currentCine.frameCount > 1;
   const cineFrameLabel = currentCine ? `${cineFrameIndex + 1} / ${currentCine.frameCount}` : "";
   const hasDrawnContent = current !== undefined || (currentCine !== undefined && cineDecoded > 0);
+  const rangePreloadTotal =
+    currentCine?.kind === "range-frames"
+      ? Math.min(currentCine.frameCount, CINE_RESIDENT_FRAMES)
+      : 0;
 
   const step = (delta: number) =>
     setSliceIndex((value) => stepSliceIndex(value, delta, count));
@@ -847,6 +1069,19 @@ export default function DicomSeriesViewer({
                   className="w-full"
                   data-testid="dicom-frame-slider"
                 />
+                {currentCine.kind === "range-frames" && rangePreloadTotal > rangePreloaded && (
+                  <div className="space-y-1">
+                    <p className="text-xs text-foreground-subtle" data-testid="dicom-range-preload">
+                      Preloading {rangePreloaded} / {rangePreloadTotal}
+                    </p>
+                    <div className="h-1 w-full rounded bg-surface-1" aria-hidden="true">
+                      <div
+                        className="h-1 rounded bg-primary transition-[width]"
+                        style={{ width: `${loadProgressPercent(rangePreloaded, rangePreloadTotal)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             <div className="flex items-center justify-between gap-4">

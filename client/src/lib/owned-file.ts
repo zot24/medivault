@@ -5,3 +5,12 @@ export function ownedFileUrl(filePath: string): string {
 export function documentFileUrl(documentId: number, position: number): string {
   return `/api/documents/${documentId}/files/${position}`;
 }
+
+/** One frame of an uncompressed multi-frame file (plan 07), served as an HTTP range read. */
+export function documentFrameUrl(
+  documentId: number,
+  position: number,
+  frame: number,
+): string {
+  return `/api/documents/${documentId}/files/${position}/frames/${frame}`;
+}
