@@ -11,11 +11,11 @@ import {
 } from "@/components/ui/dialog";
 import {
   CT_WINDOW_PRESETS,
-  describeUndrawableFrame,
   multiFrameSourceFromPart10,
   overlaysFromPart10,
   pixelFrameFromPart10,
   renderFrameRgba,
+  undrawableFrameMessage,
   windowForPreset,
   type DicomFrame,
   type DicomOverlay,
@@ -341,7 +341,7 @@ export default function DicomSeriesViewer({
     if (cine) {
       return cine;
     }
-    throw new Error(describeUndrawableFrame(bytes));
+    throw new Error(undrawableFrameMessage(bytes));
   }
 
   /** The positions within `radius` of the current one, clipped to the list. */
@@ -770,9 +770,14 @@ export default function DicomSeriesViewer({
           </DialogDescription>
         </DialogHeader>
         {error ? (
-          <p className="text-sm text-destructive" data-testid="dicom-viewer-error">
-            {error}
-          </p>
+          <div data-testid="dicom-viewer-error">
+            <p className="text-sm text-destructive">{error.split("\n")[0]}</p>
+            {error.includes("\n") && (
+              <p className="text-xs text-foreground-subtle mt-1">
+                {error.split("\n").slice(1).join("\n")}
+              </p>
+            )}
+          </div>
         ) : (
           <div className="space-y-4">
             {phases && (

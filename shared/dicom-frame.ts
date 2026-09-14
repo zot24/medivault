@@ -423,6 +423,35 @@ export function describeUndrawableFrame(bytes: Uint8Array): string {
 }
 
 /**
+ * Plain-language headline for a file the decoder refuses to draw (plan 11)
+ * — a person reads `describeUndrawableFrame`'s technical detail as "the app
+ * failed", not "this disc has nothing here". Names the SOP class when it
+ * can be read; falls back to no parenthetical otherwise (not even Part 10,
+ * or the parse itself failed).
+ */
+export function undrawableFrameHeadline(bytes: Uint8Array): string {
+  const HEADLINE = "This file has no viewable image content";
+  if (!isPart10(bytes)) {
+    return `${HEADLINE}.`;
+  }
+  try {
+    const sopClass = dicomParser.parseDicom(bytes).string("x00080016")?.trim();
+    return sopClass ? `${HEADLINE} (SOP class ${sopClass}).` : `${HEADLINE}.`;
+  } catch {
+    return `${HEADLINE}.`;
+  }
+}
+
+/**
+ * The two-line message the canvas viewer shows for a refused frame: the
+ * headline above, then `describeUndrawableFrame`'s technical detail on a
+ * second line — callers split on "\n" and render the second line smaller.
+ */
+export function undrawableFrameMessage(bytes: Uint8Array): string {
+  return `${undrawableFrameHeadline(bytes)}\n${describeUndrawableFrame(bytes)}`;
+}
+
+/**
  * First value of a DS element. Scanners often write several presets in one
  * element ("345\\-600"); Number() on the raw string yields NaN.
  */

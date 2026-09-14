@@ -12,6 +12,7 @@ import {
   listDocumentItems,
   primarySeries,
   splitDocuments,
+  studyCounts,
   studyLabel,
 } from "./studies";
 
@@ -371,6 +372,91 @@ describe("groupReports", () => {
       "Report — CT Coronary",
       "Analysis data",
     ]);
+  });
+
+  it("orders readable reports before empty reports before opaque analysis rows", () => {
+    // Passed out of order on purpose: the sort must still land readable,
+    // then empty, then opaque, regardless of input order.
+    const opaque = record({
+      dicomMeta: {
+        modality: "SR",
+        sopClassUid: COMPREHENSIVE_SR,
+        seriesDescription: "Evidence Documents",
+        seriesNumber: 1178,
+      },
+    });
+    const empty = record({
+      dicomMeta: {
+        modality: "SR",
+        sopClassUid: BASIC_TEXT_SR,
+        seriesDescription: "Radiology Report",
+        seriesNumber: 1975,
+      },
+    });
+    const readable = record({
+      dicomMeta: {
+        modality: "SR",
+        sopClassUid: COMPREHENSIVE_SR,
+        seriesDescription: "CT Coronary",
+        seriesNumber: 1043,
+      },
+    });
+
+    const rows = groupReports([opaque, empty, readable]);
+
+    expect(rows.map((row) => row.label)).toEqual([
+      "Report — CT Coronary",
+      "Written report",
+      "Analysis data",
+    ]);
+  });
+});
+
+describe("studyCounts", () => {
+  it("counts every series as viewable when none are reports", () => {
+    const a = record({ dicomMeta: { studyInstanceUid: "s", modality: "CT", sliceThickness: 3 } });
+    const b = record({ dicomMeta: { studyInstanceUid: "s", modality: "US" } });
+    const [study] = groupIntoStudies([a, b]);
+
+    expect(studyCounts(study)).toEqual({ seriesCount: 2, viewableCount: 2, fileCount: 2 });
+  });
+
+  it("excludes empty and opaque reports from the viewable count", () => {
+    const volume = record({
+      fileCount: 774,
+      dicomMeta: { studyInstanceUid: "s", modality: "CT", sliceThickness: 0.6 },
+    });
+    const readableReport = record({
+      dicomMeta: {
+        studyInstanceUid: "s",
+        modality: "SR",
+        sopClassUid: COMPREHENSIVE_SR,
+        seriesDescription: "CT Coronary",
+      },
+    });
+    const emptyReport = record({
+      dicomMeta: {
+        studyInstanceUid: "s",
+        modality: "SR",
+        sopClassUid: BASIC_TEXT_SR,
+        seriesDescription: "Radiology Report",
+      },
+    });
+    const opaqueReport = record({
+      dicomMeta: {
+        studyInstanceUid: "s",
+        modality: "SR",
+        sopClassUid: COMPREHENSIVE_SR,
+        seriesDescription: "Evidence Documents",
+      },
+    });
+    const [study] = groupIntoStudies([volume, readableReport, emptyReport, opaqueReport]);
+
+    expect(studyCounts(study)).toEqual({
+      seriesCount: 4,
+      viewableCount: 2,
+      fileCount: 774 + 1 + 1 + 1,
+    });
   });
 });
 

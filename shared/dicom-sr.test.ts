@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { flattenMeasurements, formatMeasurement, parseSr } from "./dicom-sr";
+import { flattenMeasurements, formatMeasurement, parseSr, srViewability } from "./dicom-sr";
 import {
   SOP_BASIC_TEXT_SR,
   buildMiniCtDicom,
@@ -182,6 +182,62 @@ describe("flattenMeasurements", () => {
     const report = parseSr(new Uint8Array(bytes))!;
 
     expect(flattenMeasurements(report.nodes)).toEqual([]);
+  });
+});
+
+describe("srViewability", () => {
+  it("is a report when the tree has readable text or a measurement", () => {
+    const withText = buildMiniSr({
+      title: "CT Coronary",
+      nodes: [{ type: "TEXT", name: "Findings", text: "No significant stenosis." }],
+    });
+    expect(srViewability(parseSr(new Uint8Array(withText)))).toBe("report");
+
+    const withNum = buildMiniSr({
+      title: "CT Coronary",
+      nodes: [{ type: "NUM", name: "Length", value: 12.4, unit: "cm" }],
+    });
+    expect(srViewability(parseSr(new Uint8Array(withNum)))).toBe("report");
+  });
+
+  it("is empty-report when the tree parses to zero content items", () => {
+    const bytes = buildMiniSr({ title: "Radiology Report", nodes: [] });
+    expect(srViewability(parseSr(new Uint8Array(bytes)))).toBe("empty-report");
+  });
+
+  it("is opaque when nodes are present but none carry readable text or a value", () => {
+    const bytes = buildMiniSr({
+      title: "Cardiac Function",
+      nodes: [{ type: "CODE", name: "Session type", code: "vendor-private" }],
+    });
+    expect(srViewability(parseSr(new Uint8Array(bytes)))).toBe("opaque");
+  });
+
+  it("is opaque when a blank TEXT item is the only content", () => {
+    const bytes = buildMiniSr({
+      title: "Radiology Report",
+      nodes: [{ type: "TEXT", name: "Findings", text: "" }],
+    });
+    expect(srViewability(parseSr(new Uint8Array(bytes)))).toBe("opaque");
+  });
+
+  it("is opaque when the file didn't parse as an SR at all", () => {
+    const bytes = buildMiniCtDicom({});
+    expect(srViewability(parseSr(new Uint8Array(bytes)))).toBe("opaque");
+  });
+
+  it("finds readable text nested inside a container", () => {
+    const bytes = buildMiniSr({
+      title: "CT Coronary",
+      nodes: [
+        {
+          type: "CONTAINER",
+          name: "LAD",
+          children: [{ type: "TEXT", name: "Identifier", text: "Mid LAD" }],
+        },
+      ],
+    });
+    expect(srViewability(parseSr(new Uint8Array(bytes)))).toBe("report");
   });
 });
 
