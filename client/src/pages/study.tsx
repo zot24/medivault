@@ -26,7 +26,7 @@ function Thumbnail({
   document: MedicalDocument;
   className: string;
 }) {
-  const dataUrl = useThumbnail(series.id, thumbnailPosition(series));
+  const dataUrl = useThumbnail(series.id, thumbnailPosition(series), series.dicomMeta);
   return (
     <div
       className={`rounded-lg bg-black/80 flex items-center justify-center overflow-hidden flex-shrink-0 ${className}`}

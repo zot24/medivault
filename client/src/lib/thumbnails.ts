@@ -10,9 +10,10 @@ import {
   type DicomOverlay,
   type DicomWindow,
 } from "@shared/dicom-frame";
+import type { DicomSeriesMeta } from "@shared/dicom-meta";
 import { thumbnailCacheKey } from "@shared/thumbnail-cache";
 import { useAuth } from "@/hooks/useAuth";
-import { documentFileUrl } from "./owned-file";
+import { mono8FrameFromRangeResponse, thumbnailFrameSource } from "./thumbnail-frame-source";
 
 const THUMBNAIL_SIZE = 128;
 
@@ -133,8 +134,15 @@ function drawCineThumbnail(bitmap: ImageBitmap): string | null {
  * pixel data to draw (an SR report, for instance) — callers show a document
  * icon in that case. For a multi-phase CT volume pass
  * `Math.floor(fileCount / 2)` rather than 0, so the thumbnail is mid-chest.
+ * Pass `dicomMeta` (the document's series metadata) when available so an
+ * uncompressed multi-frame file (plan 07 angiography) can be thumbnailed
+ * from a single frame range instead of the whole ~100 MB file.
  */
-export function useThumbnail(documentId: number, position = 0): string | null {
+export function useThumbnail(
+  documentId: number,
+  position = 0,
+  dicomMeta: DicomSeriesMeta | null = null,
+): string | null {
   const { user } = useAuth();
   const userId = user?.id ?? null;
   const [dataUrl, setDataUrl] = useState<string | null>(
@@ -156,11 +164,14 @@ export function useThumbnail(documentId: number, position = 0): string | null {
     setDataUrl(null);
 
     (async () => {
-      const response = await fetch(documentFileUrl(documentId, position), {
-        credentials: "include",
-      });
+      const source = thumbnailFrameSource(documentId, position, dicomMeta);
+      const response = await fetch(source.url, { credentials: "include" });
       if (!response.ok) {
         throw new Error("Could not load file");
+      }
+      if (source.kind === "frame-range") {
+        const frame = await mono8FrameFromRangeResponse(response);
+        return drawThumbnail(frame, []);
       }
       const bytes = new Uint8Array(await response.arrayBuffer());
       const frame = pixelFrameFromPart10(bytes);
@@ -194,7 +205,7 @@ export function useThumbnail(documentId: number, position = 0): string | null {
     return () => {
       cancelled = true;
     };
-  }, [userId, documentId, position]);
+  }, [userId, documentId, position, dicomMeta]);
 
   return dataUrl;
 }

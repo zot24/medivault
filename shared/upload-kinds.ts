@@ -5,9 +5,34 @@ export function localDate(isoDate: string): Date {
 }
 
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+/**
+ * Uncompressed angiography cine runs are ~100 MB (plan 07); PDF/image caps
+ * stay at MAX_UPLOAD_BYTES. Multer enforces this one as its `fileSize`
+ * limit for every field; `fitsUploadCap` enforces the lower one for
+ * non-DICOM files after classification.
+ */
+export const MAX_DICOM_UPLOAD_BYTES = 256 * 1024 * 1024;
 export const DICOM_MIME = "application/dicom";
 /** Slices per upload request; the server enforces the same cap. */
 export const MAX_FILES_PER_REQUEST = 50;
+
+/**
+ * Total size of every file in one multipart request, across all of
+ * MAX_FILES_PER_REQUEST slices — multer's own `fileSize` limit caps one
+ * file at MAX_DICOM_UPLOAD_BYTES, but a request of 50 files each near that
+ * cap would still total multiple GB. Checked by summing `req.files` sizes
+ * after multer has already written them to disk (server/upload-middleware.ts);
+ * rejected with 413 before any of them reaches the object store.
+ */
+export const MAX_REQUEST_UPLOAD_BYTES = 512 * 1024 * 1024;
+
+/** True when the summed size of every file in a request exceeds `capBytes`. */
+export function exceedsAggregateUploadCap(
+  sizes: number[],
+  capBytes: number = MAX_REQUEST_UPLOAD_BYTES,
+): boolean {
+  return sizes.reduce((sum, size) => sum + size, 0) > capBytes;
+}
 
 export type ClassifiedUpload = {
   mimeType: string;
@@ -102,8 +127,10 @@ export function classifyUpload(input: {
   return null;
 }
 
-export function fitsUploadCap(byteLength: number): boolean {
-  return byteLength <= MAX_UPLOAD_BYTES;
+/** DICOM files get the higher MAX_DICOM_UPLOAD_BYTES cap; everything else MAX_UPLOAD_BYTES. */
+export function fitsUploadCap(byteLength: number, mimeType: string): boolean {
+  const cap = mimeType === DICOM_MIME ? MAX_DICOM_UPLOAD_BYTES : MAX_UPLOAD_BYTES;
+  return byteLength <= cap;
 }
 
 export function isDicomDocument(input: {

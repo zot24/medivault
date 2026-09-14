@@ -113,6 +113,15 @@ export type MiniCtOptions = {
   photometric?: string;
   bitsAllocated?: number;
   samplesPerPixel?: number;
+  /**
+   * Number of frames (0028,0008); >1 makes this an uncompressed multi-frame
+   * fixture (plan 07 angiography runs). Only meaningful with bitsAllocated 8
+   * and an uncompressed transferSyntax (the default) — pixel data is then
+   * `pixels8` (or a default gradient), rows*columns*frames bytes.
+   */
+  frames?: number;
+  /** 8-bit pixel data for `frames` > 1 / bitsAllocated 8, rows*columns*frames bytes, row-major, frame-major. */
+  pixels8?: Uint8Array;
   /** DS text as written to the file; multi-valued like "345\\-600" is allowed. */
   windowCenter?: number | string;
   windowWidth?: number | string;
@@ -145,6 +154,14 @@ export type MiniCtOptions = {
    * Takes precedence over `overlay` when both are given.
    */
   overlays?: MiniCtOverlay[];
+  /**
+   * Inserts a private (0009,1001) OB element of this many zero bytes
+   * immediately before the pixel data element — simulates a large
+   * private/overlay element pushing the pixel data past a bounded head
+   * read, for testing the wider-window fallback in
+   * server/document-files.ts (shared/dicom-meta.test.ts's HEAD_BYTES miss).
+   */
+  fillerBytes?: number;
 };
 
 export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
@@ -178,17 +195,29 @@ export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
     metaWithoutLength,
   ]);
 
+  const frames = options.frames ?? 1;
   const pixelBytes =
     transferSyntax === TRANSFER_JPEG_LOSSLESS
       ? encapsulatedPixelData(encodeJpegLossless(pixels, rows, columns))
       : transferSyntax === TRANSFER_RLE
         ? encapsulatedPixelData(encodeRle(pixels))
-        : explicitElement(
-            0x7fe0,
-            0x0010,
-            "OW",
-            Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength),
-          );
+        : bitsAllocated === 8
+          ? explicitElement(
+              0x7fe0,
+              0x0010,
+              "OB",
+              padEven(
+                Buffer.from(
+                  options.pixels8 ?? defaultPixels8(rows, columns, frames),
+                ),
+              ),
+            )
+          : explicitElement(
+              0x7fe0,
+              0x0010,
+              "OW",
+              Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength),
+            );
 
   const modality = options.modality ?? "CT";
   const studyInstanceUid =
@@ -239,6 +268,9 @@ export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
       : []),
     explicitElement(0x0028, 0x0002, "US", us(samplesPerPixel)),
     explicitElement(0x0028, 0x0004, "CS", cs(photometric)),
+    ...(options.frames != null
+      ? [explicitElement(0x0028, 0x0008, "IS", is(options.frames))]
+      : []),
     explicitElement(0x0028, 0x0010, "US", us(rows)),
     explicitElement(0x0028, 0x0011, "US", us(columns)),
     explicitElement(0x0028, 0x0100, "US", us(bitsAllocated)),
@@ -256,10 +288,25 @@ export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
     ...overlaysFor(options).map((overlay, i) =>
       overlayElements(overlay, 0x6000 + i * 2),
     ),
+    ...(options.fillerBytes
+      ? [explicitElement(0x0009, 0x1001, "OB", Buffer.alloc(options.fillerBytes))]
+      : []),
     pixelBytes,
   ]);
 
   return Buffer.concat([Buffer.alloc(PREAMBLE), DICM, fileMeta, dataset]);
+}
+
+/** A distinct byte pattern per frame (frame index * 16 + pixel index, wrapped) so tests can tell frames apart. */
+function defaultPixels8(rows: number, columns: number, frames: number): Uint8Array {
+  const perFrame = rows * columns;
+  const pixels = new Uint8Array(perFrame * frames);
+  for (let frame = 0; frame < frames; frame++) {
+    for (let i = 0; i < perFrame; i++) {
+      pixels[frame * perFrame + i] = (frame * 16 + i) % 256;
+    }
+  }
+  return pixels;
 }
 
 function overlaysFor(options: MiniCtOptions): MiniCtOverlay[] {

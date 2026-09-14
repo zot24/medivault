@@ -103,11 +103,11 @@ port = 54424
 [storage]
 enabled = true
 # The maximum file size allowed (e.g. "5MB", "500KB").
-file_size_limit = "50MiB"
+file_size_limit = "256MiB"
 
 [storage.buckets.medical-files]
 public = false
-file_size_limit = "50MiB"
+file_size_limit = "256MiB"
 allowed_mime_types = ["application/pdf", "image/jpeg", "image/png", "image/gif", "image/webp", "application/dicom"]
 
 # Allow connections via S3 compatible clients

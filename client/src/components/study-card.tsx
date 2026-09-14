@@ -29,6 +29,7 @@ export default function StudyCard({ study }: StudyCardProps) {
   const thumbnail = useThumbnail(
     thumbnailSource?.id ?? -1,
     thumbnailSource ? thumbnailPosition(thumbnailSource) : 0,
+    thumbnailSource?.dicomMeta ?? null,
   );
 
   return (

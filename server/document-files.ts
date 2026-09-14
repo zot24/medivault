@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import fs from "fs";
 import {
   insertMedicalDocumentSchema,
   type DocumentFile,
@@ -36,11 +37,18 @@ export type DocumentRecords = {
   ): Promise<void>;
 };
 
+/**
+ * A file to upload, either already in memory (small: PDFs, images, a
+ * single DICOM slice) or on disk with a known size (a large uncompressed
+ * angiography cine run — plan 07 — that multer wrote to the OS temp dir
+ * rather than buffering). classifyFiles reads only a bounded head of a
+ * disk-backed file, never the whole thing; putAll streams it to the object
+ * store the same way.
+ */
 export type UploadFile = {
-  bytes: Buffer;
   mimeType: string;
   originalName: string;
-};
+} & ({ bytes: Buffer } | { path: string; size: number });
 
 export type UploadDocumentInput = {
   userId: string;
@@ -61,6 +69,17 @@ export type OwnedFileBytes = {
   fileName: string;
 };
 
+/** One decoded-ready frame of an uncompressed multi-frame DICOM file (plan 07). */
+export type OwnedFrameBytes = {
+  bytes: Buffer;
+  rows: number;
+  columns: number;
+  bitsAllocated: number;
+  photometric: string;
+  windowCenter: number;
+  windowWidth: number;
+};
+
 export type RemoveDocumentResult = "deleted" | "not_found";
 
 export type AppendFilesResult =
@@ -71,7 +90,63 @@ export type AppendFilesResult =
 const SERIES_KIND_MESSAGE = "All files in a series must be DICOM.";
 const APPEND_KIND_MESSAGE = "Only DICOM series accept more files.";
 
-type ClassifiedFile = UploadFile & { mimeType: string; key: ObjectKey };
+type ClassifiedFile = {
+  mimeType: string;
+  originalName: string;
+  key: ObjectKey;
+  size: number;
+  /**
+   * The whole file for a buffer-based upload, or up to HEAD_BYTES read from
+   * the front of a disk-based one — enough for classifyUpload's Part-10
+   * sniff and for readFileMeta/readSeriesMeta, both of which read only
+   * header elements that come before the pixel data.
+   */
+  metaBytes: Buffer;
+} & ({ bytes: Buffer } | { path: string });
+
+/**
+ * Enough of a DICOM file to read every header element readFileMeta and
+ * readSeriesMeta look at (they stop at the pixel data tag) — see
+ * shared/dicom-meta.ts. Bigger than the 132 bytes classifyUpload strictly
+ * needs so one disk read covers both.
+ */
+const HEAD_BYTES = 1024 * 1024;
+
+/**
+ * Fallback window for the rare file where HEAD_BYTES isn't enough — an
+ * unusually large private or overlay element before the pixel data can
+ * push dicom-parser's untilTag scan past a 1 MB read, which it turns into
+ * a thrown error and readFileMeta/readSeriesMeta turn into a null result
+ * (shared/dicom-meta.ts). widenHeadIfNeeded retries once, up to this many
+ * bytes, before accepting that null result.
+ */
+const MAX_HEAD_BYTES = 8 * 1024 * 1024;
+
+/** Reads up to `maxBytes` from the front of a file without loading the rest. */
+function readHeadSync(filePath: string, maxBytes: number): Buffer {
+  const fd = fs.openSync(filePath, "r");
+  try {
+    const length = Math.min(maxBytes, fs.fstatSync(fd).size);
+    const buffer = Buffer.alloc(length);
+    fs.readSync(fd, buffer, 0, length, 0);
+    return buffer;
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/**
+ * Widens a DICOM file's head read from HEAD_BYTES to MAX_HEAD_BYTES when
+ * the smaller one wasn't enough for readFileMeta to parse anything — only
+ * when there's reason to think a bigger read would help: the initial read
+ * was actually truncated at HEAD_BYTES (a file no bigger than that already
+ * got its whole content) and a bigger window changes the outcome. Most
+ * files never trigger the second read at all.
+ */
+function widenHeadIfNeeded(filePath: string, head: Buffer, fileSize: number): Buffer {
+  const trueMiss = head.length === HEAD_BYTES && fileSize > HEAD_BYTES && !readFileMeta(head);
+  return trueMiss ? readHeadSync(filePath, MAX_HEAD_BYTES) : head;
+}
 
 /**
  * Validates every file up front so a bad slice fails the request before any
@@ -82,27 +157,32 @@ function classifyFiles(userId: string, files: UploadFile[]): ClassifiedFile[] {
     throw new Error("No file uploaded");
   }
   const classified = files.map((file) => {
-    if (!fitsUploadCap(file.bytes.length)) {
-      throw new Error("File too large");
-    }
+    const size = "bytes" in file ? file.bytes.length : file.size;
+    let metaBytes = "bytes" in file ? file.bytes : readHeadSync(file.path, HEAD_BYTES);
     const kind = classifyUpload({
       mimeType: file.mimeType,
       originalName: file.originalName,
-      bytes: file.bytes,
+      bytes: metaBytes,
     });
     if (!kind) {
       throw new Error(
         "Invalid file type. Only PDF, image, and DICOM files are allowed.",
       );
     }
-    return {
-      ...file,
+    if (!fitsUploadCap(size, kind.mimeType)) {
+      throw new Error("File too large");
+    }
+    if (!("bytes" in file) && kind.mimeType === DICOM_MIME) {
+      metaBytes = widenHeadIfNeeded(file.path, metaBytes, size);
+    }
+    const base = {
       mimeType: kind.mimeType,
-      key: objectKeyFor(
-        userId,
-        newObjectBasename(kind.mimeType, file.originalName),
-      ),
+      originalName: file.originalName,
+      key: objectKeyFor(userId, newObjectBasename(kind.mimeType, file.originalName)),
+      size,
+      metaBytes,
     };
+    return "bytes" in file ? { ...base, bytes: file.bytes } : { ...base, path: file.path };
   });
   if (
     classified.length > 1 &&
@@ -120,18 +200,19 @@ function fileRows(
 ): InsertDocumentFile[] {
   return files.map((file, index) => {
     const isDicom = file.mimeType === DICOM_MIME;
-    const fileMeta = isDicom ? readFileMeta(file.bytes) : null;
+    const fileMeta = isDicom ? readFileMeta(file.metaBytes) : null;
     return {
       documentId,
       position: startPosition + index,
       fileName: file.originalName,
       filePath: file.key,
-      fileSize: file.bytes.length,
+      fileSize: file.size,
       mimeType: file.mimeType,
-      sopInstanceUid: isDicom ? readSopInstanceUid(file.bytes) : null,
+      sopInstanceUid: isDicom ? readSopInstanceUid(file.metaBytes) : null,
       instanceNumber: fileMeta?.instanceNumber ?? null,
       sliceLocation: fileMeta?.sliceLocation ?? null,
       phase: fileMeta?.phase ?? null,
+      frameIndex: fileMeta?.frameIndex ?? null,
     };
   });
 }
@@ -170,15 +251,36 @@ export function newObjectBasename(
   return `${randomUUID()}${classified.extension}`;
 }
 
+/**
+ * Streams a disk-backed file straight to the object store instead of
+ * reading it into memory first — the point of the whole detour through
+ * multer.diskStorage for a ~100 MB angiography run (plan 07). Either way,
+ * the OS temp file is gone once this returns, success or failure.
+ */
 async function putAll(objects: ObjectStore, files: ClassifiedFile[]) {
   await Promise.all(
-    files.map((file) =>
-      objects.put({
-        key: file.key,
-        bytes: file.bytes,
-        contentType: file.mimeType,
-      }),
-    ),
+    files.map(async (file) => {
+      try {
+        if ("path" in file) {
+          await objects.put({
+            key: file.key,
+            stream: fs.createReadStream(file.path),
+            size: file.size,
+            contentType: file.mimeType,
+          });
+        } else {
+          await objects.put({
+            key: file.key,
+            bytes: file.bytes,
+            contentType: file.mimeType,
+          });
+        }
+      } finally {
+        if ("path" in file) {
+          await fs.promises.unlink(file.path).catch(() => {});
+        }
+      }
+    }),
   );
 }
 
@@ -196,9 +298,9 @@ export function createDocumentFiles(deps: {
     ): Promise<MedicalDocument> {
       const files = classifyFiles(input.userId, input.files);
       const [first] = files;
-      const totalBytes = files.reduce((sum, file) => sum + file.bytes.length, 0);
+      const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
       const dicomMeta =
-        first.mimeType === DICOM_MIME ? readSeriesMeta(first.bytes) : null;
+        first.mimeType === DICOM_MIME ? readSeriesMeta(first.metaBytes) : null;
       const documentData = insertMedicalDocumentSchema.parse({
         userId: input.userId,
         title: input.title,
@@ -258,7 +360,7 @@ export function createDocumentFiles(deps: {
       const fileCount = existing.length + files.length;
       const fileSize =
         existing.reduce((sum, row) => sum + row.fileSize, 0) +
-        files.reduce((sum, file) => sum + file.bytes.length, 0);
+        files.reduce((sum, file) => sum + file.size, 0);
       await deps.documents.updateTotals(documentId, {
         fileCount,
         fileSize: fileSize.toString(),
@@ -295,6 +397,46 @@ export function createDocumentFiles(deps: {
         bytes: stored.bytes,
         mimeType: row.mimeType,
         fileName: row.fileName,
+      };
+    },
+
+    /**
+     * One frame of an uncompressed multi-frame file, read as a fixed byte
+     * range (plan 07) — never the whole ~100 MB file. Null for a position
+     * with no frame index (a still, or a compressed multi-frame file —
+     * those are small enough to fetch whole, see openOwnedFileAt) and for a
+     * frame index out of range.
+     */
+    async openOwnedFrame(
+      userId: string,
+      documentId: number,
+      position: number,
+      frame: number,
+    ): Promise<OwnedFrameBytes | null> {
+      const document = await deps.documents.get(documentId, userId);
+      if (!document) {
+        return null;
+      }
+      const files = await deps.documents.listFiles(documentId);
+      const row = files.find((file) => file.position === position);
+      const frameIndex = row?.frameIndex;
+      if (!row || !frameIndex || frame < 0 || frame >= frameIndex.numberOfFrames) {
+        return null;
+      }
+      const start = frameIndex.pixelDataOffset + frame * frameIndex.frameBytes;
+      const end = start + frameIndex.frameBytes - 1;
+      const bytes = await deps.objects.getRange(asObjectKey(row.filePath), start, end);
+      if (!bytes || bytes.length !== frameIndex.frameBytes) {
+        return null;
+      }
+      return {
+        bytes,
+        rows: frameIndex.rows,
+        columns: frameIndex.columns,
+        bitsAllocated: frameIndex.bitsAllocated,
+        photometric: frameIndex.photometric || "MONOCHROME2",
+        windowCenter: frameIndex.windowCenter,
+        windowWidth: frameIndex.windowWidth,
       };
     },
 
