@@ -332,15 +332,30 @@ export type MiniUsCineOptions = {
   frameRate?: number;
   /** (0018,1063) FrameTime, in ms — an alternative to frameRate. */
   frameTime?: number;
+  /**
+   * Write a zero-length Basic Offset Table item instead of one offset per
+   * frame. Legal (DICOM PS3.5 A.4) and common on real scanners; readers have
+   * to find the frames themselves. See `multiFrameSourceFromPart10`.
+   */
+  emptyBasicOffsetTable?: boolean;
+  /**
+   * Split each frame across this many fragment items (default 1). Only the
+   * first fragment of a frame starts with the JPEG SOI marker, so a reader
+   * indexing an empty Basic Offset Table has to concatenate the rest.
+   */
+  fragmentsPerFrame?: number;
   studyInstanceUid?: string;
   seriesInstanceUid?: string;
 };
 
 /**
- * Builds an encapsulated JPEG Baseline multi-frame Ultrasound object: one
- * Basic Offset Table entry and one fragment item per frame in `frames`, as
- * `dicomParser.readEncapsulatedImageFrame` expects. See plan 06 (echo cine
- * loops) and shared/dicom-frame.ts's `multiFrameSourceFromPart10`.
+ * Builds an encapsulated JPEG Baseline multi-frame Ultrasound object: a
+ * Basic Offset Table item and one fragment item per frame in `frames`. By
+ * default the table holds one offset per frame, as
+ * `dicomParser.readEncapsulatedImageFrame` expects; `emptyBasicOffsetTable`
+ * and `fragmentsPerFrame` build the shapes a reader has to index itself. See
+ * plan 06 (echo cine loops) and shared/dicom-frame.ts's
+ * `multiFrameSourceFromPart10`.
  */
 export function buildMiniUsCine(options: MiniUsCineOptions): Buffer {
   const rows = options.rows ?? 8;
@@ -368,6 +383,8 @@ export function buildMiniUsCine(options: MiniUsCineOptions): Buffer {
 
   const pixelBytes = encapsulatedMultiFramePixelData(
     options.frames.map((frame) => Buffer.from(frame)),
+    options.emptyBasicOffsetTable ?? false,
+    options.fragmentsPerFrame ?? 1,
   );
 
   const dataset = Buffer.concat([
@@ -399,24 +416,37 @@ export function buildMiniUsCine(options: MiniUsCineOptions): Buffer {
 }
 
 /**
- * Encapsulated pixel data with a *non-empty* Basic Offset Table (one entry
- * per frame) and one fragment item per frame — unlike `encapsulatedPixelData`
- * above, which writes a zero-length BOT for its single always-one-frame
- * fragment. `dicomParser.readEncapsulatedImageFrame` requires a populated
- * BOT to find each frame's fragment.
+ * Encapsulated pixel data for a multi-frame object: a Basic Offset Table
+ * item followed by fragment items. With `emptyBasicOffsetTable` the table
+ * item is written zero-length — legal per DICOM PS3.5 A.4, and the case
+ * `dicomParser.readEncapsulatedImageFrame` throws for — otherwise it holds
+ * one offset per frame. `fragmentsPerFrame` splits each frame across
+ * several fragments, so only its first fragment starts with FF D8.
  */
-function encapsulatedMultiFramePixelData(frames: Buffer[]): Buffer {
+function encapsulatedMultiFramePixelData(
+  frames: Buffer[],
+  emptyBasicOffsetTable: boolean,
+  fragmentsPerFrame: number,
+): Buffer {
   const padded = frames.map((frame) =>
     frame.length % 2 === 0 ? frame : Buffer.concat([frame, Buffer.from([0x00])]),
   );
+  const items = padded.map((frame) => splitIntoFragments(frame, fragmentsPerFrame));
+
   const offsets: number[] = [];
   let running = 0;
-  for (const frame of padded) {
+  for (const fragments of items) {
     offsets.push(running);
-    running += 8 + frame.length; // item tag (4) + item length (4) + data
+    for (const fragment of fragments) {
+      running += 8 + fragment.length; // item tag (4) + item length (4) + data
+    }
   }
-  const basicOffsetTable = Buffer.alloc(offsets.length * 4);
-  offsets.forEach((offset, i) => basicOffsetTable.writeUInt32LE(offset, i * 4));
+  const basicOffsetTable = emptyBasicOffsetTable
+    ? Buffer.alloc(0)
+    : Buffer.alloc(offsets.length * 4);
+  if (!emptyBasicOffsetTable) {
+    offsets.forEach((offset, i) => basicOffsetTable.writeUInt32LE(offset, i * 4));
+  }
 
   return Buffer.concat([
     tag(0x7fe0, 0x0010),
@@ -426,10 +456,44 @@ function encapsulatedMultiFramePixelData(frames: Buffer[]): Buffer {
     tag(0xfffe, 0xe000),
     u32(basicOffsetTable.length),
     basicOffsetTable,
-    ...padded.flatMap((frame) => [tag(0xfffe, 0xe000), u32(frame.length), frame]),
+    ...items.flat().flatMap((fragment) => [
+      tag(0xfffe, 0xe000),
+      u32(fragment.length),
+      fragment,
+    ]),
     tag(0xfffe, 0xe0dd),
     u32(0),
   ]);
+}
+
+/**
+ * Cuts one frame into `count` fragments of even length. Every fragment after
+ * the first must start mid-stream (never with FF D8), or a reader walking an
+ * empty Basic Offset Table would read it as a new frame — so this refuses to
+ * build a fixture that lies about its own frame boundaries.
+ */
+function splitIntoFragments(frame: Buffer, count: number): Buffer[] {
+  if (count <= 1) {
+    return [frame];
+  }
+  const size = Math.max(2, (Math.floor(frame.length / count) >> 1) << 1);
+  const fragments: Buffer[] = [];
+  for (let start = 0; start < frame.length; start += size) {
+    const end = fragments.length === count - 1 ? frame.length : Math.min(start + size, frame.length);
+    fragments.push(frame.subarray(start, end));
+    if (end === frame.length) {
+      break;
+    }
+  }
+  for (const fragment of fragments.slice(1)) {
+    if (fragment[0] === 0xff && fragment[1] === 0xd8) {
+      throw new Error("continuation fragment starts with FF D8; pick another split");
+    }
+    if (fragment.length % 2 !== 0) {
+      throw new Error("fragments must have even length");
+    }
+  }
+  return fragments;
 }
 
 export type MiniScRgbOptions = {

@@ -165,8 +165,22 @@ export function multiFrameSourceFromPart10(bytes: Uint8Array): EncapsulatedJpegS
     ) {
       return null;
     }
-    const frameCount = Math.max(1, firstDecimal(dataSet.string("x00280008")) ?? 1);
+    // An empty Basic Offset Table is legal (DICOM PS3.5 A.4) and common; it
+    // is also what `readEncapsulatedImageFrame` throws for, so index the
+    // fragments ourselves in that case.
+    const ranges =
+      (pixelElement.basicOffsetTable?.length ?? 0) > 0
+        ? null
+        : frameRangesFromSoiMarkers(bytes, pixelElement.fragments ?? []);
+    if (ranges && ranges.length === 0) {
+      return null;
+    }
+    // A self-indexed source can only offer the frames it actually found,
+    // whatever NumberOfFrames claims.
+    const frameCount =
+      ranges?.length ?? Math.max(1, firstDecimal(dataSet.string("x00280008")) ?? 1);
     const frameRate = frameRateOf(dataSet);
+    const fragments = pixelElement.fragments ?? [];
     return {
       kind: "jpeg-frames",
       rows,
@@ -174,12 +188,72 @@ export function multiFrameSourceFromPart10(bytes: Uint8Array): EncapsulatedJpegS
       frameCount,
       frameRate,
       frame(index: number): Uint8Array {
-        return dicomParser.readEncapsulatedImageFrame(dataSet, pixelElement, index);
+        if (!ranges) {
+          return dicomParser.readEncapsulatedImageFrame(dataSet, pixelElement, index);
+        }
+        const range = ranges[index];
+        if (!range) {
+          throw new Error(`frame ${index} is out of range (${ranges.length} frames)`);
+        }
+        return concatFragments(bytes, fragments.slice(range.first, range.first + range.count));
       },
     };
   } catch {
     return null;
   }
+}
+
+type FragmentRange = {
+  /** Index of the frame's first fragment. */
+  first: number;
+  /** How many fragments the frame spans. */
+  count: number;
+};
+
+/**
+ * Frame boundaries recovered from the fragments themselves, for pixel data
+ * whose Basic Offset Table is empty. Every JPEG stream starts with the SOI
+ * marker FF D8, so a fragment beginning with it starts a frame and the
+ * fragments after it — up to the next SOI — are that frame's continuation.
+ * Returns [] when no fragment looks like the start of a JPEG.
+ */
+function frameRangesFromSoiMarkers(
+  bytes: Uint8Array,
+  fragments: readonly { position: number; length: number }[],
+): FragmentRange[] {
+  const ranges: FragmentRange[] = [];
+  fragments.forEach((fragment, index) => {
+    const startsFrame =
+      fragment.length >= 2 &&
+      bytes[fragment.position] === 0xff &&
+      bytes[fragment.position + 1] === 0xd8;
+    if (startsFrame) {
+      ranges.push({ first: index, count: 1 });
+    } else if (ranges.length > 0) {
+      ranges[ranges.length - 1].count += 1;
+    }
+  });
+  return ranges;
+}
+
+function concatFragments(
+  bytes: Uint8Array,
+  fragments: readonly { position: number; length: number }[],
+): Uint8Array {
+  if (fragments.length === 1) {
+    return bytes.subarray(
+      fragments[0].position,
+      fragments[0].position + fragments[0].length,
+    );
+  }
+  const total = fragments.reduce((sum, fragment) => sum + fragment.length, 0);
+  const frame = new Uint8Array(total);
+  let offset = 0;
+  for (const fragment of fragments) {
+    frame.set(bytes.subarray(fragment.position, fragment.position + fragment.length), offset);
+    offset += fragment.length;
+  }
+  return frame;
 }
 
 /** CineRate (0018,0040) fps, else 1000 / FrameTime (0018,1063) ms, else null for a still. */

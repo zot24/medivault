@@ -531,6 +531,44 @@ describe("multiFrameSourceFromPart10", () => {
     expect(source?.frameCount).toBe(1);
   });
 
+  it("indexes the frames itself when the Basic Offset Table is empty", () => {
+    // An empty Basic Offset Table is legal (DICOM PS3.5 A.4) and common on
+    // real scanners; `dicomParser.readEncapsulatedImageFrame` throws for it.
+    const bytes = buildMiniUsCine({
+      frames: [FRAME_A, FRAME_B, FRAME_A],
+      rows: 8,
+      columns: 8,
+      emptyBasicOffsetTable: true,
+    });
+
+    const source = multiFrameSourceFromPart10(new Uint8Array(bytes))!;
+    expect(source.frameCount).toBe(3);
+    for (const index of [0, 1, 2]) {
+      const frame = source.frame(index);
+      expect([frame[0], frame[1]]).toEqual([0xff, 0xd8]);
+    }
+    expect(Array.from(source.frame(0))).toEqual(Array.from(FRAME_A));
+    expect(Array.from(source.frame(1))).toEqual(Array.from(FRAME_B));
+  });
+
+  it("concatenates a frame's continuation fragments, up to the next SOI marker", () => {
+    // One frame per *fragment* is the common encoding, but not the required
+    // one: a frame may span several fragments, only the first of which
+    // starts with FF D8.
+    const bytes = buildMiniUsCine({
+      frames: [FRAME_A, FRAME_B],
+      rows: 8,
+      columns: 8,
+      emptyBasicOffsetTable: true,
+      fragmentsPerFrame: 3,
+    });
+
+    const source = multiFrameSourceFromPart10(new Uint8Array(bytes))!;
+    expect(source.frameCount).toBe(2);
+    expect(Array.from(source.frame(0))).toEqual(Array.from(FRAME_A));
+    expect(Array.from(source.frame(1))).toEqual(Array.from(FRAME_B));
+  });
+
   it("returns null for a non-JPEG-Baseline transfer syntax (e.g. a CT slice)", () => {
     const bytes = buildMiniCtDicom();
     expect(multiFrameSourceFromPart10(new Uint8Array(bytes))).toBeNull();
