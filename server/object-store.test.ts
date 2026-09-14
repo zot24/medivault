@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   MemoryObjectStore,
+  SupabaseObjectStore,
   asObjectKey,
   parseObjectStoreConfig,
 } from "./object-store";
@@ -62,5 +63,72 @@ describe("MemoryObjectStore", () => {
       bytes: Buffer.from("%PDF-hello"),
       contentType: "application/pdf",
     });
+  });
+
+  it("getRange returns an inclusive byte slice, matching the HTTP Range convention", async () => {
+    const store = new MemoryObjectStore();
+    const key = asObjectKey("owner-1/run.dcm");
+    await store.put({
+      key,
+      bytes: Buffer.from("0123456789"),
+      contentType: "application/dicom",
+    });
+
+    expect((await store.getRange(key, 2, 5))?.toString()).toBe("2345");
+    expect((await store.getRange(key, 0, 0))?.toString()).toBe("0");
+  });
+
+  it("getRange returns null for a missing object", async () => {
+    const store = new MemoryObjectStore();
+    expect(await store.getRange(asObjectKey("owner-1/missing.dcm"), 0, 3)).toBeNull();
+  });
+});
+
+describe("SupabaseObjectStore.getRange", () => {
+  it("fetches the storage REST endpoint with a Range header and a bearer service-role key", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      status: 206,
+      arrayBuffer: async () => new TextEncoder().encode("frame-bytes").buffer,
+    }));
+    const store = new SupabaseObjectStore(
+      "http://127.0.0.1:54421",
+      "test-service-role",
+      "medical-files",
+      fetchImpl as any,
+    );
+
+    const result = await store.getRange(
+      asObjectKey("owner-1/run.dcm"),
+      1000,
+      1999,
+    );
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://127.0.0.1:54421/storage/v1/object/authenticated/medical-files/owner-1/run.dcm",
+      {
+        headers: {
+          Authorization: "Bearer test-service-role",
+          Range: "bytes=1000-1999",
+        },
+      },
+    );
+    expect(result?.toString()).toBe("frame-bytes");
+  });
+
+  it("returns null when the range request fails", async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: false,
+      status: 416,
+      arrayBuffer: async () => new ArrayBuffer(0),
+    }));
+    const store = new SupabaseObjectStore(
+      "http://127.0.0.1:54421",
+      "test-service-role",
+      "medical-files",
+      fetchImpl as any,
+    );
+
+    expect(await store.getRange(asObjectKey("owner-1/run.dcm"), 0, 9)).toBeNull();
   });
 });

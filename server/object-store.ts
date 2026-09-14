@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import fs from "fs";
 import path from "path";
+import type { Readable } from "stream";
 
 export type ObjectKey = string & { readonly __brand: "ObjectKey" };
 
@@ -10,13 +11,27 @@ export type StoredObject = {
   contentType: string;
 };
 
+/**
+ * Either the whole object in memory, or a stream plus its known size — the
+ * shape a large DICOM upload (plan 07) is put in, so a ~100 MB file is
+ * never fully buffered on its way from the multer temp file to the object
+ * store.
+ */
+export type PutInput =
+  | { key: ObjectKey; bytes: Buffer; contentType: string }
+  | { key: ObjectKey; stream: Readable; size: number; contentType: string };
+
 export interface ObjectStore {
-  put(input: {
-    key: ObjectKey;
-    bytes: Buffer;
-    contentType: string;
-  }): Promise<void>;
+  put(input: PutInput): Promise<void>;
   get(key: ObjectKey): Promise<StoredObject | null>;
+  /**
+   * Bytes `start` through `end`, both inclusive (matching the HTTP Range
+   * header's own convention). Null when the object doesn't exist. Used for
+   * angiography cine frames (plan 07): a frame is a fixed byte range, and
+   * this lets the server serve one without downloading the whole ~100 MB
+   * file first.
+   */
+  getRange(key: ObjectKey, start: number, end: number): Promise<Buffer | null>;
   delete(key: ObjectKey): Promise<void>;
 }
 
@@ -75,19 +90,25 @@ export function asObjectKey(value: string): ObjectKey {
   return value as ObjectKey;
 }
 
+/** Reads a stream fully into memory — only used by stores that need bytes in hand (Memory, Supabase upload). */
+async function bufferFromStream(stream: Readable): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
 export class MemoryObjectStore implements ObjectStore {
   private readonly objects = new Map<
     string,
     { bytes: Buffer; contentType: string }
   >();
 
-  async put(input: {
-    key: ObjectKey;
-    bytes: Buffer;
-    contentType: string;
-  }): Promise<void> {
+  async put(input: PutInput): Promise<void> {
+    const bytes = "stream" in input ? await bufferFromStream(input.stream) : input.bytes;
     this.objects.set(input.key, {
-      bytes: Buffer.from(input.bytes),
+      bytes: Buffer.from(bytes),
       contentType: input.contentType,
     });
   }
@@ -104,12 +125,20 @@ export class MemoryObjectStore implements ObjectStore {
     };
   }
 
+  async getRange(key: ObjectKey, start: number, end: number): Promise<Buffer | null> {
+    const stored = this.objects.get(key);
+    if (!stored) {
+      return null;
+    }
+    return Buffer.from(stored.bytes.subarray(start, end + 1));
+  }
+
   async delete(key: ObjectKey): Promise<void> {
     this.objects.delete(key);
   }
 }
 
-class DiskObjectStore implements ObjectStore {
+export class DiskObjectStore implements ObjectStore {
   constructor(private readonly root: string) {}
 
   private resolve(key: ObjectKey): string {
@@ -123,13 +152,19 @@ class DiskObjectStore implements ObjectStore {
     return resolved;
   }
 
-  async put(input: {
-    key: ObjectKey;
-    bytes: Buffer;
-    contentType: string;
-  }): Promise<void> {
+  async put(input: PutInput): Promise<void> {
     const filePath = this.resolve(input.key);
     await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+    if ("stream" in input) {
+      await new Promise<void>((resolve, reject) => {
+        const dest = fs.createWriteStream(filePath);
+        input.stream.on("error", reject);
+        dest.on("error", reject);
+        dest.on("finish", resolve);
+        input.stream.pipe(dest);
+      });
+      return;
+    }
     await fs.promises.writeFile(filePath, input.bytes);
   }
 
@@ -138,6 +173,22 @@ class DiskObjectStore implements ObjectStore {
     try {
       const bytes = await fs.promises.readFile(filePath);
       return { key, bytes, contentType: "application/octet-stream" };
+    } catch {
+      return null;
+    }
+  }
+
+  async getRange(key: ObjectKey, start: number, end: number): Promise<Buffer | null> {
+    const filePath = this.resolve(key);
+    try {
+      const chunks: Buffer[] = [];
+      await new Promise<void>((resolve, reject) => {
+        const stream = fs.createReadStream(filePath, { start, end });
+        stream.on("data", (chunk) => chunks.push(chunk as Buffer));
+        stream.on("end", () => resolve());
+        stream.on("error", reject);
+      });
+      return Buffer.concat(chunks);
     } catch {
       return null;
     }
@@ -153,11 +204,24 @@ class DiskObjectStore implements ObjectStore {
   }
 }
 
-class SupabaseObjectStore implements ObjectStore {
+type FetchLike = (
+  input: string,
+  init?: {
+    method?: string;
+    headers?: Record<string, string>;
+  },
+) => Promise<{
+  ok: boolean;
+  status: number;
+  arrayBuffer(): Promise<ArrayBuffer>;
+}>;
+
+export class SupabaseObjectStore implements ObjectStore {
   constructor(
     private readonly url: string,
     private readonly serviceRoleKey: string,
     private readonly bucket: string,
+    private readonly fetchImpl: FetchLike = fetch,
   ) {}
 
   private client() {
@@ -166,16 +230,15 @@ class SupabaseObjectStore implements ObjectStore {
     });
   }
 
-  async put(input: {
-    key: ObjectKey;
-    bytes: Buffer;
-    contentType: string;
-  }): Promise<void> {
+  async put(input: PutInput): Promise<void> {
     const { error } = await this.client()
       .storage.from(this.bucket)
-      .upload(input.key, input.bytes, {
+      .upload(input.key, "stream" in input ? input.stream : input.bytes, {
         contentType: input.contentType,
         upsert: false,
+        // Required for a Node Readable body: makes supabase-js's fetch call
+        // stream the request instead of buffering it first.
+        ...("stream" in input ? { duplex: "half" } : {}),
       });
     if (error) {
       throw error;
@@ -194,6 +257,28 @@ class SupabaseObjectStore implements ObjectStore {
       bytes: Buffer.from(await data.arrayBuffer()),
       contentType: data.type || "application/octet-stream",
     };
+  }
+
+  /**
+   * A `Range` request straight to Storage's REST endpoint — supabase-js's
+   * `.download()` has no range parameter, and Supabase Storage answers
+   * `Range` requests with `206 Partial Content` (verified on the reference
+   * case; see docs/plans/07-angiography-range.md).
+   */
+  async getRange(key: ObjectKey, start: number, end: number): Promise<Buffer | null> {
+    const response = await this.fetchImpl(
+      `${this.url}/storage/v1/object/authenticated/${this.bucket}/${key}`,
+      {
+        headers: {
+          Authorization: `Bearer ${this.serviceRoleKey}`,
+          Range: `bytes=${start}-${end}`,
+        },
+      },
+    );
+    if (!response.ok) {
+      return null;
+    }
+    return Buffer.from(await response.arrayBuffer());
   }
 
   async delete(key: ObjectKey): Promise<void> {
