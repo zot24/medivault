@@ -17,6 +17,7 @@ export type StudySummary = {
 function emptyGroups(): Record<SeriesGroup, MedicalDocument[]> {
   return {
     volume: [],
+    images: [],
     snapshot: [],
     analysis: [],
     report: [],
@@ -312,6 +313,7 @@ export function documentStats(
 /** Every series of a study, in the order the study page shows its sections. */
 const GROUP_ORDER: SeriesGroup[] = [
   "volume",
+  "images",
   "snapshot",
   "analysis",
   "report",

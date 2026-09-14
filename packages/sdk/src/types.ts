@@ -28,6 +28,8 @@ export interface DicomSeriesMeta {
   rows: number | null;
   columns: number | null;
   numberOfFrames: number;
+  /** CineRate fps, else 1000 / FrameTime; null for a still image. */
+  frameRate: number | null;
   photometric: string;
   transferSyntaxUid: string;
   sliceThickness: number | null;
@@ -37,6 +39,7 @@ export interface DicomSeriesMeta {
 
 export type SeriesGroup =
   | 'volume'
+  | 'images'
   | 'snapshot'
   | 'analysis'
   | 'report'

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   autoWindow,
   isMostlyBlackAtStoredWindow,
+  multiFrameSourceFromPart10,
   overlaysFromPart10,
   pixelFrameFromPart10,
   renderFrameRgba,
@@ -71,22 +72,15 @@ function windowFor(frame: DicomFrame): DicomWindow | undefined {
   return undefined;
 }
 
-/** Draws a frame, letterboxed, onto a THUMBNAIL_SIZE square canvas. */
-function drawThumbnail(frame: DicomFrame, overlays: DicomOverlay[]): string | null {
-  const source = document.createElement("canvas");
-  source.width = frame.columns;
-  source.height = frame.rows;
-  const sourceContext = source.getContext("2d");
-  if (!sourceContext) {
-    return null;
-  }
-  const image = sourceContext.createImageData(frame.columns, frame.rows);
-  image.data.set(renderFrameRgba(frame, overlays, windowFor(frame)));
-  sourceContext.putImageData(image, 0, 0);
-
-  const scale = THUMBNAIL_SIZE / Math.max(frame.rows, frame.columns);
-  const width = Math.round(frame.columns * scale);
-  const height = Math.round(frame.rows * scale);
+/** Letterboxes a rows x columns source canvas onto a THUMBNAIL_SIZE square. */
+function letterbox(
+  source: CanvasImageSource,
+  rows: number,
+  columns: number,
+): string | null {
+  const scale = THUMBNAIL_SIZE / Math.max(rows, columns);
+  const width = Math.round(columns * scale);
+  const height = Math.round(rows * scale);
 
   const target = document.createElement("canvas");
   target.width = THUMBNAIL_SIZE;
@@ -105,6 +99,29 @@ function drawThumbnail(frame: DicomFrame, overlays: DicomOverlay[]): string | nu
     height,
   );
   return target.toDataURL("image/png");
+}
+
+/** Draws a frame, letterboxed, onto a THUMBNAIL_SIZE square canvas. */
+function drawThumbnail(frame: DicomFrame, overlays: DicomOverlay[]): string | null {
+  const source = document.createElement("canvas");
+  source.width = frame.columns;
+  source.height = frame.rows;
+  const sourceContext = source.getContext("2d");
+  if (!sourceContext) {
+    return null;
+  }
+  const image = sourceContext.createImageData(frame.columns, frame.rows);
+  image.data.set(renderFrameRgba(frame, overlays, windowFor(frame)));
+  sourceContext.putImageData(image, 0, 0);
+  return letterbox(source, frame.rows, frame.columns);
+}
+
+/**
+ * Thumbnail for an ultrasound cine loop or still (plan 06): frame 0,
+ * decoded by the browser's own JPEG codec rather than anything here.
+ */
+function drawCineThumbnail(bitmap: ImageBitmap): string | null {
+  return letterbox(bitmap, bitmap.height, bitmap.width);
 }
 
 /**
@@ -147,7 +164,23 @@ export function useThumbnail(documentId: number, position = 0): string | null {
       }
       const bytes = new Uint8Array(await response.arrayBuffer());
       const frame = pixelFrameFromPart10(bytes);
-      return frame ? drawThumbnail(frame, overlaysFromPart10(bytes)) : null;
+      if (frame) {
+        return drawThumbnail(frame, overlaysFromPart10(bytes));
+      }
+      // JPEG Baseline ultrasound (plan 06): frame 0 via the browser's own
+      // JPEG decoder, whether it's a cine loop or a single still.
+      const cine = multiFrameSourceFromPart10(bytes);
+      if (cine) {
+        const bitmap = await createImageBitmap(
+          new Blob([cine.frame(0)], { type: "image/jpeg" }),
+        );
+        try {
+          return drawCineThumbnail(bitmap);
+        } finally {
+          bitmap.close();
+        }
+      }
+      return null;
     })()
       .catch(() => null)
       .then((result) => {

@@ -80,6 +80,94 @@ describe("FrameCache", () => {
     expect(cache.has(1)).toBe(false);
   });
 
+  it("weighs a bitmap frame (plan 06 cine playback) as rows*columns*4", () => {
+    // 8x8 bitmap = 256 bytes; budget fits exactly one.
+    const cache = new FrameCache<CacheableFrame>(ROWS * COLUMNS * 4);
+    cache.set(0, { rows: ROWS, columns: COLUMNS, kind: "bitmap" });
+    cache.set(1, { rows: ROWS, columns: COLUMNS, kind: "bitmap" });
+
+    expect(cache.has(0)).toBe(false);
+    expect(cache.has(1)).toBe(true);
+  });
+
+  it("calls dispose on an evicted frame, so a decoded ImageBitmap can be closed", () => {
+    const closed: number[] = [];
+    type Bitmapish = CacheableFrame & { id: number; close(): void };
+    const cache = new FrameCache<Bitmapish>(3 * FRAME_COST, {
+      dispose: (entry) => {
+        closed.push(entry.id);
+        entry.close();
+      },
+    });
+    const bitmap = (id: number): Bitmapish => ({
+      id,
+      rows: ROWS,
+      columns: COLUMNS,
+      kind: "mono16",
+      close: () => {},
+    });
+    cache.set(0, bitmap(0));
+    cache.set(1, bitmap(1));
+    cache.set(2, bitmap(2));
+    cache.set(3, bitmap(3)); // evicts 0
+
+    expect(closed).toEqual([0]);
+  });
+
+  it("re-admits an evicted frame, so a dropped bitmap can just be decoded again", () => {
+    // The cine viewer keeps only a few decoded bitmaps at a time (plan 06),
+    // so eviction has to be recoverable: the compressed JPEG fragment is
+    // still in memory, and the frame is decoded and set again on demand
+    // rather than being lost for the rest of the loop.
+    const closed: number[] = [];
+    type Bitmapish = CacheableFrame & { id: number };
+    const bitmap = (id: number): Bitmapish => ({
+      id,
+      rows: ROWS,
+      columns: COLUMNS,
+      kind: "bitmap",
+    });
+    // 8x8 bitmap = 256 bytes; budget fits two.
+    const cache = new FrameCache<Bitmapish>(2 * ROWS * COLUMNS * 4, {
+      dispose: (entry) => closed.push(entry.id),
+    });
+    cache.set(0, bitmap(0));
+    cache.set(1, bitmap(1));
+    cache.set(2, bitmap(2)); // evicts and closes 0
+
+    expect(cache.has(0)).toBe(false);
+    expect(closed).toEqual([0]);
+
+    cache.set(0, bitmap(0)); // decoded again from the fragment
+
+    expect(cache.get(0)?.id).toBe(0);
+    expect(cache.has(2)).toBe(true);
+    expect(closed).toEqual([0, 1]); // re-admitting 0 evicted the now-oldest 1
+  });
+
+  it("disposes a replaced entry when the same position is set again", () => {
+    const closed: number[] = [];
+    const cache = new FrameCache<CacheableFrame & { id: number }>(3 * FRAME_COST, {
+      dispose: (entry) => closed.push(entry.id),
+    });
+    cache.set(0, { id: 1, rows: ROWS, columns: COLUMNS, kind: "mono16" });
+    cache.set(0, { id: 2, rows: ROWS, columns: COLUMNS, kind: "mono16" });
+
+    expect(closed).toEqual([1]);
+  });
+
+  it("disposes every remaining entry on clear()", () => {
+    const closed: number[] = [];
+    const cache = new FrameCache<CacheableFrame & { id: number }>(3 * FRAME_COST, {
+      dispose: (entry) => closed.push(entry.id),
+    });
+    cache.set(0, { id: 1, rows: ROWS, columns: COLUMNS, kind: "mono16" });
+    cache.set(1, { id: 2, rows: ROWS, columns: COLUMNS, kind: "mono16" });
+    cache.clear();
+
+    expect(closed.sort()).toEqual([1, 2]);
+  });
+
   it("replacing an existing position updates its cost without double-counting", () => {
     // Budget fits exactly two frames (256 bytes). Re-setting position 0
     // must not count its cost twice, or the budget would look exceeded
@@ -98,5 +186,40 @@ describe("FrameCache", () => {
     expect(cache.has(0)).toBe(false);
     expect(cache.has(1)).toBe(true);
     expect(cache.has(2)).toBe(true);
+  });
+
+  it("costs an entry by its byteCost when it declares one", () => {
+    // An encapsulated JPEG source (plan 06) pins the whole file it was
+    // parsed from, not a rows x columns pixel buffer, so it says so.
+    const cache = new FrameCache<CacheableFrame>(2 * 1000);
+    cache.set(0, { rows: ROWS, columns: COLUMNS, kind: "jpeg-frames", byteCost: 1000 });
+    cache.set(1, { rows: ROWS, columns: COLUMNS, kind: "jpeg-frames", byteCost: 1000 });
+    expect(cache.has(0)).toBe(true);
+
+    cache.set(2, { rows: ROWS, columns: COLUMNS, kind: "jpeg-frames", byteCost: 1000 });
+    expect(cache.has(0)).toBe(false);
+    expect(cache.has(1)).toBe(true);
+    expect(cache.has(2)).toBe(true);
+  });
+
+  it("bounds retained cine sources that rows x columns would badly under-count", () => {
+    // Regression: cine sources lived in a plain Map that nothing ever
+    // evicted, so a 56-file echo record pinned every file (~500 MB) for the
+    // life of the dialog. Sized by rows x columns they look ~2 MB each; a
+    // 96-frame loop really pins ~9.6 MB, which is what has to be bounded.
+    const LOOP_BYTES = 96 * 100 * 1024;
+    const cache = new FrameCache<CacheableFrame>(64 * 1024 * 1024);
+    for (let position = 0; position < 56; position += 1) {
+      cache.set(position, { rows: 1016, columns: 708, kind: "jpeg-frames", byteCost: LOOP_BYTES });
+    }
+
+    const resident = Array.from({ length: 56 }, (_, position) => position).filter((position) =>
+      cache.has(position),
+    );
+    expect(resident.length).toBeLessThan(56);
+    expect(resident.length * LOOP_BYTES).toBeLessThanOrEqual(64 * 1024 * 1024);
+    // The most recent loops are the ones kept.
+    expect(cache.has(55)).toBe(true);
+    expect(cache.has(0)).toBe(false);
   });
 });

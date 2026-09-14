@@ -138,9 +138,11 @@ describe("groupIntoStudies", () => {
       },
     });
     const report = record({ dicomMeta: { studyInstanceUid: "s", modality: "SR" } });
+    const echo = record({ dicomMeta: { studyInstanceUid: "s", modality: "US" } });
 
-    const [study] = groupIntoStudies([volume, snapshot, report]);
+    const [study] = groupIntoStudies([volume, snapshot, report, echo]);
     expect(study.groups.volume).toEqual([volume]);
+    expect(study.groups.images).toEqual([echo]);
     expect(study.groups.snapshot).toEqual([snapshot]);
     expect(study.groups.report).toEqual([report]);
     expect(study.groups.analysis).toEqual([]);

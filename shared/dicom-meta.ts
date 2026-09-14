@@ -18,6 +18,8 @@ export type DicomSeriesMeta = {
   rows: number | null;
   columns: number | null;
   numberOfFrames: number; // (0028,0008), default 1
+  /** CineRate (0018,0040) fps, else 1000 / FrameTime (0018,1063); null for a still. */
+  frameRate: number | null;
   photometric: string; // (0028,0004)
   transferSyntaxUid: string; // (0002,0010)
   sliceThickness: number | null; // (0018,0050)
@@ -27,6 +29,7 @@ export type DicomSeriesMeta = {
 
 export type SeriesGroup =
   | "volume"
+  | "images"
   | "snapshot"
   | "analysis"
   | "report"
@@ -65,6 +68,7 @@ export function readSeriesMeta(bytes: Uint8Array): DicomSeriesMeta | null {
       rows: dataSet.uint16("x00280010") ?? null,
       columns: dataSet.uint16("x00280011") ?? null,
       numberOfFrames: firstInt(dataSet.string("x00280008")) ?? 1,
+      frameRate: frameRateOfDataSet(dataSet),
       photometric: trimmed(dataSet.string("x00280004")),
       transferSyntaxUid: dataSet.string("x00020010") ?? "",
       sliceThickness: firstFloat(dataSet.string("x00180050")),
@@ -126,6 +130,19 @@ function phaseOfDataSet(dataSet: DataSet): number | null {
     return nominalPercentage;
   }
   return firstFloat(dataSet.string("x00181060"));
+}
+
+/** CineRate (0018,0040) fps, else 1000 / FrameTime (0018,1063) ms, else null for a still. */
+function frameRateOfDataSet(dataSet: DataSet): number | null {
+  const cineRate = firstFloat(dataSet.string("x00180040"));
+  if (cineRate != null && cineRate > 0) {
+    return cineRate;
+  }
+  const frameTime = firstFloat(dataSet.string("x00181063"));
+  if (frameTime != null && frameTime > 0) {
+    return 1000 / frameTime;
+  }
+  return null;
 }
 
 /**
@@ -232,7 +249,11 @@ export function seriesLabel(meta: DicomSeriesMeta): string {
     return label;
   }
   if (meta.modality === "US") {
-    return meta.numberOfFrames > 1 ? "Echo cine loop" : "Echo still image";
+    if (meta.numberOfFrames <= 1) {
+      return "Echo still image";
+    }
+    const duration = cineDuration(meta.numberOfFrames, meta.frameRate);
+    return duration ? `Echo cine loop, ${duration}` : "Echo cine loop";
   }
   if (meta.modality === "XA") {
     return "Angiography run";
@@ -259,6 +280,9 @@ export function seriesGroup(meta: DicomSeriesMeta): SeriesGroup {
   }
   if (meta.modality === "CT" && meta.sliceThickness != null) {
     return "volume";
+  }
+  if (meta.modality === "US") {
+    return "images";
   }
   return "other";
 }
@@ -294,4 +318,12 @@ function isDoseSheet(meta: DicomSeriesMeta): boolean {
 function phaseOf(description: string): string | null {
   const match = /(\d+)\s?%/.exec(description);
   return match ? match[1] : null;
+}
+
+/** "2.1 s" from a frame count and rate; null when the rate isn't known. */
+function cineDuration(numberOfFrames: number, frameRate: number | null): string | null {
+  if (frameRate == null || frameRate <= 0) {
+    return null;
+  }
+  return `${(numberOfFrames / frameRate).toFixed(1)} s`;
 }

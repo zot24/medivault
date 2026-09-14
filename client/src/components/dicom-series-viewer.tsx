@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { documentFileUrl } from "@/lib/owned-file";
 import { FrameCache } from "@/lib/frame-cache";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -11,12 +12,14 @@ import {
 import {
   CT_WINDOW_PRESETS,
   describeUndrawableFrame,
+  multiFrameSourceFromPart10,
   overlaysFromPart10,
   pixelFrameFromPart10,
   renderFrameRgba,
   windowForPreset,
   type DicomFrame,
   type DicomOverlay,
+  type EncapsulatedJpegSource,
 } from "@shared/dicom-frame";
 import {
   nextSliceToLoad,
@@ -41,8 +44,45 @@ const PROTECT_RADIUS = 8;
 /** Default frame-cache budget: keeps a 5,800-slice series well under a 4 GB tab limit. */
 const CACHE_BUDGET_BYTES = 512 * 1024 * 1024;
 
+/**
+ * Budget for retained cine *files* (plan 06). An EncapsulatedJpegSource
+ * closes over the whole file it was parsed from — that is what makes
+ * decoding a frame on demand cheap, and what makes keeping every one of
+ * them ruinous: the reference echo record is 56 files of ~9.6 MB, ~500 MB
+ * if they all land. Separate from CACHE_BUDGET_BYTES because it bounds
+ * compressed bytes rather than decoded frames, and a record is one modality
+ * in practice, so the two budgets are never both full at once.
+ */
+const CINE_SOURCE_BUDGET_BYTES = 64 * 1024 * 1024;
+
+/**
+ * Cine files are ~20x a CT slice, so they get a far tighter protect radius
+ * than PROTECT_RADIUS: the open loop and its immediate neighbours, enough
+ * that stepping to the next loop is instant.
+ */
+const CINE_PROTECT_RADIUS = 1;
+
 /** How often the current slice advances a phase while cine-ing through the cardiac cycle. */
 const CINE_INTERVAL_MS = 100;
+
+/**
+ * How many decoded ultrasound cine frames stay resident at once (plan 06).
+ * A whole loop never fits: 96 frames of 708x1016 RGBA is ~263 MiB, and the
+ * reference disc holds 45 such loops. What is kept for the whole loop is its
+ * *compressed* fragments (~100 KB a frame, already downloaded); bitmaps are
+ * decoded on demand into this small LRU and re-decoded if they are dropped.
+ */
+const CINE_RESIDENT_FRAMES = 24;
+
+/** Frames decoded ahead of the one on screen while a loop is playing. */
+const CINE_PREFETCH_AHEAD = 4;
+
+type CachedBitmap = {
+  kind: "bitmap";
+  rows: number;
+  columns: number;
+  bitmap: ImageBitmap;
+};
 
 type FileRow = {
   position: number;
@@ -75,12 +115,94 @@ export function countLoaded(positions: number[], loadedPositions: ReadonlySet<nu
   return count;
 }
 
+/**
+ * How far from the current position the background loaders may run, in
+ * positions, so that everything they fetch fits `budgetBytes`.
+ *
+ * `costBytes` is what one loaded position pins in memory — a decoded frame
+ * for a CT slice, the whole file for a cine loop (see
+ * EncapsulatedJpegSource.byteCost). The 2r+1 positions in the window have
+ * to fit the budget: want more than fits and the loaders would spend
+ * forever refetching what the cache had just evicted to make room for them.
+ *
+ * Returns Infinity only before the first file of a record has landed, while
+ * the cost is still unknown — that first fetch is what reveals it.
+ * `minRadius` floors the result so the current position and its immediate
+ * neighbours stay loadable even when one of them alone exceeds the budget.
+ */
+export function loadRadius(
+  costBytes: number | null,
+  budgetBytes: number,
+  minRadius: number,
+): number {
+  if (costBytes == null || costBytes <= 0) {
+    return Infinity;
+  }
+  return Math.max(minRadius, Math.floor((budgetBytes / costBytes - 1) / 2));
+}
+
 /** Percentage for the loading progress bar, capped at 100. */
 export function loadProgressPercent(loadedInPhase: number, count: number): number {
   if (count <= 0) {
     return 0;
   }
   return Math.min(100, (loadedInPhase / count) * 100);
+}
+
+/**
+ * The frame a cine loop should be showing after `elapsedMs` of playback at
+ * `frameRate` fps, looping back to the start once it runs past the last
+ * frame (plan 06 section C).
+ */
+export function cineFrameAtElapsed(
+  elapsedMs: number,
+  frameRate: number,
+  frameCount: number,
+): number {
+  if (frameCount <= 0) {
+    return 0;
+  }
+  const framesElapsed = Math.floor((elapsedMs / 1000) * frameRate);
+  return framesElapsed % frameCount;
+}
+
+/**
+ * Which frames of a cine loop to decode next, most urgent first: the frame
+ * on screen (unless its bitmap is already resident), then `prefetchAhead`
+ * frames after it, wrapping round the end of the loop the way playback
+ * does. Frames already decoded are skipped, so a settled window asks for
+ * nothing at all.
+ */
+export function cineFramesToDecode(
+  currentIndex: number,
+  frameCount: number,
+  prefetchAhead: number,
+  isResident: (index: number) => boolean,
+): number[] {
+  if (frameCount <= 0) {
+    return [];
+  }
+  const start = ((currentIndex % frameCount) + frameCount) % frameCount;
+  const window = Math.min(frameCount, Math.max(0, prefetchAhead) + 1);
+  const wanted: number[] = [];
+  for (let step = 0; step < window; step += 1) {
+    const index = (start + step) % frameCount;
+    if (!isResident(index)) {
+      wanted.push(index);
+    }
+  }
+  return wanted;
+}
+
+/** Draws a decoded ultrasound cine frame — no window/overlay compositing applies to it. */
+function blitBitmap(canvas: HTMLCanvasElement, bitmap: ImageBitmap) {
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const context = canvas.getContext("2d");
+  if (!context) {
+    return;
+  }
+  context.drawImage(bitmap, 0, 0);
 }
 
 function blitFrame(
@@ -123,6 +245,37 @@ export default function DicomSeriesViewer({
   // Positions ever loaded for this document, independent of whether the
   // bounded frame cache has since evicted them -- see `countLoaded`.
   const loadedPositionsRef = useRef<Set<number>>(new Set());
+  // One encapsulated JPEG source per multi-frame ultrasound position, kept
+  // alongside (not inside) cacheRef: pixelFrameFromPart10 returns null for
+  // these, so they never occupy a CachedFrame slot (plan 06). Bounded on
+  // its own budget, because each source pins a whole ~9.6 MB file.
+  const cineSourcesRef = useRef(
+    new FrameCache<EncapsulatedJpegSource>(CINE_SOURCE_BUDGET_BYTES),
+  );
+  // The largest cine file seen in this record, which is what sizes the
+  // loaders' window over it. Largest rather than latest so a small still
+  // early in the record can't widen the window for the loops after it.
+  const cineCostRef = useRef<number | null>(null);
+  // Decoded bitmaps for the *currently open* cine loop only — a small LRU
+  // (CINE_RESIDENT_FRAMES), not the whole loop. Built per loop because its
+  // budget depends on that loop's frame size, and dropped (every bitmap
+  // closed) whenever the current position changes.
+  const cineBitmapsRef = useRef<FrameCache<CachedBitmap> | null>(null);
+  // Bumped whenever the open loop changes; a decode in flight for an older
+  // token throws its bitmap away instead of filling a cache nobody wants.
+  const cineDecodeTokenRef = useRef(0);
+  // The token of the decode pump running right now, or null when none is.
+  const cineDecodingRef = useRef<number | null>(null);
+  // The position cine state was last reset for, so the reset below happens
+  // exactly once per real position change and not on every unrelated
+  // background-load tick (`loaded` ticks constantly while a CT volume
+  // streams in).
+  const cineResetPositionRef = useRef<number | null>(null);
+  // Playback state the decode pump reads *while it is running*, so it always
+  // decodes around the frame that is on screen now — not the one that was
+  // when it started.
+  const cineFrameIndexRef = useRef(0);
+  const cineLoopPlayingRef = useRef(false);
 
   const [positions, setPositions] = useState<number[]>([]);
   const [phases, setPhases] = useState<Phase[] | null>(null);
@@ -133,28 +286,41 @@ export default function DicomSeriesViewer({
   const [preset, setPreset] = useState("stored");
   const [showOverlays, setShowOverlays] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Ultrasound cine playback (plan 06) — independent of the CT phase-cine
+  // state above, which cines across *positions*, not frames of one file.
+  const [cineFrameIndex, setCineFrameIndex] = useState(0);
+  const [cineLoopPlaying, setCineLoopPlaying] = useState(false);
+  // Bumped once per decoded bitmap: it is what makes the draw effect below
+  // re-run when the frame it wants finally arrives.
+  const [cineDecoded, setCineDecoded] = useState(0);
   const documentId = focus?.id ?? null;
 
   sliceIndexRef.current = sliceIndex;
   positionsRef.current = positions;
+  cineFrameIndexRef.current = cineFrameIndex;
+  cineLoopPlayingRef.current = cineLoopPlaying;
 
-  function isWanted(relativeIndex: number): boolean {
-    const distance = Math.abs(relativeIndex - sliceIndexRef.current);
-    if (distance <= PROTECT_RADIUS) {
-      return true;
-    }
-    const cost = frameCostRef.current;
-    if (!cost) {
-      return true;
-    }
-    const framesInBudget = Math.max(
-      PROTECT_RADIUS * 2 + 1,
-      Math.floor(CACHE_BUDGET_BYTES / cost),
+  /**
+   * The tighter of the two windows this record needs: decoded frames against
+   * the frame-cache budget, and retained cine files against theirs. A record
+   * is one modality in practice, so normally only one of the two costs is
+   * known and the other contributes Infinity.
+   */
+  function currentLoadRadius(): number {
+    return Math.min(
+      loadRadius(frameCostRef.current, CACHE_BUDGET_BYTES, PROTECT_RADIUS),
+      loadRadius(cineCostRef.current, CINE_SOURCE_BUDGET_BYTES, CINE_PROTECT_RADIUS),
     );
-    return distance <= Math.floor(framesInBudget / 2);
   }
 
-  async function loadOne(position: number, signal: AbortSignal): Promise<CachedFrame> {
+  function isWanted(relativeIndex: number): boolean {
+    return Math.abs(relativeIndex - sliceIndexRef.current) <= currentLoadRadius();
+  }
+
+  async function loadOne(
+    position: number,
+    signal: AbortSignal,
+  ): Promise<CachedFrame | EncapsulatedJpegSource> {
     const response = await fetch(documentFileUrl(documentId!, position), {
       credentials: "include",
       signal,
@@ -164,26 +330,40 @@ export default function DicomSeriesViewer({
     }
     const bytes = new Uint8Array(await response.arrayBuffer());
     const frame = pixelFrameFromPart10(bytes);
-    if (!frame) {
-      throw new Error(describeUndrawableFrame(bytes));
+    if (frame) {
+      frameCostRef.current =
+        frame.rows * frame.columns * (frame.kind === "mono16" ? 2 : 3);
+      return { ...frame, overlays: overlaysFromPart10(bytes) };
     }
-    frameCostRef.current =
-      frame.rows * frame.columns * (frame.kind === "mono16" ? 2 : 3);
-    return { ...frame, overlays: overlaysFromPart10(bytes) };
+    // JPEG Baseline multi-frame ultrasound (plan 06): not a pixelFrameFromPart10
+    // shape, but every frame is a complete JPEG the browser decodes itself.
+    const cine = multiFrameSourceFromPart10(bytes);
+    if (cine) {
+      return cine;
+    }
+    throw new Error(describeUndrawableFrame(bytes));
+  }
+
+  /** The positions within `radius` of the current one, clipped to the list. */
+  function positionsAroundCurrentSlice(radius: number): number[] {
+    const list = positionsRef.current;
+    const around = sliceIndexRef.current;
+    const nearby: number[] = [];
+    for (
+      let relative = Math.max(0, around - radius);
+      relative <= Math.min(list.length - 1, around + radius);
+      relative += 1
+    ) {
+      nearby.push(list[relative]);
+    }
+    return nearby;
   }
 
   function protectAroundCurrentSlice() {
-    const list = positionsRef.current;
-    const around = sliceIndexRef.current;
-    const protectedPositions: number[] = [];
-    for (
-      let relative = Math.max(0, around - PROTECT_RADIUS);
-      relative <= Math.min(list.length - 1, around + PROTECT_RADIUS);
-      relative += 1
-    ) {
-      protectedPositions.push(list[relative]);
-    }
-    cacheRef.current.protect(protectedPositions);
+    cacheRef.current.protect(positionsAroundCurrentSlice(PROTECT_RADIUS));
+    // The open loop has to outlive its own decode pump, which reads its
+    // source again for every frame it decodes.
+    cineSourcesRef.current.protect(positionsAroundCurrentSlice(CINE_PROTECT_RADIUS));
   }
 
   function kickLoaders(signal: AbortSignal) {
@@ -202,6 +382,7 @@ export default function DicomSeriesViewer({
         const absolute = list[candidate];
         return (
           cacheRef.current.has(absolute) ||
+          cineSourcesRef.current.has(absolute) ||
           inflightRef.current.has(absolute) ||
           !isWanted(candidate)
         );
@@ -216,7 +397,12 @@ export default function DicomSeriesViewer({
         if (cancelledRef.current) {
           return;
         }
-        cacheRef.current.set(absolute, entry);
+        if (entry.kind === "jpeg-frames") {
+          cineCostRef.current = Math.max(cineCostRef.current ?? 0, entry.byteCost);
+          cineSourcesRef.current.set(absolute, entry);
+        } else {
+          cacheRef.current.set(absolute, entry);
+        }
         loadedPositionsRef.current.add(absolute);
         setLoaded((current) => current + 1);
       } catch (caught: unknown) {
@@ -230,6 +416,84 @@ export default function DicomSeriesViewer({
     }
   }
 
+  /** Drops the open loop's decoded bitmaps (closing each) and stops any decode in flight. */
+  function resetCineBitmaps() {
+    cineDecodeTokenRef.current += 1;
+    cineBitmapsRef.current?.clear();
+    cineBitmapsRef.current = null;
+  }
+
+  /** The bitmap LRU for this loop: CINE_RESIDENT_FRAMES frames of its own size. */
+  function cineBitmapsFor(source: EncapsulatedJpegSource): FrameCache<CachedBitmap> {
+    const existing = cineBitmapsRef.current;
+    if (existing) {
+      return existing;
+    }
+    const created = new FrameCache<CachedBitmap>(
+      Math.max(1, source.rows * source.columns * 4) * CINE_RESIDENT_FRAMES,
+      { dispose: (entry) => entry.bitmap.close() },
+    );
+    cineBitmapsRef.current = created;
+    return created;
+  }
+
+  /**
+   * Decodes what playback is about to draw, one frame at a time, until the
+   * window around the current frame is resident. One pump runs per loop, and
+   * it re-reads the current frame on every turn — so scrubbing or pressing
+   * play mid-decode just changes what it decodes next.
+   */
+  function pumpCineDecode(source: EncapsulatedJpegSource) {
+    const token = cineDecodeTokenRef.current;
+    if (cineDecodingRef.current === token) {
+      return;
+    }
+    // A pump left over from a previous loop may still be awaiting a decode;
+    // claiming the ref makes it stop at its next check instead of this loop
+    // waiting on it.
+    cineDecodingRef.current = token;
+    const cache = cineBitmapsFor(source);
+    (async () => {
+      while (!cancelledRef.current && token === cineDecodeTokenRef.current) {
+        const [next] = cineFramesToDecode(
+          cineFrameIndexRef.current,
+          source.frameCount,
+          cineLoopPlayingRef.current ? CINE_PREFETCH_AHEAD : 0,
+          (index) => cache.has(index),
+        );
+        if (next == null) {
+          return;
+        }
+        const bitmap = await createImageBitmap(
+          new Blob([source.frame(next)], { type: "image/jpeg" }),
+        );
+        if (cancelledRef.current || token !== cineDecodeTokenRef.current) {
+          bitmap.close();
+          return;
+        }
+        // Pin the frame on screen, so prefetching ahead can never evict it.
+        cache.protect([cineFrameIndexRef.current]);
+        cache.set(next, {
+          kind: "bitmap",
+          rows: source.rows,
+          columns: source.columns,
+          bitmap,
+        });
+        setCineDecoded((count) => count + 1);
+      }
+    })()
+      .catch(() => {
+        if (!cancelledRef.current && token === cineDecodeTokenRef.current) {
+          setError("Could not decode this cine loop.");
+        }
+      })
+      .finally(() => {
+        if (cineDecodingRef.current === token) {
+          cineDecodingRef.current = null;
+        }
+      });
+  }
+
   useEffect(() => {
     const controller = new AbortController();
     cacheRef.current.clear();
@@ -237,6 +501,10 @@ export default function DicomSeriesViewer({
     drawnRef.current = null;
     inflightRef.current = new Set();
     loadedPositionsRef.current = new Set();
+    cineSourcesRef.current.clear();
+    cineCostRef.current = null;
+    resetCineBitmaps();
+    cineResetPositionRef.current = null;
     activeWorkersRef.current = 0;
     cancelledRef.current = false;
     setPositions([]);
@@ -247,6 +515,9 @@ export default function DicomSeriesViewer({
     setCinePlaying(false);
     setShowOverlays(true);
     setError(null);
+    setCineFrameIndex(0);
+    setCineLoopPlaying(false);
+    setCineDecoded(0);
     if (!open || documentId == null) {
       return;
     }
@@ -285,6 +556,7 @@ export default function DicomSeriesViewer({
       cancelledRef.current = true;
       controller.abort();
       cacheRef.current.clear();
+      resetCineBitmaps();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, documentId]);
@@ -328,6 +600,85 @@ export default function DicomSeriesViewer({
     return () => clearInterval(id);
   }, [cinePlaying, phases]);
 
+  // A different position is a different loop: drop the last one's decoded
+  // bitmaps and rewind. The refs are set alongside the state so the decode
+  // pump below, which runs in this same commit, already sees frame 0.
+  useEffect(() => {
+    const absolute = positions[sliceIndex] ?? null;
+    if (absolute === cineResetPositionRef.current) {
+      return;
+    }
+    cineResetPositionRef.current = absolute;
+    resetCineBitmaps();
+    cineFrameIndexRef.current = 0;
+    cineLoopPlayingRef.current = false;
+    setCineFrameIndex(0);
+    setCineLoopPlaying(false);
+    setCineDecoded(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sliceIndex, positions]);
+
+  // Ultrasound cine playback (plan 06): decode the frames playback is about
+  // to need, and only those. A whole loop's bitmaps don't fit in memory
+  // (see CINE_RESIDENT_FRAMES), but its compressed JPEG fragments are
+  // already downloaded and stay in memory — so a frame the LRU dropped
+  // costs one ~4 ms createImageBitmap when the loop comes round to it
+  // again, with no extra network fetch. Runs on every change that can
+  // create decode work: the position, the frame on screen, play/pause, and
+  // `loaded` (which is when the source itself arrives).
+  useEffect(() => {
+    const absolute = positions[sliceIndex] ?? null;
+    const source = absolute == null ? undefined : cineSourcesRef.current.get(absolute);
+    if (!source) {
+      return;
+    }
+    pumpCineDecode(source);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sliceIndex, positions, loaded, cineFrameIndex, cineLoopPlaying, cineDecoded]);
+
+  // Advances the current frame by elapsed time x the loop's own frame rate,
+  // looping. Playback runs on wall-clock time whether or not a frame's
+  // bitmap is resident yet; the decode pump above chases it.
+  useEffect(() => {
+    if (!cineLoopPlaying) {
+      return;
+    }
+    const absolute = positions[sliceIndex];
+    const source = absolute == null ? undefined : cineSourcesRef.current.get(absolute);
+    if (!source || !source.frameRate || source.frameCount < 2) {
+      setCineLoopPlaying(false);
+      return;
+    }
+    const frameRate = source.frameRate;
+    const frameCount = source.frameCount;
+    const start = performance.now();
+    let raf: number;
+    const tick = (now: number) => {
+      setCineFrameIndex(cineFrameAtElapsed(now - start, frameRate, frameCount));
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [cineLoopPlaying, sliceIndex, positions]);
+
+  // Draws the current cine frame as soon as its bitmap exists. While it
+  // doesn't — not decoded yet, or evicted and being decoded again — the
+  // previous frame stays up for those few milliseconds rather than the
+  // canvas flashing black; `cineDecoded` re-runs this the moment it lands.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const absolute = positions[sliceIndex];
+    const hasCine = absolute != null && cineSourcesRef.current.has(absolute);
+    if (!canvas || !hasCine) {
+      return;
+    }
+    const entry = cineBitmapsRef.current?.get(cineFrameIndex);
+    if (!entry) {
+      return;
+    }
+    blitBitmap(canvas, entry.bitmap);
+  }, [cineFrameIndex, sliceIndex, positions, cineDecoded]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     const absolute = positions[sliceIndex];
@@ -351,6 +702,8 @@ export default function DicomSeriesViewer({
 
   const currentAbsolute = positions[sliceIndex];
   const current = currentAbsolute == null ? undefined : cacheRef.current.get(currentAbsolute);
+  const currentCine =
+    currentAbsolute == null ? undefined : cineSourcesRef.current.get(currentAbsolute);
   const isMono = current?.kind === "mono16";
   const hasOverlays = (current?.overlays.length ?? 0) > 0;
   const count = positions.length;
@@ -364,9 +717,14 @@ export default function DicomSeriesViewer({
   const loadedInPhase = countLoaded(positions, loadedPositionsRef.current);
   const loading = count > 0 && loadedInPhase < count;
   const single = count === 1;
+  const isCinePlayable = !!currentCine && currentCine.frameRate != null && currentCine.frameCount > 1;
+  const cineFrameLabel = currentCine ? `${cineFrameIndex + 1} / ${currentCine.frameCount}` : "";
+  const hasDrawnContent = current !== undefined || (currentCine !== undefined && cineDecoded > 0);
 
   const step = (delta: number) =>
     setSliceIndex((value) => stepSliceIndex(value, delta, count));
+  const stepCineFrame = (delta: number) =>
+    setCineFrameIndex((value) => stepSliceIndex(value, delta, currentCine?.frameCount ?? 0));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -383,15 +741,32 @@ export default function DicomSeriesViewer({
           if (event.key === " " && phases && phases.length >= 2) {
             event.preventDefault();
             setCinePlaying((playing) => !playing);
+            return;
+          }
+          // Arrow keys / space bar step or play the current cine loop's
+          // frames when there's no position slider competing for them
+          // (a lone cine record — see shared/dicom-frame.ts, plan 06).
+          if (currentCine && currentCine.frameCount > 1) {
+            if (delta != null) {
+              event.preventDefault();
+              stepCineFrame(delta);
+              return;
+            }
+            if (event.key === " ") {
+              event.preventDefault();
+              setCineLoopPlaying((playing) => !playing);
+            }
           }
         }}
       >
         <DialogHeader>
           <DialogTitle>{focus?.title ?? "DICOM series"}</DialogTitle>
           <DialogDescription>
-            {single
-              ? "Single image."
-              : "Stay in this dialog. Use the slider, the mouse wheel, or the arrow keys to move through slices. Space bar cines through phases."}
+            {isCinePlayable
+              ? "Cine loop. Press play, or use the frame slider / arrow keys / space bar to scrub and play."
+              : single
+                ? "Single image."
+                : "Stay in this dialog. Use the slider, the mouse wheel, or the arrow keys to move through slices. Space bar cines through phases."}
           </DialogDescription>
         </DialogHeader>
         {error ? (
@@ -433,7 +808,7 @@ export default function DicomSeriesViewer({
                   step(event.deltaY > 0 ? 1 : -1);
                 }}
               />
-              {!current && (
+              {!hasDrawnContent && (
                 <p
                   className="absolute inset-0 flex items-center justify-center text-sm text-white/70"
                   data-testid="dicom-viewer-loading"
@@ -442,6 +817,38 @@ export default function DicomSeriesViewer({
                 </p>
               )}
             </div>
+            {currentCine && currentCine.frameCount > 1 && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-4">
+                  <label className="text-sm text-foreground-muted">
+                    Frame{" "}
+                    <span data-testid="dicom-cine-frame-index">{cineFrameLabel}</span>
+                  </label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!isCinePlayable}
+                    onClick={() => setCineLoopPlaying((playing) => !playing)}
+                    data-testid="dicom-play"
+                  >
+                    {cineLoopPlaying ? "Pause" : "Play"}
+                  </Button>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={Math.max(currentCine.frameCount - 1, 0)}
+                  value={cineFrameIndex}
+                  onChange={(event) => {
+                    setCineLoopPlaying(false);
+                    setCineFrameIndex(Number(event.target.value));
+                  }}
+                  className="w-full"
+                  data-testid="dicom-frame-slider"
+                />
+              </div>
+            )}
             <div className="flex items-center justify-between gap-4">
               <label
                 className="text-sm text-foreground-muted"
