@@ -29,6 +29,15 @@ function meta(overrides: Partial<DicomSeriesMeta> = {}): DicomSeriesMeta {
 }
 
 describe("viewabilityFromMeta", () => {
+  it("trusts srContent recorded at upload over the description heuristic", () => {
+    const evidence = meta({ modality: "SR", sopClassUid: "1.2.840.10008.5.1.4.1.1.88.33", seriesDescription: "Evidence Documents CT Coronary" });
+    expect(viewabilityFromMeta({ ...evidence, srContent: "report" }, DICOM_MIME)).toEqual({ kind: "report" });
+    expect(viewabilityFromMeta({ ...evidence, srContent: "opaque" }, DICOM_MIME).kind).toBe("opaque");
+    const basicText = meta({ modality: "SR", sopClassUid: "1.2.840.10008.5.1.4.1.1.88.11" });
+    expect(viewabilityFromMeta({ ...basicText, srContent: "report" }, DICOM_MIME)).toEqual({ kind: "report" });
+    expect(viewabilityFromMeta({ ...basicText, srContent: "empty-report" }, DICOM_MIME).kind).toBe("empty-report");
+  });
+
   it("treats a non-DICOM record (pdf/image) as images", () => {
     expect(viewabilityFromMeta(null, "application/pdf")).toEqual({ kind: "images" });
     expect(viewabilityFromMeta(null, "image/png")).toEqual({ kind: "images" });

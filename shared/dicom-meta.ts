@@ -1,5 +1,6 @@
 import dicomParser, { type DataSet } from "dicom-parser";
 import { isPart10 } from "./upload-kinds";
+import { parseSr, srViewability } from "./dicom-sr";
 
 /**
  * Everything the app needs to group and label a DICOM series. Deliberately
@@ -25,6 +26,12 @@ export type DicomSeriesMeta = {
   sliceThickness: number | null; // (0018,0050)
   imageType: string[]; // (0008,0008) split on backslash
   hasOverlay: boolean; // any (60xx,3000) present
+  /**
+   * For an SR, what its content tree actually holds — decided once at upload
+   * by parsing the file (shared/dicom-sr.ts), so lists never have to guess
+   * from the description. Null for image series.
+   */
+  srContent: "report" | "empty-report" | "opaque" | null;
 };
 
 export type SeriesGroup =
@@ -57,11 +64,12 @@ export function readSeriesMeta(bytes: Uint8Array): DicomSeriesMeta | null {
     if (!studyInstanceUid || !seriesInstanceUid || !sopClassUid) {
       return null;
     }
+    const modality = trimmed(dataSet.string("x00080060"));
     return {
       studyInstanceUid,
       seriesInstanceUid,
       sopClassUid,
-      modality: trimmed(dataSet.string("x00080060")),
+      modality,
       studyDescription: trimmed(dataSet.string("x00081030")),
       seriesDescription: trimmed(dataSet.string("x0008103e")),
       seriesNumber: firstInt(dataSet.string("x00200011")),
@@ -74,6 +82,7 @@ export function readSeriesMeta(bytes: Uint8Array): DicomSeriesMeta | null {
       sliceThickness: firstFloat(dataSet.string("x00180050")),
       imageType: splitBackslash(dataSet.string("x00080008")),
       hasOverlay: hasOverlayElement(dataSet.elements),
+      srContent: modality === "SR" ? srViewability(parseSr(bytes)) : null,
     };
   } catch {
     return null;

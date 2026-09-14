@@ -57,6 +57,17 @@ export function viewabilityFromMeta(
   if (mimeType !== DICOM_MIME || !meta || meta.modality !== "SR") {
     return { kind: "images" };
   }
+  // Recorded at upload from the actual content tree (plan 11 fix): the
+  // description heuristics below only cover records uploaded before that.
+  if (meta.srContent === "report") {
+    return { kind: "report" };
+  }
+  if (meta.srContent === "empty-report") {
+    return { kind: "empty-report", reason: EMPTY_REPORT_REASON };
+  }
+  if (meta.srContent === "opaque") {
+    return { kind: "opaque", reason: OPAQUE_VENDOR_SESSION_REASON };
+  }
   if (meta.sopClassUid === BASIC_TEXT_SR_SOP_CLASS) {
     return { kind: "empty-report", reason: EMPTY_REPORT_REASON };
   }
