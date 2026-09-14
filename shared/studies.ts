@@ -308,3 +308,144 @@ export function documentStats(
       .length;
   return { total, filtered, thisMonth };
 }
+
+/** Every series of a study, in the order the study page shows its sections. */
+const GROUP_ORDER: SeriesGroup[] = [
+  "volume",
+  "snapshot",
+  "analysis",
+  "report",
+  "localizer",
+  "other",
+];
+
+export function studySeries(study: StudySummary): MedicalDocument[] {
+  return GROUP_ORDER.flatMap((group) => study.groups[group]);
+}
+
+/**
+ * One entry per thing a person would call a document: an ordinary upload, or
+ * a whole study. A study's series are its contents, never items of their own.
+ */
+export type DocumentItem =
+  | { kind: "document"; record: MedicalDocument }
+  | { kind: "study"; study: StudySummary };
+
+/**
+ * Splits raw records the way every surface should read them: a record with
+ * `dicomMeta` is a series and belongs to a study, everything else is an
+ * ordinary document. Nothing appears in both halves.
+ */
+export function splitDocuments(records: MedicalDocument[]): {
+  ordinary: MedicalDocument[];
+  studies: StudySummary[];
+} {
+  return {
+    ordinary: records.filter((record) => !record.dicomMeta),
+    studies: groupIntoStudies(records),
+  };
+}
+
+/** The date an item is filed under: a study takes its earliest series' date. */
+export function documentItemDate(item: DocumentItem): string {
+  return item.kind === "study" ? item.study.documentDate : item.record.documentDate;
+}
+
+/** Stable list key, so a list never has to fall back to an index. */
+export function documentItemKey(item: DocumentItem): string {
+  return item.kind === "study"
+    ? `study-${item.study.studyInstanceUid}`
+    : `document-${item.record.id}`;
+}
+
+/**
+ * The one list every surface counts, lists and links: newest first, one
+ * entry per ordinary document and one per study — never one per series.
+ */
+export function listDocumentItems(records: MedicalDocument[]): DocumentItem[] {
+  const { ordinary, studies } = splitDocuments(records);
+  const items: DocumentItem[] = [
+    ...ordinary.map((record): DocumentItem => ({ kind: "document", record })),
+    ...studies.map((study): DocumentItem => ({ kind: "study", study })),
+  ];
+  return items.sort((a, b) => documentItemDate(b).localeCompare(documentItemDate(a)));
+}
+
+/**
+ * The document ids behind a selection of items — a study contributes every
+ * one of its series ids, since the share API still speaks in document ids.
+ * Each id appears once, in item order.
+ */
+export function documentIdsForItems(items: DocumentItem[]): number[] {
+  const ids: number[] = [];
+  const seen = new Set<number>();
+  for (const item of items) {
+    const records = item.kind === "study" ? studySeries(item.study) : [item.record];
+    for (const record of records) {
+      if (!seen.has(record.id)) {
+        seen.add(record.id);
+        ids.push(record.id);
+      }
+    }
+  }
+  return ids;
+}
+
+type ModalityLabel = {
+  modality: string;
+  /** First matching pattern wins; tested against the study description. */
+  rules: Array<[RegExp, string]>;
+  fallback: string;
+};
+
+/**
+ * `CorCTA` is the scanner's own abbreviation for a coronary CT angiogram and
+ * turns up in study and series descriptions alike, so it reads as
+ * "coronary" alongside the plain words.
+ */
+const MODALITY_LABELS: ModalityLabel[] = [
+  {
+    modality: "CT",
+    rules: [[/coron|cardiac|corcta/i, "Coronary CT angiography"]],
+    fallback: "CT scan",
+  },
+  {
+    modality: "US",
+    rules: [[/eco|echo|cardio/i, "Echocardiogram"]],
+    fallback: "Ultrasound",
+  },
+  {
+    modality: "XA",
+    rules: [[/cate|coron|cardiac/i, "Cardiac catheterization"]],
+    fallback: "Angiography",
+  },
+];
+
+/** SR and friends describe a study's paperwork, never the study itself. */
+const NON_IMAGING_MODALITIES = new Set(["SR", "PR", "KO", "DOC"]);
+
+function imagingModality(study: StudySummary): string {
+  return (
+    study.modalities.find((modality) => !NON_IMAGING_MODALITIES.has(modality)) ??
+    study.modalities[0] ??
+    ""
+  );
+}
+
+/**
+ * What to call a study in a card, a header or a timeline row: a human label
+ * built from its imaging modality and description, falling back to the raw
+ * description and then to the bare modality. Keep the raw description
+ * alongside as secondary text — this label drops its detail on purpose.
+ */
+export function studyLabel(study: StudySummary): string {
+  const description = study.studyDescription;
+  const labeled = study.modalities
+    .map((modality) => MODALITY_LABELS.find((entry) => entry.modality === modality))
+    .find((entry): entry is ModalityLabel => entry !== undefined);
+  if (labeled) {
+    const matched = labeled.rules.find(([pattern]) => pattern.test(description));
+    return matched ? matched[1] : labeled.fallback;
+  }
+  return description || imagingModality(study);
+}
