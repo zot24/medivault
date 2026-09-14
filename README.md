@@ -35,6 +35,8 @@ pnpm build:sdk
 supabase start
 ```
 
+If local Supabase was already running before you pulled this change, the storage size limits in `supabase/config.toml` won't apply until you restart it (`supabase stop && supabase start`) and update the existing bucket row (`update storage.buckets set file_size_limit = 268435456 where id = 'medical-files'`).
+
 Set these variables in `.env`:
 
 - `DATABASE_URL`

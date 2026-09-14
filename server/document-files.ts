@@ -112,6 +112,16 @@ type ClassifiedFile = {
  */
 const HEAD_BYTES = 1024 * 1024;
 
+/**
+ * Fallback window for the rare file where HEAD_BYTES isn't enough — an
+ * unusually large private or overlay element before the pixel data can
+ * push dicom-parser's untilTag scan past a 1 MB read, which it turns into
+ * a thrown error and readFileMeta/readSeriesMeta turn into a null result
+ * (shared/dicom-meta.ts). widenHeadIfNeeded retries once, up to this many
+ * bytes, before accepting that null result.
+ */
+const MAX_HEAD_BYTES = 8 * 1024 * 1024;
+
 /** Reads up to `maxBytes` from the front of a file without loading the rest. */
 function readHeadSync(filePath: string, maxBytes: number): Buffer {
   const fd = fs.openSync(filePath, "r");
@@ -126,6 +136,19 @@ function readHeadSync(filePath: string, maxBytes: number): Buffer {
 }
 
 /**
+ * Widens a DICOM file's head read from HEAD_BYTES to MAX_HEAD_BYTES when
+ * the smaller one wasn't enough for readFileMeta to parse anything — only
+ * when there's reason to think a bigger read would help: the initial read
+ * was actually truncated at HEAD_BYTES (a file no bigger than that already
+ * got its whole content) and a bigger window changes the outcome. Most
+ * files never trigger the second read at all.
+ */
+function widenHeadIfNeeded(filePath: string, head: Buffer, fileSize: number): Buffer {
+  const trueMiss = head.length === HEAD_BYTES && fileSize > HEAD_BYTES && !readFileMeta(head);
+  return trueMiss ? readHeadSync(filePath, MAX_HEAD_BYTES) : head;
+}
+
+/**
  * Validates every file up front so a bad slice fails the request before any
  * object is written. A multi-file upload is a DICOM series by definition.
  */
@@ -135,7 +158,7 @@ function classifyFiles(userId: string, files: UploadFile[]): ClassifiedFile[] {
   }
   const classified = files.map((file) => {
     const size = "bytes" in file ? file.bytes.length : file.size;
-    const metaBytes = "bytes" in file ? file.bytes : readHeadSync(file.path, HEAD_BYTES);
+    let metaBytes = "bytes" in file ? file.bytes : readHeadSync(file.path, HEAD_BYTES);
     const kind = classifyUpload({
       mimeType: file.mimeType,
       originalName: file.originalName,
@@ -148,6 +171,9 @@ function classifyFiles(userId: string, files: UploadFile[]): ClassifiedFile[] {
     }
     if (!fitsUploadCap(size, kind.mimeType)) {
       throw new Error("File too large");
+    }
+    if (!("bytes" in file) && kind.mimeType === DICOM_MIME) {
+      metaBytes = widenHeadIfNeeded(file.path, metaBytes, size);
     }
     const base = {
       mimeType: kind.mimeType,
@@ -408,7 +434,7 @@ export function createDocumentFiles(deps: {
         rows: frameIndex.rows,
         columns: frameIndex.columns,
         bitsAllocated: frameIndex.bitsAllocated,
-        photometric: document.dicomMeta?.photometric || "MONOCHROME2",
+        photometric: frameIndex.photometric || "MONOCHROME2",
         windowCenter: frameIndex.windowCenter,
         windowWidth: frameIndex.windowWidth,
       };

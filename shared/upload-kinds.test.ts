@@ -4,10 +4,12 @@ import {
   chunkFiles,
   classifyUpload,
   describeSeriesUpload,
+  exceedsAggregateUploadCap,
   fitsUploadCap,
   isDicomDocument,
   isHeavyUpload,
   localDate,
+  MAX_REQUEST_UPLOAD_BYTES,
   nextSliceToLoad,
   sliceCountLabel,
   sliceDeltaFromKey,
@@ -166,6 +168,32 @@ describe("fitsUploadCap", () => {
 
   it("rejects a 300 MB dicom file, above the dicom cap", () => {
     expect(fitsUploadCap(300 * 1024 * 1024, "application/dicom")).toBe(false);
+  });
+});
+
+describe("exceedsAggregateUploadCap", () => {
+  it("accepts a request whose files sum to exactly the default cap", () => {
+    expect(exceedsAggregateUploadCap([MAX_REQUEST_UPLOAD_BYTES])).toBe(false);
+  });
+
+  it("rejects a request whose files sum to one byte over the default cap", () => {
+    expect(exceedsAggregateUploadCap([MAX_REQUEST_UPLOAD_BYTES + 1])).toBe(true);
+  });
+
+  it("sums many files under multer's per-file cap that together exceed the aggregate one", () => {
+    // 3 angiography runs at 200 MB each: each fits under MAX_DICOM_UPLOAD_BYTES
+    // (256 MB) alone, but 600 MB total is over the default 512 MB aggregate cap.
+    const sizes = [200, 200, 200].map((mb) => mb * 1024 * 1024);
+    expect(exceedsAggregateUploadCap(sizes)).toBe(true);
+  });
+
+  it("accepts an empty file list", () => {
+    expect(exceedsAggregateUploadCap([])).toBe(false);
+  });
+
+  it("honors a custom cap", () => {
+    expect(exceedsAggregateUploadCap([100], 99)).toBe(true);
+    expect(exceedsAggregateUploadCap([100], 100)).toBe(false);
   });
 });
 

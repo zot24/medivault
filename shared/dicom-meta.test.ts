@@ -209,6 +209,7 @@ describe("readFileMeta frameIndex", () => {
       columns: 4,
       windowCenter: 100,
       windowWidth: 200,
+      photometric: "MONOCHROME2",
     });
   });
 
@@ -227,6 +228,24 @@ describe("readFileMeta frameIndex", () => {
     expect(readFileMeta(new Uint8Array(bytes))?.frameIndex).toMatchObject({
       rows: 2,
       columns: 8,
+    });
+  });
+
+  it("reads this file's own photometric interpretation, not any other file's", () => {
+    // Same rationale as rows/columns above: server/document-files.ts's
+    // openOwnedFrame must use frameIndex.photometric, not the document's
+    // series-level dicomMeta.photometric (read from the first file only).
+    const bytes = buildMiniCtDicom({
+      rows: 4,
+      columns: 4,
+      bitsAllocated: 8,
+      frames: 2,
+      photometric: "MONOCHROME1",
+      pixels8: Uint8Array.from({ length: 32 }, (_, i) => i),
+    });
+
+    expect(readFileMeta(new Uint8Array(bytes))?.frameIndex).toMatchObject({
+      photometric: "MONOCHROME1",
     });
   });
 

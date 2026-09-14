@@ -1,10 +1,13 @@
 import multer from "multer";
+import fs from "fs";
 import os from "os";
 import {
   classifyUpload,
+  exceedsAggregateUploadCap,
   isVagueUploadMime,
   MAX_DICOM_UPLOAD_BYTES,
   MAX_FILES_PER_REQUEST,
+  MAX_REQUEST_UPLOAD_BYTES,
 } from "@shared/upload-kinds";
 
 // Disk, not memory: an angiography cine run is ~100 MB (plan 07), and
@@ -54,11 +57,28 @@ const uploadFiles = upload.fields([
   { name: "files", maxCount: MAX_FILES_PER_REQUEST },
 ]);
 
+/** Every multer file across both the `file` and `files` fields — mirrors server/routes.ts's multerFilesOf. */
+function filesOfRequest(req: any): Express.Multer.File[] {
+  const groups = req.files ?? {};
+  return [...(groups.file ?? []), ...(groups.files ?? [])];
+}
+
+/** Deletes multer's temp files for a request this middleware is rejecting itself (the aggregate cap) — nobody downstream will get the chance to. */
+async function cleanupFiles(files: Express.Multer.File[]): Promise<void> {
+  await Promise.all(files.map((file) => fs.promises.unlink(file.path).catch(() => {})));
+}
+
 /**
  * Wraps a multer middleware so its errors reach the client as 4xx JSON
  * instead of falling through to the generic error handler as a 500 — an
- * oversize file becomes 413, everything else 400. Takes the multer runner
- * as a parameter so it can be exercised with a fake in tests.
+ * oversize file becomes 413, everything else 400. Also enforces the
+ * aggregate request cap multer's own per-file `fileSize` limit can't:
+ * MAX_FILES_PER_REQUEST files each near MAX_DICOM_UPLOAD_BYTES would
+ * otherwise total several GB written to disk before anything rejects them.
+ * Checked after multer (sizes are only known once its written the files),
+ * but before `next()` — so no file from an oversize request ever reaches
+ * classifyFiles or the object store. Takes the multer runner as a
+ * parameter so it can be exercised with a fake in tests.
  */
 export function createUploadFilesOrReject(
   runUpload: (req: any, res: any, callback: (err: unknown) => void) => void,
@@ -76,6 +96,13 @@ export function createUploadFilesOrReject(
       }
       if (err) {
         return res.status(400).json({ message: (err as Error).message });
+      }
+      const files = filesOfRequest(req);
+      if (exceedsAggregateUploadCap(files.map((file) => file.size))) {
+        void cleanupFiles(files);
+        return res.status(413).json({
+          message: `Upload too large. Maximum is ${MAX_REQUEST_UPLOAD_BYTES / 1024 / 1024} MB total per request.`,
+        });
       }
       next();
     });

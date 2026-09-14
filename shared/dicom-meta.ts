@@ -111,6 +111,11 @@ export type DicomFrameIndex = {
   // without re-parsing the file on every request.
   windowCenter: number; // (0028,1050), default 128 (mid-range for 8-bit)
   windowWidth: number; // (0028,1051), default 256
+  // This file's own photometric interpretation (0028,0004) — not the
+  // document's dicomMeta.photometric, which (like rows/columns above) is
+  // read once from the first uploaded file and never updated for a later
+  // appended file. openOwnedFrame must report this one.
+  photometric: string;
 };
 
 export type DicomFileMeta = {
@@ -178,6 +183,7 @@ function frameIndexOfDataSet(dataSet: DataSet): DicomFrameIndex | null {
     columns,
     windowCenter: firstFloat(dataSet.string("x00281050")) ?? 128,
     windowWidth: firstFloat(dataSet.string("x00281051")) ?? 256,
+    photometric: trimmed(dataSet.string("x00280004")) || "MONOCHROME2",
   };
 }
 

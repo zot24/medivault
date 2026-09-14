@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   MemoryObjectStore,
+  ObjectTooLargeError,
   SupabaseObjectStore,
   asObjectKey,
+  isObjectTooLargeError,
   parseObjectStoreConfig,
 } from "./object-store";
 
@@ -81,6 +83,74 @@ describe("MemoryObjectStore", () => {
   it("getRange returns null for a missing object", async () => {
     const store = new MemoryObjectStore();
     expect(await store.getRange(asObjectKey("owner-1/missing.dcm"), 0, 3)).toBeNull();
+  });
+});
+
+describe("isObjectTooLargeError", () => {
+  it("recognizes a 413 status regardless of message", () => {
+    expect(isObjectTooLargeError({ status: 413, message: "nope" })).toBe(true);
+  });
+
+  it("recognizes storage-js's statusCode string field", () => {
+    expect(isObjectTooLargeError({ statusCode: "413", message: "nope" })).toBe(true);
+  });
+
+  it("recognizes the maximum-allowed-size message even without a numeric status", () => {
+    expect(
+      isObjectTooLargeError({
+        message: "The object exceeded the maximum allowed size",
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects an unrelated storage error", () => {
+    expect(isObjectTooLargeError({ status: 404, message: "not found" })).toBe(false);
+    expect(isObjectTooLargeError(new Error("network down"))).toBe(false);
+    expect(isObjectTooLargeError(null)).toBe(false);
+  });
+});
+
+describe("SupabaseObjectStore.put", () => {
+  it("maps a too-large upload error to ObjectTooLargeError", async () => {
+    const upload = vi.fn(async () => ({
+      error: { status: 413, message: "The object exceeded the maximum allowed size" },
+    }));
+    const fakeClient = { storage: { from: () => ({ upload, download: vi.fn(), remove: vi.fn() }) } };
+    const store = new SupabaseObjectStore(
+      "http://127.0.0.1:54421",
+      "test-service-role",
+      "medical-files",
+      undefined,
+      fakeClient as any,
+    );
+
+    await expect(
+      store.put({
+        key: asObjectKey("owner-1/run.dcm"),
+        bytes: Buffer.from("bytes"),
+        contentType: "application/dicom",
+      }),
+    ).rejects.toBeInstanceOf(ObjectTooLargeError);
+  });
+
+  it("rethrows an unrelated upload error unchanged", async () => {
+    const upload = vi.fn(async () => ({ error: { status: 403, message: "forbidden" } }));
+    const fakeClient = { storage: { from: () => ({ upload, download: vi.fn(), remove: vi.fn() }) } };
+    const store = new SupabaseObjectStore(
+      "http://127.0.0.1:54421",
+      "test-service-role",
+      "medical-files",
+      undefined,
+      fakeClient as any,
+    );
+
+    await expect(
+      store.put({
+        key: asObjectKey("owner-1/run.dcm"),
+        bytes: Buffer.from("bytes"),
+        contentType: "application/dicom",
+      }),
+    ).rejects.toEqual({ status: 403, message: "forbidden" });
   });
 });
 

@@ -54,6 +54,41 @@ export class ObjectStoreConfigError extends Error {
   }
 }
 
+/**
+ * The object store rejected a `put` because the file is bigger than the
+ * bucket allows (Supabase Storage's `file_size_limit`, see
+ * supabase/config.toml). Routes map this to a 413 instead of a generic 500
+ * — see server/routes.ts.
+ */
+export class ObjectTooLargeError extends Error {
+  constructor(
+    message = "The storage bucket's file size limit is below this file's size",
+  ) {
+    super(message);
+    this.name = "ObjectTooLargeError";
+  }
+}
+
+/**
+ * Recognizes a Supabase Storage "object too large" rejection from the shape
+ * of the error `.upload()` throws — a `StorageApiError` with `status` 413
+ * and a message containing "exceeded the maximum allowed size" — without
+ * importing storage-js's error classes (the shape is stable, the export
+ * path across storage-js versions is not). Exported so the mapping itself
+ * (not just SupabaseObjectStore) can be unit tested directly.
+ */
+export function isObjectTooLargeError(error: unknown): boolean {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  const status = Number(
+    (error as { status?: unknown; statusCode?: unknown }).status ??
+      (error as { status?: unknown; statusCode?: unknown }).statusCode,
+  );
+  const message = String((error as { message?: unknown }).message ?? "");
+  return status === 413 || /exceeded the maximum allowed size/i.test(message);
+}
+
 function isProduction(env: NodeJS.ProcessEnv): boolean {
   return env.VERCEL === "1" || env.NODE_ENV === "production";
 }
@@ -216,15 +251,42 @@ type FetchLike = (
   arrayBuffer(): Promise<ArrayBuffer>;
 }>;
 
+type StorageErrorLike = { message: string } | null;
+
+/** The slice of the supabase-js client SupabaseObjectStore actually uses — narrow enough to fake in tests without a real Supabase client. */
+type StorageClientLike = {
+  storage: {
+    from(bucket: string): {
+      upload(
+        key: string,
+        body: Buffer | Readable,
+        opts: { contentType: string; upsert: boolean; duplex?: string },
+      ): Promise<{ error: StorageErrorLike }>;
+      download(
+        key: string,
+      ): Promise<{
+        data: { arrayBuffer(): Promise<ArrayBuffer>; type?: string } | null;
+        error: StorageErrorLike;
+      }>;
+      remove(keys: string[]): Promise<{ error: StorageErrorLike }>;
+    };
+  };
+};
+
 export class SupabaseObjectStore implements ObjectStore {
   constructor(
     private readonly url: string,
     private readonly serviceRoleKey: string,
     private readonly bucket: string,
     private readonly fetchImpl: FetchLike = fetch,
+    /** Test seam: a fake client instead of a real Supabase one — see object-store.test.ts's ObjectTooLargeError mapping test. */
+    private readonly clientImpl?: StorageClientLike,
   ) {}
 
-  private client() {
+  private client(): StorageClientLike {
+    if (this.clientImpl) {
+      return this.clientImpl;
+    }
     return createClient(this.url, this.serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
@@ -241,6 +303,9 @@ export class SupabaseObjectStore implements ObjectStore {
         ...("stream" in input ? { duplex: "half" } : {}),
       });
     if (error) {
+      if (isObjectTooLargeError(error)) {
+        throw new ObjectTooLargeError();
+      }
       throw error;
     }
   }

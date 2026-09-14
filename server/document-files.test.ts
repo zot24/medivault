@@ -606,6 +606,41 @@ describe("createDocumentFiles with a disk-backed (streamed) upload", () => {
     expect(frame0?.bytes.equals(Buffer.from(pixels8.subarray(0, 16)))).toBe(true);
   });
 
+  it("still finds the frame index when a large private element pushes pixel data past the 1 MB head read", async () => {
+    // A wide enough filler element before the pixel data pushes it well
+    // past HEAD_BYTES (1 MB) — readFileMeta on just the capped head would
+    // miss it entirely (see widenHeadIfNeeded in server/document-files.ts).
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const pixels8 = Uint8Array.from({ length: 32 }, (_, i) => i);
+    const bytes = buildMiniCtDicom({
+      rows: 4,
+      columns: 4,
+      bitsAllocated: 8,
+      frames: 2,
+      pixels8,
+      fillerBytes: 2 * 1024 * 1024,
+    });
+    const temp = tempDicomFile(bytes);
+
+    const created = await files.uploadOwnedDocument({
+      userId: "owner-1",
+      title: "Angiography run",
+      documentType: "x_ray",
+      documentDate: "2026-09-11",
+      tags: [],
+      files: [{ ...temp, mimeType: "", originalName: "XA000001" }],
+    });
+
+    const listed = await files.listOwnedFiles("owner-1", created.id);
+    expect(listed?.[0].frameIndex).not.toBeNull();
+    expect(listed?.[0].sopInstanceUid).not.toBeNull();
+
+    const frame1 = await files.openOwnedFrame("owner-1", created.id, 0, 1);
+    expect(frame1?.bytes.equals(Buffer.from(pixels8.subarray(16, 32)))).toBe(true);
+  });
+
   it("deletes the temp file even when the upload is rejected (oversize)", async () => {
     const objects = new MemoryObjectStore();
     const { records } = memoryRecords();
@@ -723,6 +758,43 @@ describe("openOwnedFrame", () => {
     // The original file's frames are unaffected.
     const originalFrame0 = await files.openOwnedFrame("owner-1", created.id, 0, 0);
     expect(originalFrame0).toMatchObject({ rows: 4, columns: 4 });
+  });
+
+  it("reports a later file's own photometric interpretation, not the document's (first-file) dicomMeta", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const first = buildMiniCtDicom({
+      rows: 4,
+      columns: 4,
+      bitsAllocated: 8,
+      frames: 2,
+      photometric: "MONOCHROME2",
+      pixels8: twoFramePixels(),
+    });
+    const created = await files.uploadOwnedDocument({
+      ...meta,
+      files: [{ bytes: first, mimeType: "", originalName: "XA000001" }],
+    });
+
+    const second = buildMiniCtDicom({
+      rows: 4,
+      columns: 4,
+      bitsAllocated: 8,
+      frames: 2,
+      photometric: "MONOCHROME1",
+      pixels8: twoFramePixels(),
+    });
+    await files.appendOwnedFiles("owner-1", created.id, [
+      { bytes: second, mimeType: "", originalName: "XA000002" },
+    ]);
+
+    const appendedFrame0 = await files.openOwnedFrame("owner-1", created.id, 1, 0);
+    expect(appendedFrame0).toMatchObject({ photometric: "MONOCHROME1" });
+
+    // The original file's photometric is unaffected.
+    const originalFrame0 = await files.openOwnedFrame("owner-1", created.id, 0, 0);
+    expect(originalFrame0).toMatchObject({ photometric: "MONOCHROME2" });
   });
 
   it("returns null (404-equivalent) for a frame past the end of the fixture", async () => {

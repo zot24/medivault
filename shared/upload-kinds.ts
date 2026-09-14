@@ -16,6 +16,24 @@ export const DICOM_MIME = "application/dicom";
 /** Slices per upload request; the server enforces the same cap. */
 export const MAX_FILES_PER_REQUEST = 50;
 
+/**
+ * Total size of every file in one multipart request, across all of
+ * MAX_FILES_PER_REQUEST slices — multer's own `fileSize` limit caps one
+ * file at MAX_DICOM_UPLOAD_BYTES, but a request of 50 files each near that
+ * cap would still total multiple GB. Checked by summing `req.files` sizes
+ * after multer has already written them to disk (server/upload-middleware.ts);
+ * rejected with 413 before any of them reaches the object store.
+ */
+export const MAX_REQUEST_UPLOAD_BYTES = 512 * 1024 * 1024;
+
+/** True when the summed size of every file in a request exceeds `capBytes`. */
+export function exceedsAggregateUploadCap(
+  sizes: number[],
+  capBytes: number = MAX_REQUEST_UPLOAD_BYTES,
+): boolean {
+  return sizes.reduce((sum, size) => sum + size, 0) > capBytes;
+}
+
 export type ClassifiedUpload = {
   mimeType: string;
   extension: string;

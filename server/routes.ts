@@ -7,6 +7,7 @@ import { uploadFilesOrReject } from "./upload-middleware";
 import {
   createObjectStoreFromEnv,
   ObjectStoreConfigError,
+  ObjectTooLargeError,
   type ObjectStore,
 } from "./object-store";
 import {
@@ -204,6 +205,9 @@ export async function registerRoutes(app: Express): Promise<void> {
       if (error instanceof ObjectStoreConfigError) {
         return res.status(503).json({ message: error.message });
       }
+      if (error instanceof ObjectTooLargeError) {
+        return res.status(413).json({ message: error.message });
+      }
       if (error instanceof Error && isUploadRejection(error.message)) {
         return res.status(400).json({ message: error.message });
       }
@@ -237,6 +241,9 @@ export async function registerRoutes(app: Express): Promise<void> {
     } catch (error) {
       if (error instanceof ObjectStoreConfigError) {
         return res.status(503).json({ message: error.message });
+      }
+      if (error instanceof ObjectTooLargeError) {
+        return res.status(413).json({ message: error.message });
       }
       if (error instanceof Error && isUploadRejection(error.message)) {
         return res.status(400).json({ message: error.message });

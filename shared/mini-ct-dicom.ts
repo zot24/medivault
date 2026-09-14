@@ -154,6 +154,14 @@ export type MiniCtOptions = {
    * Takes precedence over `overlay` when both are given.
    */
   overlays?: MiniCtOverlay[];
+  /**
+   * Inserts a private (0009,1001) OB element of this many zero bytes
+   * immediately before the pixel data element — simulates a large
+   * private/overlay element pushing the pixel data past a bounded head
+   * read, for testing the wider-window fallback in
+   * server/document-files.ts (shared/dicom-meta.test.ts's HEAD_BYTES miss).
+   */
+  fillerBytes?: number;
 };
 
 export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
@@ -280,6 +288,9 @@ export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
     ...overlaysFor(options).map((overlay, i) =>
       overlayElements(overlay, 0x6000 + i * 2),
     ),
+    ...(options.fillerBytes
+      ? [explicitElement(0x0009, 0x1001, "OB", Buffer.alloc(options.fillerBytes))]
+      : []),
     pixelBytes,
   ]);
 
