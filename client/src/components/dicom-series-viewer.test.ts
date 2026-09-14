@@ -4,6 +4,7 @@ import {
   cineFramesToDecode,
   countLoaded,
   loadProgressPercent,
+  loadRadius,
 } from "./dicom-series-viewer";
 import { FrameCache } from "@/lib/frame-cache";
 
@@ -110,5 +111,53 @@ describe("cineFramesToDecode", () => {
 
   it("normalises a current index outside the loop", () => {
     expect(cineFramesToDecode(5, 4, 0, none)).toEqual([1]);
+  });
+});
+
+describe("loadRadius", () => {
+  // The reference echo record of the plan: 56 files in one record, each a
+  // cine loop of up to 96 JPEG frames at ~100 KB a frame. What one loaded
+  // loop pins is the whole *file* — an EncapsulatedJpegSource closes over
+  // the bytes it was parsed from so it can decode frames on demand.
+  const CINE_FILE_BYTES = 96 * 100 * 1024;
+  const CINE_BUDGET = 64 * 1024 * 1024;
+  const CT_FRAME_BYTES = 512 * 512 * 2;
+  const CT_BUDGET = 512 * 1024 * 1024;
+
+  it("is unbounded only before the first file lands, while the cost is unknown", () => {
+    expect(loadRadius(null, CT_BUDGET, 8)).toBe(Infinity);
+    expect(loadRadius(0, CT_BUDGET, 8)).toBe(Infinity);
+  });
+
+  it("bounds an ultrasound record to a few loops instead of the whole record", () => {
+    // Regression: cine files never set a cost, so `!cost -> wanted` made
+    // every position wanted. Opening one loop fetched all 56 files (~500 MB
+    // over the network) and pinned every one of them for the life of the
+    // dialog, outside the frame cache's budget entirely.
+    const radius = loadRadius(CINE_FILE_BYTES, CINE_BUDGET, 1);
+
+    const positionsFetched = 2 * radius + 1;
+    expect(positionsFetched).toBeLessThan(56);
+    expect(positionsFetched * CINE_FILE_BYTES).toBeLessThanOrEqual(CINE_BUDGET);
+  });
+
+  it("keeps everything it fetches inside the budget, at every frame size", () => {
+    // The window has to fit the budget, or the loaders would spend forever
+    // refetching what the cache had just evicted to make room for them.
+    for (const cost of [512, 64 * 1024, CT_FRAME_BYTES, 3 * 1024 * 1024, CINE_FILE_BYTES]) {
+      const radius = loadRadius(cost, CINE_BUDGET, 0);
+      expect((2 * radius + 1) * cost).toBeLessThanOrEqual(CINE_BUDGET);
+    }
+  });
+
+  it("still lets a CT series fill its much larger budget", () => {
+    // 512 MB of 512 KB slices: the bounded-cache behaviour must not regress.
+    expect(loadRadius(CT_FRAME_BYTES, CT_BUDGET, 8)).toBeGreaterThan(500);
+  });
+
+  it("never falls below the minimum radius, even for a frame bigger than the budget", () => {
+    // The current position and its neighbours have to be loadable at all.
+    expect(loadRadius(CT_BUDGET * 2, CT_BUDGET, 8)).toBe(8);
+    expect(loadRadius(CINE_BUDGET * 2, CINE_BUDGET, 1)).toBe(1);
   });
 });

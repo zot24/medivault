@@ -44,6 +44,24 @@ const PROTECT_RADIUS = 8;
 /** Default frame-cache budget: keeps a 5,800-slice series well under a 4 GB tab limit. */
 const CACHE_BUDGET_BYTES = 512 * 1024 * 1024;
 
+/**
+ * Budget for retained cine *files* (plan 06). An EncapsulatedJpegSource
+ * closes over the whole file it was parsed from — that is what makes
+ * decoding a frame on demand cheap, and what makes keeping every one of
+ * them ruinous: the reference echo record is 56 files of ~9.6 MB, ~500 MB
+ * if they all land. Separate from CACHE_BUDGET_BYTES because it bounds
+ * compressed bytes rather than decoded frames, and a record is one modality
+ * in practice, so the two budgets are never both full at once.
+ */
+const CINE_SOURCE_BUDGET_BYTES = 64 * 1024 * 1024;
+
+/**
+ * Cine files are ~20x a CT slice, so they get a far tighter protect radius
+ * than PROTECT_RADIUS: the open loop and its immediate neighbours, enough
+ * that stepping to the next loop is instant.
+ */
+const CINE_PROTECT_RADIUS = 1;
+
 /** How often the current slice advances a phase while cine-ing through the cardiac cycle. */
 const CINE_INTERVAL_MS = 100;
 
@@ -95,6 +113,32 @@ export function countLoaded(positions: number[], loadedPositions: ReadonlySet<nu
     }
   }
   return count;
+}
+
+/**
+ * How far from the current position the background loaders may run, in
+ * positions, so that everything they fetch fits `budgetBytes`.
+ *
+ * `costBytes` is what one loaded position pins in memory — a decoded frame
+ * for a CT slice, the whole file for a cine loop (see
+ * EncapsulatedJpegSource.byteCost). The 2r+1 positions in the window have
+ * to fit the budget: want more than fits and the loaders would spend
+ * forever refetching what the cache had just evicted to make room for them.
+ *
+ * Returns Infinity only before the first file of a record has landed, while
+ * the cost is still unknown — that first fetch is what reveals it.
+ * `minRadius` floors the result so the current position and its immediate
+ * neighbours stay loadable even when one of them alone exceeds the budget.
+ */
+export function loadRadius(
+  costBytes: number | null,
+  budgetBytes: number,
+  minRadius: number,
+): number {
+  if (costBytes == null || costBytes <= 0) {
+    return Infinity;
+  }
+  return Math.max(minRadius, Math.floor((budgetBytes / costBytes - 1) / 2));
 }
 
 /** Percentage for the loading progress bar, capped at 100. */
@@ -203,8 +247,15 @@ export default function DicomSeriesViewer({
   const loadedPositionsRef = useRef<Set<number>>(new Set());
   // One encapsulated JPEG source per multi-frame ultrasound position, kept
   // alongside (not inside) cacheRef: pixelFrameFromPart10 returns null for
-  // these, so they never occupy a CachedFrame slot (plan 06).
-  const cineSourcesRef = useRef<Map<number, EncapsulatedJpegSource>>(new Map());
+  // these, so they never occupy a CachedFrame slot (plan 06). Bounded on
+  // its own budget, because each source pins a whole ~9.6 MB file.
+  const cineSourcesRef = useRef(
+    new FrameCache<EncapsulatedJpegSource>(CINE_SOURCE_BUDGET_BYTES),
+  );
+  // The largest cine file seen in this record, which is what sizes the
+  // loaders' window over it. Largest rather than latest so a small still
+  // early in the record can't widen the window for the loops after it.
+  const cineCostRef = useRef<number | null>(null);
   // Decoded bitmaps for the *currently open* cine loop only — a small LRU
   // (CINE_RESIDENT_FRAMES), not the whole loop. Built per loop because its
   // budget depends on that loop's frame size, and dropped (every bitmap
@@ -249,20 +300,21 @@ export default function DicomSeriesViewer({
   cineFrameIndexRef.current = cineFrameIndex;
   cineLoopPlayingRef.current = cineLoopPlaying;
 
-  function isWanted(relativeIndex: number): boolean {
-    const distance = Math.abs(relativeIndex - sliceIndexRef.current);
-    if (distance <= PROTECT_RADIUS) {
-      return true;
-    }
-    const cost = frameCostRef.current;
-    if (!cost) {
-      return true;
-    }
-    const framesInBudget = Math.max(
-      PROTECT_RADIUS * 2 + 1,
-      Math.floor(CACHE_BUDGET_BYTES / cost),
+  /**
+   * The tighter of the two windows this record needs: decoded frames against
+   * the frame-cache budget, and retained cine files against theirs. A record
+   * is one modality in practice, so normally only one of the two costs is
+   * known and the other contributes Infinity.
+   */
+  function currentLoadRadius(): number {
+    return Math.min(
+      loadRadius(frameCostRef.current, CACHE_BUDGET_BYTES, PROTECT_RADIUS),
+      loadRadius(cineCostRef.current, CINE_SOURCE_BUDGET_BYTES, CINE_PROTECT_RADIUS),
     );
-    return distance <= Math.floor(framesInBudget / 2);
+  }
+
+  function isWanted(relativeIndex: number): boolean {
+    return Math.abs(relativeIndex - sliceIndexRef.current) <= currentLoadRadius();
   }
 
   async function loadOne(
@@ -292,18 +344,26 @@ export default function DicomSeriesViewer({
     throw new Error(describeUndrawableFrame(bytes));
   }
 
-  function protectAroundCurrentSlice() {
+  /** The positions within `radius` of the current one, clipped to the list. */
+  function positionsAroundCurrentSlice(radius: number): number[] {
     const list = positionsRef.current;
     const around = sliceIndexRef.current;
-    const protectedPositions: number[] = [];
+    const nearby: number[] = [];
     for (
-      let relative = Math.max(0, around - PROTECT_RADIUS);
-      relative <= Math.min(list.length - 1, around + PROTECT_RADIUS);
+      let relative = Math.max(0, around - radius);
+      relative <= Math.min(list.length - 1, around + radius);
       relative += 1
     ) {
-      protectedPositions.push(list[relative]);
+      nearby.push(list[relative]);
     }
-    cacheRef.current.protect(protectedPositions);
+    return nearby;
+  }
+
+  function protectAroundCurrentSlice() {
+    cacheRef.current.protect(positionsAroundCurrentSlice(PROTECT_RADIUS));
+    // The open loop has to outlive its own decode pump, which reads its
+    // source again for every frame it decodes.
+    cineSourcesRef.current.protect(positionsAroundCurrentSlice(CINE_PROTECT_RADIUS));
   }
 
   function kickLoaders(signal: AbortSignal) {
@@ -338,6 +398,7 @@ export default function DicomSeriesViewer({
           return;
         }
         if (entry.kind === "jpeg-frames") {
+          cineCostRef.current = Math.max(cineCostRef.current ?? 0, entry.byteCost);
           cineSourcesRef.current.set(absolute, entry);
         } else {
           cacheRef.current.set(absolute, entry);
@@ -440,7 +501,8 @@ export default function DicomSeriesViewer({
     drawnRef.current = null;
     inflightRef.current = new Set();
     loadedPositionsRef.current = new Set();
-    cineSourcesRef.current = new Map();
+    cineSourcesRef.current.clear();
+    cineCostRef.current = null;
     resetCineBitmaps();
     cineResetPositionRef.current = null;
     activeWorkersRef.current = 0;

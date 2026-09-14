@@ -5,7 +5,9 @@
  *
  * A frame's cost in bytes is its decoded pixel buffer size: mono16 is 2
  * bytes/pixel, rgb8 is 3, and a decoded `bitmap` (an ultrasound cine frame,
- * plan 06 — `createImageBitmap`'s RGBA output) is 4. Eviction removes the
+ * plan 06 — `createImageBitmap`'s RGBA output) is 4. An entry that pins
+ * something other than a pixel buffer states its own `byteCost` instead.
+ * Eviction removes the
  * least recently *drawn or loaded* frame first (`get` counts as a touch, so
  * does `set`), but never a position passed to `protect` — the caller uses
  * that to pin the current slice and its neighbours so scrolling never
@@ -16,9 +18,19 @@ export type CacheableFrame = {
   rows: number;
   columns: number;
   kind: string;
+  /**
+   * What this entry really pins, when that isn't a rows x columns pixel
+   * buffer. An encapsulated JPEG cine source (plan 06) holds the whole file
+   * it was parsed from so it can decode frames on demand — ~9.6 MB for a
+   * 96-frame echo loop, against the ~2 MB its dimensions suggest.
+   */
+  byteCost?: number;
 };
 
 function costOf(frame: CacheableFrame): number {
+  if (frame.byteCost != null && frame.byteCost > 0) {
+    return frame.byteCost;
+  }
   const bytesPerPixel = frame.kind === "mono16" ? 2 : frame.kind === "bitmap" ? 4 : 3;
   return frame.rows * frame.columns * bytesPerPixel;
 }

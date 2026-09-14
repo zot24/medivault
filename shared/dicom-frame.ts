@@ -128,6 +128,13 @@ export type EncapsulatedJpegSource = {
   frameCount: number;
   /** CineRate (fps), or 1000 / FrameTime; null for a single-frame still. */
   frameRate: number | null;
+  /**
+   * Bytes this source pins for as long as it is reachable: the whole file,
+   * because `frame()` decodes on demand out of the fragments it holds onto.
+   * Far more than one decoded frame's rows x columns, and the number any
+   * cache bounding these has to weigh them by.
+   */
+  byteCost: number;
   /** The raw JPEG bytes of one frame (starts with the FF D8 SOI marker). */
   frame(index: number): Uint8Array;
 };
@@ -187,6 +194,7 @@ export function multiFrameSourceFromPart10(bytes: Uint8Array): EncapsulatedJpegS
       columns,
       frameCount,
       frameRate,
+      byteCost: bytes.byteLength,
       frame(index: number): Uint8Array {
         if (!ranges) {
           return dicomParser.readEncapsulatedImageFrame(dataSet, pixelElement, index);

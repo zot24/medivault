@@ -187,4 +187,39 @@ describe("FrameCache", () => {
     expect(cache.has(1)).toBe(true);
     expect(cache.has(2)).toBe(true);
   });
+
+  it("costs an entry by its byteCost when it declares one", () => {
+    // An encapsulated JPEG source (plan 06) pins the whole file it was
+    // parsed from, not a rows x columns pixel buffer, so it says so.
+    const cache = new FrameCache<CacheableFrame>(2 * 1000);
+    cache.set(0, { rows: ROWS, columns: COLUMNS, kind: "jpeg-frames", byteCost: 1000 });
+    cache.set(1, { rows: ROWS, columns: COLUMNS, kind: "jpeg-frames", byteCost: 1000 });
+    expect(cache.has(0)).toBe(true);
+
+    cache.set(2, { rows: ROWS, columns: COLUMNS, kind: "jpeg-frames", byteCost: 1000 });
+    expect(cache.has(0)).toBe(false);
+    expect(cache.has(1)).toBe(true);
+    expect(cache.has(2)).toBe(true);
+  });
+
+  it("bounds retained cine sources that rows x columns would badly under-count", () => {
+    // Regression: cine sources lived in a plain Map that nothing ever
+    // evicted, so a 56-file echo record pinned every file (~500 MB) for the
+    // life of the dialog. Sized by rows x columns they look ~2 MB each; a
+    // 96-frame loop really pins ~9.6 MB, which is what has to be bounded.
+    const LOOP_BYTES = 96 * 100 * 1024;
+    const cache = new FrameCache<CacheableFrame>(64 * 1024 * 1024);
+    for (let position = 0; position < 56; position += 1) {
+      cache.set(position, { rows: 1016, columns: 708, kind: "jpeg-frames", byteCost: LOOP_BYTES });
+    }
+
+    const resident = Array.from({ length: 56 }, (_, position) => position).filter((position) =>
+      cache.has(position),
+    );
+    expect(resident.length).toBeLessThan(56);
+    expect(resident.length * LOOP_BYTES).toBeLessThanOrEqual(64 * 1024 * 1024);
+    // The most recent loops are the ones kept.
+    expect(cache.has(55)).toBe(true);
+    expect(cache.has(0)).toBe(false);
+  });
 });

@@ -569,6 +569,23 @@ describe("multiFrameSourceFromPart10", () => {
     expect(Array.from(source.frame(1))).toEqual(Array.from(FRAME_B));
   });
 
+  it("reports the whole file as its byteCost, since it closes over those bytes", () => {
+    // The source decodes frames on demand from the fragments it holds, so
+    // it pins the entire file for as long as it is reachable. A caller
+    // bounding memory has to be able to see that cost -- rows x columns
+    // would describe one decoded frame, not what is actually retained.
+    const bytes = buildMiniUsCine({
+      frames: [FRAME_A, FRAME_B, FRAME_A],
+      rows: 8,
+      columns: 8,
+    });
+
+    const source = multiFrameSourceFromPart10(new Uint8Array(bytes))!;
+
+    expect(source.byteCost).toBe(bytes.byteLength);
+    expect(source.byteCost).toBeGreaterThan(source.rows * source.columns);
+  });
+
   it("returns null for a non-JPEG-Baseline transfer syntax (e.g. a CT slice)", () => {
     const bytes = buildMiniCtDicom();
     expect(multiFrameSourceFromPart10(new Uint8Array(bytes))).toBeNull();
