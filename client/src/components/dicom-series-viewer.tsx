@@ -410,6 +410,9 @@ export default function DicomSeriesViewer({
   // section D) — drives the "Loading N / M" progress and gates Play
   // (isCinePlayable) until it reaches the total.
   const [rangePreloaded, setRangePreloaded] = useState(0);
+  // Frames the whole-run preload gave up on after retries; they are fetched
+  // on demand when shown, so playback still works with a short hiccup.
+  const [rangeMissing, setRangeMissing] = useState(0);
   const documentId = focus?.id ?? null;
 
   sliceIndexRef.current = sliceIndex;
@@ -723,6 +726,7 @@ export default function DicomSeriesViewer({
     const raw = rangeRawFramesRef.current;
     rangePreloadedRef.current = 0;
     setRangePreloaded(0);
+    setRangeMissing(0);
     preloadFrames(
       source.frameCount,
       RANGE_PRELOAD_CONCURRENCY,
@@ -753,6 +757,13 @@ export default function DicomSeriesViewer({
         setCineDecoded((count) => count + 1);
       },
       () => cancelledRef.current || token !== cineDecodeTokenRef.current,
+      {
+        onFrameFailed: () => {
+          if (!cancelledRef.current && token === cineDecodeTokenRef.current) {
+            setRangeMissing((count) => count + 1);
+          }
+        },
+      },
     ).catch(() => {
       if (!cancelledRef.current && token === cineDecodeTokenRef.current) {
         setError("Could not preload this angiography run.");
@@ -1163,6 +1174,11 @@ export default function DicomSeriesViewer({
                       />
                     </div>
                   </div>
+                )}
+                {currentCine.kind === "range-frames" && rangeMissing > 0 && (
+                  <p className="text-xs text-foreground-subtle" data-testid="dicom-range-missing">
+                    {rangeMissing} of {rangePreloadTotal} frames could not be preloaded; they load when shown.
+                  </p>
                 )}
               </div>
             )}

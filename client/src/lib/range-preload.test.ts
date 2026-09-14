@@ -143,3 +143,35 @@ describe("preloadFrames", () => {
     expect(calls).toBe(0);
   });
 });
+
+describe("preloadFrames fault tolerance", () => {
+  it("retries a frame that fails once and still reports it as done", async () => {
+    const calls: number[] = [];
+    let failedOnce = false;
+    const outcome = await preloadFrames(3, 2, async (index) => {
+      calls.push(index);
+      if (index === 1 && !failedOnce) { failedOnce = true; throw new Error("transient"); }
+    }, () => {}, () => false, { attempts: 3, retryDelayMs: 0 });
+    expect(outcome).toBe("done");
+    expect(calls.filter((i) => i === 1)).toHaveLength(2);
+  });
+
+  it("gives up on a frame after the attempt limit, reports it, and finishes the rest", async () => {
+    const failed: number[] = [];
+    const progress: number[] = [];
+    const outcome = await preloadFrames(4, 2, async (index) => {
+      if (index === 2) throw new Error("gone");
+    }, (done) => progress.push(done), () => false, { attempts: 3, retryDelayMs: 0, onFrameFailed: (i) => failed.push(i) });
+    expect(outcome).toBe("done");
+    expect(failed).toEqual([2]);
+    // progress still reaches the full count so the bar completes and Play unlocks
+    expect(progress[progress.length - 1]).toBe(4);
+  });
+
+  it("does not retry once aborted", async () => {
+    let aborted = false; let calls = 0;
+    const outcome = await preloadFrames(3, 1, async () => { calls++; aborted = true; throw new Error("aborted"); }, () => {}, () => aborted, { attempts: 3, retryDelayMs: 0 });
+    expect(outcome).toBe("aborted");
+    expect(calls).toBe(1);
+  });
+});

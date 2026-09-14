@@ -8,7 +8,7 @@ import {
   seriesGroup,
   seriesLabel,
 } from "./dicom-meta";
-import { buildMiniCtDicom, buildMiniScRgbDicom } from "./mini-ct-dicom";
+import { buildMiniCtDicom, buildMiniScRgbDicom, buildMiniSr } from "./mini-ct-dicom";
 
 const EXPECTED_KEYS = [
   "studyInstanceUid",
@@ -27,9 +27,33 @@ const EXPECTED_KEYS = [
   "sliceThickness",
   "imageType",
   "hasOverlay",
+  "srContent",
 ].sort();
 
 describe("readSeriesMeta", () => {
+  it("records what an SR actually holds: findings, nothing, or only private content", () => {
+    const withFindings = buildMiniSr({
+      title: "Cardiovascular Analysis Report",
+      nodes: [{ type: "CONTAINER", name: "Findings", children: [
+        { type: "NUM", name: "Path Length", value: 2.1, unit: "cm", children: [] },
+      ] }],
+    });
+    expect(readSeriesMeta(new Uint8Array(withFindings))?.srContent).toBe("report");
+
+    const empty = buildMiniSr({ title: "Radiology Report", nodes: [] });
+    expect(readSeriesMeta(new Uint8Array(empty))?.srContent).toBe("empty-report");
+
+    const onlyCodes = buildMiniSr({
+      title: "Session",
+      nodes: [{ type: "CODE", name: "Finding Site", code: "unspecified", children: [] }],
+    });
+    expect(readSeriesMeta(new Uint8Array(onlyCodes))?.srContent).toBe("opaque");
+  });
+
+  it("leaves srContent null for image series", () => {
+    expect(readSeriesMeta(new Uint8Array(buildMiniCtDicom()))?.srContent).toBeNull();
+  });
+
   it("reads study, series, and imaging metadata from a generated CT slice", () => {
     const bytes = buildMiniCtDicom({
       studyInstanceUid: "1.2.3.study",

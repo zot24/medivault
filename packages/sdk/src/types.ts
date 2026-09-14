@@ -35,6 +35,8 @@ export interface DicomSeriesMeta {
   sliceThickness: number | null;
   imageType: string[];
   hasOverlay: boolean;
+  /** For an SR: what its content tree holds, decided at upload; null for image series. */
+  srContent: "report" | "empty-report" | "opaque" | null;
 }
 
 export type SeriesGroup =

@@ -11,6 +11,15 @@
 
 export type PreloadOutcome = "done" | "aborted";
 
+export type PreloadOptions = {
+  /** Attempts per frame before it is given up on (default 3). */
+  attempts?: number;
+  /** Pause between attempts, doubling each time (default 250 ms). */
+  retryDelayMs?: number;
+  /** Called once for each frame that failed every attempt; the run continues. */
+  onFrameFailed?: (index: number) => void;
+};
+
 /**
  * Runs `fetchFrame` for every index in `[0, frameCount)`, `concurrency` at a
  * time. A pool of workers share one `next` counter, so whichever worker is
@@ -33,10 +42,37 @@ export async function preloadFrames(
   fetchFrame: (index: number) => Promise<void>,
   onProgress: (done: number) => void,
   isAborted: () => boolean = () => false,
+  options: PreloadOptions = {},
 ): Promise<PreloadOutcome> {
+  const attempts = Math.max(1, options.attempts ?? 3);
+  const retryDelayMs = options.retryDelayMs ?? 250;
   let next = 0;
   let done = 0;
   let aborted = false;
+
+  // One transient failure must not take the whole run down: retry with a
+  // short backoff, and if a frame still fails, report it and move on — the
+  // viewer fetches such a frame on demand (or shows it as unavailable) and
+  // the progress bar still completes, so Play unlocks.
+  async function fetchWithRetries(index: number): Promise<void> {
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        await fetchFrame(index);
+        return;
+      } catch (error) {
+        if (isAborted() || attempt >= attempts) {
+          if (!isAborted()) {
+            options.onFrameFailed?.(index);
+          }
+          return;
+        }
+        const delay = retryDelayMs * 2 ** (attempt - 1);
+        if (delay > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
+      }
+    }
+  }
 
   async function worker(): Promise<void> {
     for (;;) {
@@ -48,7 +84,7 @@ export async function preloadFrames(
       if (index == null) {
         return;
       }
-      await fetchFrame(index);
+      await fetchWithRetries(index);
       if (isAborted()) {
         aborted = true;
         return;
