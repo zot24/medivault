@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { DicomSeriesMeta } from "@shared/dicom-meta";
 import { documentFileUrl, documentFrameUrl } from "./owned-file";
-import { mono8FrameFromRangeResponse, thumbnailFrameSource } from "./thumbnails";
+import { mono8FrameFromRangeResponse, thumbnailFrameSource } from "./thumbnail-frame-source";
 
 function xaMeta(overrides: Partial<DicomSeriesMeta> = {}): DicomSeriesMeta {
   return {
