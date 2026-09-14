@@ -39,6 +39,8 @@ import {
   describeSeriesUpload,
   isHeavyUpload,
 } from "@shared/upload-kinds";
+import { viewabilityFromMeta } from "@shared/viewability";
+import type { MedicalDocument } from "@shared/schema";
 
 const uploadSchema = z.object({
   title: z.string().min(1, "Title is required"),
@@ -136,9 +138,9 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
 
       const [first, ...rest] = chunkFiles(data.files, MAX_FILES_PER_REQUEST);
       setProgress({ sent: 0, total: data.files.length });
-      const created = (await (await postFiles("/api/documents", fields, first)).json()) as {
-        id: number;
-      };
+      const created = (await (
+        await postFiles("/api/documents", fields, first)
+      ).json()) as MedicalDocument;
       setProgress({ sent: first.length, total: data.files.length });
 
       let sent = first.length;
@@ -147,9 +149,10 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
         sent += chunk.length;
         setProgress({ sent, total: data.files.length });
       }
+      return created;
     },
     onSettled: () => setProgress(null),
-    onSuccess: (_, variables) => {
+    onSuccess: (created, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
       queryClient.invalidateQueries({ queryKey: ["documents"] });
 
@@ -158,12 +161,17 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
         variables.files.reduce((sum, file) => sum + file.size, 0),
       );
 
+      const viewability = viewabilityFromMeta(created.dicomMeta, created.mimeType);
+      const description =
+        viewability.kind === "images" || viewability.kind === "report"
+          ? variables.files.length === 1
+            ? "Document uploaded successfully"
+            : `Series of ${variables.files.length} slices uploaded successfully`
+          : "Uploaded. This file has no viewable content on this disc; it is kept for completeness.";
+
       toast({
         title: "Success",
-        description:
-          variables.files.length === 1
-            ? "Document uploaded successfully"
-            : `Series of ${variables.files.length} slices uploaded successfully`,
+        description,
       });
       handleClose();
     },
