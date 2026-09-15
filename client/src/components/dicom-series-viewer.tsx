@@ -318,6 +318,30 @@ export function loadRadius(
   return Math.max(minRadius, Math.floor((budgetBytes / costBytes - 1) / 2));
 }
 
+/**
+ * Plan 13's view/run strip mounts one ViewStripThumb per file, and each one
+ * fires its own `useThumbnail` fetch — a whole-file fetch for a
+ * JPEG-compressed cine (thumbnail-frame-source.ts's cheap frame-range path
+ * only applies to an *uncompressed* multi-frame file at position 0), so an
+ * unbounded strip for a 56-view echo record would fire 56 of those at
+ * once. Only a thumbnail within `radius` of the current selection actually
+ * mounts (`isViewStripThumbLoaded`); everything else renders a plain,
+ * still-clickable placeholder until scrolled or clicked into range — the
+ * same cap in spirit as the study page's own inline strip (section D's
+ * VIEW_STRIP_PREVIEW_LIMIT), but centered on the current view instead of
+ * always the first few, since every position here has to stay reachable
+ * via ←/→.
+ */
+export const VIEW_STRIP_LOAD_RADIUS = 8;
+
+export function isViewStripThumbLoaded(
+  index: number,
+  selectedIndex: number,
+  radius: number = VIEW_STRIP_LOAD_RADIUS,
+): boolean {
+  return Math.abs(index - selectedIndex) <= radius;
+}
+
 /** Percentage for the loading progress bar, capped at 100. */
 export function loadProgressPercent(loadedInPhase: number, count: number): number {
   if (count <= 0) {
@@ -1070,9 +1094,14 @@ export default function DicomSeriesViewer({
 
       // Plan 13: "views" (echo) and "runs" (angiography) get a thumbnail
       // strip instead of the position slider — see the render below. Labels
-      // are keyed by position, computed once from the files list.
+      // are keyed by position, computed once from the files list. `kind`
+      // only gates that choice here, but still needs `detection` (just
+      // computed above) to ever read "phases" rather than "volume" — a CT
+      // record with a detected cardiac cycle isn't a views/runs strip
+      // either way, but a null-vs-non-null `kind` elsewhere (e.g. a future
+      // caller keying off it) should still see this record's real kind.
       const seriesMeta = focus?.dicomMeta ?? null;
-      const recordKind = seriesMeta ? seriesKind(seriesMeta, files.length) : null;
+      const recordKind = seriesMeta ? seriesKind(seriesMeta, files.length, detection != null) : null;
       setKind(recordKind);
       if (recordKind === "views") {
         const labels = new Map<number, string>();
@@ -1561,18 +1590,39 @@ export default function DicomSeriesViewer({
                 className="flex gap-2 overflow-x-auto pb-1"
                 data-testid="dicom-view-strip"
               >
-                {positions.map((position, index) => (
-                  <ViewStripThumb
-                    key={position}
-                    documentId={documentId!}
-                    position={position}
-                    dicomMeta={focus?.dicomMeta ?? null}
-                    label={viewLabels.get(position) ?? ""}
-                    selected={index === sliceIndex}
-                    onSelect={() => setSliceIndex(index)}
-                    testId={`dicom-view-${index}`}
-                  />
-                ))}
+                {positions.map((position, index) =>
+                  isViewStripThumbLoaded(index, sliceIndex) ? (
+                    <ViewStripThumb
+                      key={position}
+                      documentId={documentId!}
+                      position={position}
+                      dicomMeta={focus?.dicomMeta ?? null}
+                      label={viewLabels.get(position) ?? ""}
+                      selected={index === sliceIndex}
+                      onSelect={() => setSliceIndex(index)}
+                      testId={`dicom-view-${index}`}
+                    />
+                  ) : (
+                    // Outside the load window (see isViewStripThumbLoaded)
+                    // — still selectable, so ←/→ or a click keeps reaching
+                    // every view, but doesn't fire its thumbnail fetch
+                    // until it's actually near the current selection.
+                    <button
+                      key={position}
+                      type="button"
+                      onClick={() => setSliceIndex(index)}
+                      data-testid={`dicom-view-${index}`}
+                      className="flex-shrink-0 w-24 text-left rounded-md border-2 border-transparent"
+                    >
+                      <div className="w-24 h-24 rounded bg-black/40 flex items-center justify-center">
+                        <ScanLine className="h-5 w-5 text-white/30" />
+                      </div>
+                      <p className="mt-1 text-xs text-foreground-subtle font-body truncate px-0.5">
+                        {viewLabels.get(position) ?? ""}
+                      </p>
+                    </button>
+                  ),
+                )}
               </div>
             ) : (
               <>

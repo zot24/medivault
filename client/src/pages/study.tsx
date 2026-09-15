@@ -18,6 +18,7 @@ import { groupReports, studyCounts, studyLabel } from "@shared/studies";
 import { runLabel, seriesKind, viewLabel } from "@shared/series-kind";
 import { countLabel, localDate } from "@shared/upload-kinds";
 import { useMultiFrameSummary } from "@/lib/multi-frame-summary";
+import { isPhaseCandidate, usePhaseDetection } from "@/lib/phase-detection";
 import { useSeriesFiles, type SeriesFileRow } from "@/lib/series-files";
 import { ArrowLeft, Eye, FileText, ScanLine } from "lucide-react";
 
@@ -167,12 +168,24 @@ function SeriesRow({
 }) {
   const label = series.dicomMeta ? seriesLabel(series.dicomMeta) : series.title;
   // Plan 13: word the count for what this record's files actually are — a
-  // CT volume's "774 slices", an echo record's "56 views", an angiography
-  // record's "3 runs · 298 frames" (plan 12's totalFrames, from
-  // useMultiFrameSummary) — instead of the modality-blind "N images".
+  // CT volume's "774 slices" (or "10 phases × 580 slices" once detectPhases
+  // finds a cardiac cycle in it — phase below), an echo record's "56
+  // views", an angiography record's "3 runs · 298 frames" (plan 12's
+  // totalFrames, from useMultiFrameSummary) — instead of the
+  // modality-blind "N images".
   const multiFrame = useMultiFrameSummary([series]);
-  const kind = series.dicomMeta ? seriesKind(series.dicomMeta, series.fileCount) : "single";
-  const fileCountLabel = countLabel(kind, series.fileCount, multiFrame?.totalFrames ?? null);
+  const phaseCandidate = series.dicomMeta
+    ? isPhaseCandidate(series.dicomMeta, series.fileCount)
+    : false;
+  const phase = usePhaseDetection(series.id, phaseCandidate);
+  const kind = series.dicomMeta
+    ? seriesKind(series.dicomMeta, series.fileCount, phase?.hasPhases ?? false)
+    : "single";
+  const fileCountLabel = countLabel(
+    kind,
+    series.fileCount,
+    kind === "phases" ? phase?.sliceCount ?? null : multiFrame?.totalFrames ?? null,
+  );
   // Plan 13 section D: a multi-file echo/angiography record shows its view/
   // run strip right in the row, so a person can open the right one directly
   // instead of always landing on the first.

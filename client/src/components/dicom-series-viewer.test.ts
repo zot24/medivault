@@ -4,9 +4,11 @@ import {
   cineFrameAtElapsed,
   cineFramesToDecode,
   countLoaded,
+  isViewStripThumbLoaded,
   loadProgressPercent,
   loadRadius,
   rawFrameFromBatch,
+  VIEW_STRIP_LOAD_RADIUS,
 } from "./dicom-series-viewer";
 import { FrameCache } from "@/lib/frame-cache";
 
@@ -209,6 +211,33 @@ describe("loadRadius", () => {
     // The current position and its neighbours have to be loadable at all.
     expect(loadRadius(CT_BUDGET * 2, CT_BUDGET, 8)).toBe(8);
     expect(loadRadius(CINE_BUDGET * 2, CINE_BUDGET, 1)).toBe(1);
+  });
+});
+
+describe("isViewStripThumbLoaded", () => {
+  it("loads the selected thumbnail and its near neighbours", () => {
+    expect(isViewStripThumbLoaded(10, 10)).toBe(true);
+    expect(isViewStripThumbLoaded(10 + VIEW_STRIP_LOAD_RADIUS, 10)).toBe(true);
+    expect(isViewStripThumbLoaded(10 - VIEW_STRIP_LOAD_RADIUS, 10)).toBe(true);
+  });
+
+  it("does not load a thumbnail past the radius from the current selection", () => {
+    expect(isViewStripThumbLoaded(10 + VIEW_STRIP_LOAD_RADIUS + 1, 10)).toBe(false);
+    expect(isViewStripThumbLoaded(10 - VIEW_STRIP_LOAD_RADIUS - 1, 10)).toBe(false);
+  });
+
+  it("bounds a 56-view echo record to a small window instead of loading every view at once", () => {
+    // Regression: opening the viewer on a real 56-view echo record fired
+    // one whole-file fetch per file — up to 56 at once, each potentially
+    // several MB of JPEG-compressed cine frames — just to draw a 128px
+    // thumbnail, because every position mounted unconditionally.
+    const total = 56;
+    const selected = 0;
+    const loaded = Array.from({ length: total }, (_, index) => index).filter((index) =>
+      isViewStripThumbLoaded(index, selected),
+    );
+    expect(loaded.length).toBeLessThan(total);
+    expect(loaded.length).toBeLessThanOrEqual(2 * VIEW_STRIP_LOAD_RADIUS + 1);
   });
 });
 

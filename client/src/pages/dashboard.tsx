@@ -34,15 +34,17 @@ import { format } from "date-fns";
 import type { MedicalDocument, Symptom } from "@shared/schema";
 import DicomSeriesViewer from "@/components/dicom-series-viewer";
 import { ownedFileUrl } from "@/lib/owned-file";
-import { countLabel, isDicomDocument, localDate } from "@shared/upload-kinds";
-import { seriesKind } from "@shared/series-kind";
+import { isDicomDocument, localDate } from "@shared/upload-kinds";
+import { isPhaseCandidate, usePhaseDetectionMap } from "@/lib/phase-detection";
 import {
   documentItemDate,
   documentItemKey,
   listDocumentItems,
+  studyKindCountLabel,
   studyLabel,
   studySeries,
   type DocumentItem,
+  type StudyPhaseInfo,
   type StudySummary,
 } from "@shared/studies";
 
@@ -54,29 +56,25 @@ function itemLabel(item: DocumentItem): string {
   return item.kind === "study" ? studyLabel(item.study) : item.record.title;
 }
 
-/** SR and friends describe a study's paperwork, never the study itself — same rule as shared/studies.ts's own imagingModality. */
-const NON_IMAGING_MODALITIES = new Set(["SR", "PR", "KO", "DOC"]);
-
-function dominantModality(modalities: string[]): string {
-  return modalities.find((modality) => !NON_IMAGING_MODALITIES.has(modality)) ?? modalities[0] ?? "";
-}
-
 /**
  * Plan 13: word a study's file count for what its dominant modality's files
  * actually are — "774 slices" for a CT study, "56 views" for an echo study,
- * "3 runs" for a cath study — instead of the always-generic "N images".
+ * "3 runs" for a cath study, "10 phases × 580 slices" once `phase` (from
+ * usePhaseDetectionMap below) confirms a detected cardiac cycle — instead
+ * of the always-generic "N images".
  */
-function studySummaryLine(study: StudySummary): string {
-  const kind = seriesKind({ modality: dominantModality(study.modalities) }, study.fileCount);
+function studySummaryLine(study: StudySummary, phase: StudyPhaseInfo | null): string {
   return [
     study.seriesCount === 1 ? "1 series" : `${study.seriesCount} series`,
-    countLabel(kind, study.fileCount),
+    studyKindCountLabel(study, phase, null),
   ].join(" · ");
 }
 
-function itemSubtitle(item: DocumentItem): string {
+function itemSubtitle(item: DocumentItem, phasesById: Map<number, StudyPhaseInfo> | null): string {
   if (item.kind === "study") {
-    return studySummaryLine(item.study);
+    const primaryId = item.study.primary?.id;
+    const phase = primaryId != null ? phasesById?.get(primaryId) ?? null : null;
+    return studySummaryLine(item.study, phase);
   }
   return item.record.doctorName || item.record.facilityName || "Medical document";
 }
@@ -209,6 +207,26 @@ export default function Dashboard() {
     [allDocuments],
   );
 
+  // Plan 13: which studies' file-count line can read "N phases × M slices"
+  // — a study's primary series (its CT/MR volume, if it has one) that
+  // detectPhases (shared/phases.ts) might find a cardiac cycle in. Batched
+  // into one usePhaseDetectionMap call so the dashboard's several studies
+  // cost one query, not one per row.
+  const phaseCandidates = React.useMemo(
+    () =>
+      documentItems
+        .filter((item): item is Extract<DocumentItem, { kind: "study" }> => item.kind === "study")
+        .map((item) => item.study.primary)
+        .filter(
+          (primary): primary is MedicalDocument =>
+            primary != null &&
+            primary.dicomMeta != null &&
+            isPhaseCandidate(primary.dicomMeta, primary.fileCount),
+        ),
+    [documentItems],
+  );
+  const phasesById = usePhaseDetectionMap(phaseCandidates);
+
   const recentItems = React.useMemo(() => documentItems.slice(0, 5), [documentItems]);
 
   const lastActivity = React.useMemo(() => {
@@ -239,7 +257,7 @@ export default function Dashboard() {
         id: documentItemKey(item),
         type: 'document',
         title: itemLabel(item),
-        subtitle: itemSubtitle(item),
+        subtitle: itemSubtitle(item, phasesById),
         // A study is dated by the scan, not by the day it was uploaded.
         date:
           item.kind === 'study'
@@ -267,7 +285,7 @@ export default function Dashboard() {
     return activities
       .sort((a, b) => b.date.getTime() - a.date.getTime())
       .slice(0, 8);
-  }, [documentItems, symptoms]);
+  }, [documentItems, symptoms, phasesById]);
 
   const symptomStats = React.useMemo(() => {
     if (!symptoms || symptoms.length === 0) return null;
@@ -621,7 +639,7 @@ export default function Dashboard() {
                           <h5 className="font-medium text-foreground mb-1 font-body truncate">{itemLabel(item)}</h5>
                           <p className="text-sm text-foreground-muted font-body truncate">
                             {item.kind === 'study'
-                              ? `${itemSubtitle(item)} • `
+                              ? `${itemSubtitle(item, phasesById)} • `
                               : item.record.doctorName
                                 ? `${item.record.doctorName} • `
                                 : ''}

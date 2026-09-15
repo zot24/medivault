@@ -201,9 +201,20 @@ test("shows a phase select and holds the slice steady while cine-ing through pha
 
   const studyCard = page.getByTestId(`study-card-${MULTIPHASE_STUDY_UID}`);
   await expect(studyCard).toBeVisible({ timeout: 30_000 });
+  // Regression (PR #40 review, finding F1): seriesKind/countLabel's "N
+  // phases × M slices" wording (plan 13 section B) is unreachable unless
+  // `hasPhases` is actually threaded from shared/phases.ts detectPhases —
+  // this fixture is 2 phases of 2 slices; without the fix it reads as the
+  // modality-blind "4 slices" instead.
+  await expect(studyCard.getByTestId(`study-summary-${MULTIPHASE_STUDY_UID}`)).toHaveText(
+    /2 phases × 2 slices/,
+  );
   await studyCard.getByTestId(`button-open-study-${MULTIPHASE_STUDY_UID}`).click();
 
   await page.waitForURL(`**/studies/${encodeURIComponent(MULTIPHASE_STUDY_UID)}`);
+  // The study page row reads the same way (study.tsx's SeriesRow).
+  const seriesRow = page.locator('[data-testid^="series-row-"]').first();
+  await expect(seriesRow).toContainText(/2 phases × 2 slices/);
   const view = page.locator('[data-testid^="button-view-series-"]').first();
   await view.click();
 
@@ -344,8 +355,10 @@ test("shows a view strip for a multi-file echo record and switches views", async
   await expect(inlineStrip).toBeVisible();
   await expect(inlineStrip.locator('[data-testid$="-0"]')).toBeVisible();
 
-  const view = page.locator('[data-testid^="button-view-series-"]').first();
-  await view.click();
+  // Clicking the strip's *second* thumbnail opens the viewer already
+  // scrubbed to that exact file (study.tsx's onOpenAt), not always the
+  // first — nothing end-to-end exercised this before (PR #40 review).
+  await inlineStrip.locator('[data-testid$="-1"]').click();
 
   // The position slider is replaced by a thumbnail strip for this kind —
   // it must not render at all.
@@ -356,10 +369,12 @@ test("shows a view strip for a multi-file echo record and switches views", async
   await expect(page.getByTestId("dicom-view-1")).toBeVisible();
 
   const frameLabel = page.getByTestId("dicom-cine-frame-index");
-  await expect(frameLabel).toHaveText("1 / 2");
-
-  await page.getByTestId("dicom-view-1").click();
+  // Opened at the second view (4-frame loop), not the first (2-frame) —
+  // proves onOpenAt's position actually reached the viewer.
   await expect(frameLabel).toHaveText("1 / 4");
+
+  await page.getByTestId("dicom-view-0").click();
+  await expect(frameLabel).toHaveText("1 / 2");
 });
 
 // mini-sr-empty.dcm: a synthetic Basic Text SR with zero content items,

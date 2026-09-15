@@ -43,6 +43,7 @@ import {
   isHeavyUpload,
 } from "@shared/upload-kinds";
 import { seriesKind } from "@shared/series-kind";
+import { detectPhasesFor, isPhaseCandidate } from "@/lib/phase-detection";
 import { viewabilityFromMeta } from "@shared/viewability";
 import type { MedicalDocument } from "@shared/schema";
 
@@ -156,7 +157,7 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
       return created;
     },
     onSettled: () => setProgress(null),
-    onSuccess: (created, variables) => {
+    onSuccess: async (created, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
       queryClient.invalidateQueries({ queryKey: ["documents"] });
 
@@ -165,18 +166,28 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
         variables.files.reduce((sum, file) => sum + file.size, 0),
       );
 
+      // Plan 13: a CT/MR upload that detectPhases (shared/phases.ts) finds
+      // a cardiac cycle in reads "10 phases × 580 slices", not "5800
+      // slices" — one extra GET .../files, only for that candidate, so an
+      // ordinary upload's toast fires with no added latency.
+      const phaseCandidate =
+        created.dicomMeta && isPhaseCandidate(created.dicomMeta, variables.files.length);
+      const phase = phaseCandidate ? await detectPhasesFor(created.id) : null;
+
       const viewability = viewabilityFromMeta(created.dicomMeta, created.mimeType);
       const description =
         viewability.kind === "images" || viewability.kind === "report"
           ? variables.files.length === 1
             ? "Document uploaded successfully"
             : // Plan 13: word the toast for what the uploaded files actually are
-              // ("56 views", "3 runs", "774 slices") instead of always "slices".
+              // ("56 views", "3 runs", "10 phases × 580 slices") instead of
+              // always "slices".
               `Series of ${countLabel(
                 created.dicomMeta
-                  ? seriesKind(created.dicomMeta, variables.files.length)
+                  ? seriesKind(created.dicomMeta, variables.files.length, phase?.hasPhases ?? false)
                   : "single",
                 variables.files.length,
+                phase?.hasPhases ? phase.sliceCount : null,
               )} uploaded successfully`
           : "Uploaded. This file has no viewable content on this disc; it is kept for completeness.";
 

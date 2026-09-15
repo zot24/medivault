@@ -15,6 +15,7 @@ import {
   splitDocuments,
   studyCounts,
   studyFileCountLabel,
+  studyKindCountLabel,
   studyLabel,
 } from "./studies";
 
@@ -509,6 +510,49 @@ describe("studyFileCountLabel", () => {
     ]);
 
     expect(studyFileCountLabel(study, null)).toBe("2 images");
+  });
+});
+
+describe("studyKindCountLabel", () => {
+  // Regression (PR #40 review): every seriesKind call site in the app
+  // called it with only 2 arguments, so a CT/MR study's "N phases × M
+  // slices" wording (plan 13 section B) was unreachable — this reads as
+  // "774 slices" for every multi-phase study, forever, unless `hasPhases`
+  // is actually threaded through from shared/phases.ts detectPhases.
+  it("reads a CT study's file count as 'N phases × M slices' once phase detection confirms it", () => {
+    const [study] = groupIntoStudies([record({ dicomMeta: { modality: "CT" }, fileCount: 5800 })]);
+
+    expect(studyKindCountLabel(study, { hasPhases: true, sliceCount: 580 }, null)).toBe(
+      "10 phases × 580 slices",
+    );
+  });
+
+  it("keeps the plain 'N slices' wording while phase detection hasn't answered yet", () => {
+    const [study] = groupIntoStudies([record({ dicomMeta: { modality: "CT" }, fileCount: 5800 })]);
+
+    expect(studyKindCountLabel(study, null, null)).toBe("5800 slices");
+  });
+
+  it("words a pure echo study as views, not images — the study card's own kind (finding F2)", () => {
+    const [study] = groupIntoStudies([record({ dicomMeta: { modality: "US" }, fileCount: 56 })]);
+
+    expect(studyKindCountLabel(study, null, null)).toBe("56 views");
+  });
+
+  it("words a pure angiography study as runs and frames, same as recordFileCountLabel", () => {
+    const [study] = groupIntoStudies([record({ dicomMeta: { modality: "XA" }, fileCount: 3 })]);
+
+    expect(studyKindCountLabel(study, null, { totalFrames: 298 })).toBe("3 runs · 298 frames");
+  });
+
+  it("still reports the study's true total file count for a mixed-kind study", () => {
+    const [study] = groupIntoStudies([
+      record({ dicomMeta: { modality: "US" }, fileCount: 56 }),
+      record({ dicomMeta: { modality: "SR" }, fileCount: 1 }),
+    ]);
+
+    expect(study.fileCount).toBe(57);
+    expect(studyKindCountLabel(study, null, null)).toBe("57 views");
   });
 });
 

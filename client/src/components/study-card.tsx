@@ -6,9 +6,10 @@ import { ChevronRight, Layers, ScanLine } from "lucide-react";
 import type { StudySummary } from "@/lib/sdk";
 import { useThumbnail } from "@/lib/thumbnails";
 import { thumbnailPosition } from "@/lib/study-thumbnail";
-import { studyLabel, studySeries, studyFileCountLabel } from "@shared/studies";
+import { studyKindCountLabel, studyLabel, studySeries } from "@shared/studies";
 import { localDate } from "@shared/upload-kinds";
 import { useMultiFrameSummary } from "@/lib/multi-frame-summary";
+import { isPhaseCandidate, usePhaseDetection } from "@/lib/phase-detection";
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024 * 1024) {
@@ -32,13 +33,20 @@ export default function StudyCard({ study }: StudyCardProps) {
     thumbnailSource ? thumbnailPosition(thumbnailSource) : 0,
     thumbnailSource?.dicomMeta ?? null,
   );
-  // Plan 12: same wording as a series row — "3 runs · 298 frames" instead
-  // of "3 images" when the study is (or contains) an angiography record.
-  // The file *count* always comes from study.fileCount (every series in
-  // the study), never from the XA-only subset useMultiFrameSummary sums —
-  // see studyFileCountLabel.
+  // Plan 12/13: word the study card's count for what its dominant
+  // modality's files actually are — "3 runs · 298 frames" for a cath
+  // study, "56 views" for an echo study, "10 phases × 580 slices" for a
+  // CT/MR study detectPhases finds a cardiac cycle in — instead of the
+  // modality-blind "N images". The file *count* always comes from
+  // study.fileCount (every series in the study), never from the XA-only
+  // subset useMultiFrameSummary sums, or one series' fileCount alone — see
+  // studyKindCountLabel.
   const multiFrame = useMultiFrameSummary(studySeries(study));
-  const fileCountLabel = studyFileCountLabel(study, multiFrame);
+  const phaseCandidate =
+    study.primary?.dicomMeta != null &&
+    isPhaseCandidate(study.primary.dicomMeta, study.primary.fileCount);
+  const phase = usePhaseDetection(study.primary?.id ?? -1, phaseCandidate);
+  const fileCountLabel = studyKindCountLabel(study, phase, multiFrame);
 
   return (
     <Card
