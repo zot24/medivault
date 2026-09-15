@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { documentFileUrl, documentFrameUrl } from "@/lib/owned-file";
+import { documentFileUrl, documentFrameRangeUrl, documentFrameUrl } from "@/lib/owned-file";
 import { FrameCache } from "@/lib/frame-cache";
-import { preloadFrames } from "@/lib/range-preload";
+import { frameBatches, preloadFrames } from "@/lib/range-preload";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -92,6 +92,14 @@ const CINE_PREFETCH_AHEAD = 4;
 const RANGE_PRELOAD_CONCURRENCY = 4;
 
 /**
+ * Frames per batch range request while preloading an angiography run (plan
+ * 12 section 2) — matches the server's own bound (MAX_FRAME_RANGE in
+ * server/document-files.ts) so every batch this client asks for is one the
+ * server will actually serve.
+ */
+const RANGE_BATCH_SIZE = 8;
+
+/**
  * Budget for an angiography run's *raw* frame bytes (plan 07 section D,
  * second-round review): the whole run — up to ~108 frames of ~1 MB each,
  * ~100 MB — is preloaded before Play is enabled, kept as raw 8-bit pixel
@@ -149,6 +157,16 @@ export type RangeCineSource = {
   /** One frame's bytes — what discovering this source costs, not the whole run (see CINE_SOURCE_BUDGET_BYTES). */
   byteCost: number;
   frame(index: number, signal?: AbortSignal): Promise<Uint8Array>;
+  /** `from`..`to` inclusive frames' raw bytes, back to back (plan 12) — the batch counterpart to `frame`. */
+  frameRange(from: number, to: number, signal?: AbortSignal): Promise<Uint8Array>;
+};
+
+/** Present only for an uncompressed multi-frame file (plan 07/12) — see server/routes.ts. */
+type FileRowFrameIndex = {
+  numberOfFrames: number;
+  frameBytes: number;
+  rows: number;
+  columns: number;
 };
 
 type FileRow = {
@@ -156,8 +174,7 @@ type FileRow = {
   instanceNumber: number | null;
   sliceLocation: number | null;
   phase: number | null;
-  /** Present only for an uncompressed multi-frame file (plan 07) — see server/routes.ts. */
-  numberOfFrames: number | null;
+  frameIndex: FileRowFrameIndex | null;
 };
 
 type CachedFrame = DicomFrame & { overlays: DicomOverlay[] };
@@ -233,6 +250,33 @@ export function cineFrameAtElapsed(
   }
   const framesElapsed = Math.floor((elapsedMs / 1000) * frameRate);
   return framesElapsed % frameCount;
+}
+
+/**
+ * How many resident frames of runway playback wants beyond wherever it is
+ * (plan 12 section 1): the full 30-frame buffer, or however many frames are
+ * left in the run if that's fewer.
+ */
+const PROGRESSIVE_PLAY_BUFFER = 30;
+
+/**
+ * Whether playback can show `playhead` right now, given `resident` frames
+ * loaded (front-to-back, as the whole-run preload always fills them) out of
+ * `total`. One decision serves two moments: called with `playhead` 0, it's
+ * whether Play unlocks at all — the first `min(30, total)` frames have to be
+ * resident, not the whole run. Called with the playhead during playback,
+ * it's whether to keep advancing or hold on the last resident frame
+ * ("buffering…") until the preload — which keeps running ahead of the
+ * playhead in the background — has built the runway back up. Always false
+ * for an empty run.
+ */
+export function canPlay(resident: number, playhead: number, total: number): boolean {
+  if (total <= 0) {
+    return false;
+  }
+  const position = ((playhead % total) + total) % total;
+  const needed = Math.min(PROGRESSIVE_PLAY_BUFFER, total - position);
+  return resident - position >= needed;
 }
 
 /**
@@ -350,6 +394,11 @@ export default function DicomSeriesViewer({
   // 07), from the files list fetch — lets loadOne take the range-request
   // path for that position without downloading the whole file to find out.
   const rangeFrameCountRef = useRef<Map<number, number>>(new Map());
+  // One frame's byte size for the same positions (plan 12's frameIndex,
+  // from the same files list fetch) — how a batch range response gets
+  // split back into individual frames, and RangeCineSource's own byteCost,
+  // without a probe fetch of frame 0 just to learn it.
+  const rangeFrameBytesRef = useRef<Map<number, number>>(new Map());
   // The dialog's own lifetime AbortController (open -> close/change
   // document), as opposed to the shorter-lived one the background slice
   // loaders use (aborted on every sliceIndex change). Every range fetch for
@@ -364,11 +413,22 @@ export default function DicomSeriesViewer({
   // which holds a small LRU of *rasterized* frames for drawing. Cleared by
   // resetCineBitmaps on every position change and on dialog close.
   const rangeRawFramesRef = useRef(new FrameCache<RawFrame>(RANGE_RAW_CACHE_BUDGET_BYTES));
-  // Preload progress for the currently open angiography run: how many of
-  // its frames have been fetched into rangeRawFramesRef, out of its total
-  // frame count. Play is disabled (isCinePlayable) until this reaches the
-  // total — see pumpRangePreload.
+  // Preload progress for the currently open angiography run: how many
+  // frames counting from 0 are resident (or permanently given up on — see
+  // permanentlyMissingRef) with no gap, out of its total frame count (plan
+  // 12: `canPlay`'s `resident` reads this as "frames 0..resident-1 are
+  // ready", so it has to be a contiguous prefix, not just a raw count of
+  // completions — batches can land out of order under concurrency). Kept
+  // in lockstep with residentPrefixRef below — see pumpRangePreload.
   const rangePreloadedRef = useRef(0);
+  // The contiguous-from-zero count above, as the actual pointer
+  // pumpRangePreload advances: `while (raw.has(p) || permanentlyMissingRef.has(p)) p++`.
+  const residentPrefixRef = useRef(0);
+  // Frames a batch gave up on after every retry (plan 12) — treated as
+  // "resolved" for residentPrefixRef's purposes (pumpCineDecode's on-demand
+  // path still fetches them individually when actually shown), so one dead
+  // frame doesn't freeze the whole run's progressive-play gate forever.
+  const permanentlyMissingRef = useRef<Set<number>>(new Set());
   // Bumped whenever the open loop changes; a decode in flight for an older
   // token throws its bitmap away instead of filling a cache nobody wants.
   const cineDecodeTokenRef = useRef(0);
@@ -413,6 +473,11 @@ export default function DicomSeriesViewer({
   // Frames the whole-run preload gave up on after retries; they are fetched
   // on demand when shown, so playback still works with a short hiccup.
   const [rangeMissing, setRangeMissing] = useState(0);
+  // True while playback is holding on the last resident frame because it
+  // has caught up with the preload (plan 12's canPlay, checked every tick
+  // of the playback loop below) — shown as "buffering…" rather than
+  // stalling silently or skipping ahead to an unloaded frame.
+  const [buffering, setBuffering] = useState(false);
   const documentId = focus?.id ?? null;
 
   sliceIndexRef.current = sliceIndex;
@@ -486,6 +551,23 @@ export default function DicomSeriesViewer({
     return response;
   }
 
+  /** An inclusive batch of frames (plan 12), one range request for up to RANGE_BATCH_SIZE of them. */
+  async function fetchFrameRangeBytes(
+    position: number,
+    from: number,
+    to: number,
+    signal?: AbortSignal,
+  ): Promise<Uint8Array> {
+    const response = await fetch(documentFrameRangeUrl(documentId!, position, from, to), {
+      credentials: "include",
+      signal,
+    });
+    if (!response.ok) {
+      throw new Error("Could not load these frames.");
+    }
+    return new Uint8Array(await response.arrayBuffer());
+  }
+
   async function loadRangeCineSource(
     position: number,
     frameCount: number,
@@ -497,6 +579,10 @@ export default function DicomSeriesViewer({
     const windowCenter = Number(response.headers.get("X-Window-Center"));
     const windowWidth = Number(response.headers.get("X-Window-Width"));
     const frame0 = new Uint8Array(await response.arrayBuffer());
+    // The files-list fetch (plan 12's frameIndex) already knows one frame's
+    // byte size without asking the network again; frame0's own length is
+    // the fallback for a position that somehow didn't carry one.
+    const byteCost = rangeFrameBytesRef.current.get(position) ?? frame0.length;
     return {
       kind: "range-frames",
       rows,
@@ -505,7 +591,7 @@ export default function DicomSeriesViewer({
       frameRate: focus?.dicomMeta?.frameRate ?? null,
       windowCenter,
       windowWidth,
-      byteCost: rows * columns,
+      byteCost,
       async frame(index: number, frameSignal?: AbortSignal): Promise<Uint8Array> {
         if (index === 0) {
           return frame0;
@@ -515,6 +601,17 @@ export default function DicomSeriesViewer({
         // the caller doesn't pass one explicitly.
         const r = await fetchFrame(position, index, frameSignal ?? dialogAbortRef.current?.signal);
         return new Uint8Array(await r.arrayBuffer());
+      },
+      async frameRange(from: number, to: number, frameSignal?: AbortSignal): Promise<Uint8Array> {
+        if (from === 0 && to === 0) {
+          return frame0;
+        }
+        return fetchFrameRangeBytes(
+          position,
+          from,
+          to,
+          frameSignal ?? dialogAbortRef.current?.signal,
+        );
       },
     };
   }
@@ -605,6 +702,8 @@ export default function DicomSeriesViewer({
     rangePreloadStartedForRef.current = null;
     rangePreloadedRef.current = 0;
     setRangePreloaded(0);
+    residentPrefixRef.current = 0;
+    permanentlyMissingRef.current = new Set();
   }
 
   /** The decoded-frame LRU for this loop: CINE_RESIDENT_FRAMES frames of its own size. */
@@ -710,58 +809,88 @@ export default function DicomSeriesViewer({
 
   /**
    * Fills rangeRawFramesRef with every frame of an angiography run (plan 07
-   * section D) — not just a resident window — via RANGE_PRELOAD_CONCURRENCY
-   * parallel range requests, using the pure scheduler in
-   * client/src/lib/range-preload.ts. Runs once per loop (guarded by
-   * rangePreloadStartedForRef, below) and drives the "Loading n / N" bar;
-   * isCinePlayable stays false until it finishes, so Play only becomes
-   * available once the whole run — not just the first frames — can play
-   * without further network fetches. pumpCineDecode's on-demand path is
-   * still what rasterizes a frame for drawing (from this raw cache once
-   * it's landed), and is still the fallback for a frame this preload
+   * section D, batched per plan 12) — not just a resident window — via
+   * RANGE_PRELOAD_CONCURRENCY parallel batch range requests of up to
+   * RANGE_BATCH_SIZE frames each, using the pure scheduler in
+   * client/src/lib/range-preload.ts (one scheduler "item" is now a batch,
+   * not a frame — cuts the reference 108-frame run from 108 HTTP round
+   * trips to 14). Runs once per loop (guarded by rangePreloadStartedForRef,
+   * below) and drives the "Loading n / N" bar. Play unlocks well before
+   * this finishes — see canPlay — but the preload itself always keeps
+   * going for the whole run in the background. pumpCineDecode's on-demand
+   * path is still what rasterizes a frame for drawing (from this raw cache
+   * once it's landed), and is still the fallback for a frame this preload
    * hasn't reached yet.
    */
   function pumpRangePreload(source: RangeCineSource) {
     const token = cineDecodeTokenRef.current;
     const raw = rangeRawFramesRef.current;
+    const frameBytes = source.byteCost;
+    const batches = frameBatches(source.frameCount, RANGE_BATCH_SIZE);
     rangePreloadedRef.current = 0;
     setRangePreloaded(0);
     setRangeMissing(0);
+
+    /** Advances the contiguous-from-zero pointer past whatever is now settled (landed or given up on), and publishes it. */
+    function advanceResidentPrefix() {
+      let position = residentPrefixRef.current;
+      while (raw.has(position) || permanentlyMissingRef.current.has(position)) {
+        position += 1;
+      }
+      residentPrefixRef.current = position;
+      rangePreloadedRef.current = position;
+      setRangePreloaded(position);
+    }
+
     preloadFrames(
-      source.frameCount,
+      batches.length,
       RANGE_PRELOAD_CONCURRENCY,
-      async (index) => {
-        if (raw.has(index)) {
+      async (batchIndex) => {
+        const { from, to } = batches[batchIndex];
+        if (raw.has(from) && raw.has(to)) {
+          // Already resident end to end (e.g. the frame-0 probe already
+          // covered a batch of size 1) — nothing to fetch.
           return;
         }
-        const bytes = await source.frame(index, dialogAbortRef.current?.signal);
+        const bytes = await source.frameRange(from, to, dialogAbortRef.current?.signal);
         if (cancelledRef.current || token !== cineDecodeTokenRef.current) {
           return;
         }
-        raw.set(index, {
-          kind: "raw8",
-          rows: source.rows,
-          columns: source.columns,
-          bytes,
-          byteCost: bytes.length,
-        });
+        for (let index = from; index <= to; index += 1) {
+          if (raw.has(index)) {
+            continue;
+          }
+          const offset = (index - from) * frameBytes;
+          raw.set(index, {
+            kind: "raw8",
+            rows: source.rows,
+            columns: source.columns,
+            bytes: bytes.subarray(offset, offset + frameBytes),
+            byteCost: frameBytes,
+          });
+        }
       },
-      (done) => {
+      () => {
         if (cancelledRef.current || token !== cineDecodeTokenRef.current) {
           return;
         }
-        rangePreloadedRef.current = done;
-        setRangePreloaded(done);
+        advanceResidentPrefix();
         // The frame on screen may be one this tick just landed — let the
         // draw effect re-check.
         setCineDecoded((count) => count + 1);
       },
       () => cancelledRef.current || token !== cineDecodeTokenRef.current,
       {
-        onFrameFailed: () => {
-          if (!cancelledRef.current && token === cineDecodeTokenRef.current) {
-            setRangeMissing((count) => count + 1);
+        onFrameFailed: (batchIndex) => {
+          if (cancelledRef.current || token !== cineDecodeTokenRef.current) {
+            return;
           }
+          const { from, to } = batches[batchIndex];
+          for (let index = from; index <= to; index += 1) {
+            permanentlyMissingRef.current.add(index);
+          }
+          setRangeMissing((count) => count + (to - from + 1));
+          advanceResidentPrefix();
         },
       },
     ).catch(() => {
@@ -788,6 +917,7 @@ export default function DicomSeriesViewer({
     resetCineBitmaps();
     cineResetPositionRef.current = null;
     rangeFrameCountRef.current = new Map();
+    rangeFrameBytesRef.current = new Map();
     activeWorkersRef.current = 0;
     cancelledRef.current = false;
     setPositions([]);
@@ -818,8 +948,9 @@ export default function DicomSeriesViewer({
         return;
       }
       for (const file of files) {
-        if (file.numberOfFrames != null && file.numberOfFrames > 1) {
-          rangeFrameCountRef.current.set(file.position, file.numberOfFrames);
+        if (file.frameIndex != null && file.frameIndex.numberOfFrames > 1) {
+          rangeFrameCountRef.current.set(file.position, file.frameIndex.numberOfFrames);
+          rangeFrameBytesRef.current.set(file.position, file.frameIndex.frameBytes);
         }
       }
       const detection = detectPhases(
@@ -935,9 +1066,16 @@ export default function DicomSeriesViewer({
 
   // Advances the current frame by elapsed time x the loop's own frame rate,
   // looping. Playback runs on wall-clock time whether or not a frame's
-  // bitmap is resident yet; the decode pump above chases it.
+  // bitmap is resident yet; the decode pump above chases it. For an
+  // angiography run (plan 12), canPlay also gates each tick: if playback
+  // has caught up with the preload, it holds on the last resident frame
+  // ("buffering…") instead of advancing past what's actually loaded — the
+  // clock is pinned at the elapsed time of that last safe frame so
+  // playback resumes smoothly, rather than jumping ahead, once the preload
+  // (which keeps running the whole time) builds its lead back up.
   useEffect(() => {
     if (!cineLoopPlaying) {
+      setBuffering(false);
       return;
     }
     const absolute = positions[sliceIndex];
@@ -948,10 +1086,25 @@ export default function DicomSeriesViewer({
     }
     const frameRate = source.frameRate;
     const frameCount = source.frameCount;
-    const start = performance.now();
+    const isRangeSource = source.kind === "range-frames";
+    let start = performance.now();
+    let lastSafeElapsed = 0;
     let raf: number;
     const tick = (now: number) => {
-      setCineFrameIndex(cineFrameAtElapsed(now - start, frameRate, frameCount));
+      const elapsed = now - start;
+      const desired = cineFrameAtElapsed(elapsed, frameRate, frameCount);
+      const resident = isRangeSource ? rangePreloadedRef.current : frameCount;
+      if (canPlay(resident, desired, frameCount)) {
+        lastSafeElapsed = elapsed;
+        setBuffering(false);
+        setCineFrameIndex(desired);
+      } else {
+        // Hold: pin the clock at the last elapsed time that was safe to
+        // show, so the next tick re-derives the same frame instead of
+        // drifting forward while nothing new has landed.
+        start = now - lastSafeElapsed;
+        setBuffering(true);
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -1018,16 +1171,21 @@ export default function DicomSeriesViewer({
   const loadedInPhase = countLoaded(positions, loadedPositionsRef.current);
   const loading = count > 0 && loadedInPhase < count;
   const single = count === 1;
-  // For an angiography run (plan 07 section D), the whole run's frames must
-  // be preloaded (rangeRawFramesRef) before Play is offered — see
-  // pumpRangePreload.
+  // For an angiography run (plan 07 section D), the whole run keeps
+  // preloading in the background (rangeRawFramesRef) — but Play unlocks
+  // progressively (plan 12), once canPlay says the first stretch of frames
+  // is resident, not only once the whole run has landed.
   const rangePreloadTotal = currentCine?.kind === "range-frames" ? currentCine.frameCount : 0;
-  const rangePreloadDone = rangePreloadTotal === 0 || rangePreloaded >= rangePreloadTotal;
+  // An ultrasound cine (plan 06) has its whole file downloaded before it
+  // ever becomes `currentCine` — no progressive residency to track, so it
+  // reads as fully resident from the start.
+  const cineResident =
+    currentCine == null ? 0 : currentCine.kind === "range-frames" ? rangePreloaded : currentCine.frameCount;
   const isCinePlayable =
     !!currentCine &&
     currentCine.frameRate != null &&
     currentCine.frameCount > 1 &&
-    rangePreloadDone;
+    canPlay(cineResident, 0, currentCine.frameCount);
   const cineFrameLabel = currentCine ? `${cineFrameIndex + 1} / ${currentCine.frameCount}` : "";
   const hasDrawnContent = current !== undefined || (currentCine !== undefined && cineDecoded > 0);
 
@@ -1138,6 +1296,14 @@ export default function DicomSeriesViewer({
                   <label className="text-sm text-foreground-muted">
                     Frame{" "}
                     <span data-testid="dicom-cine-frame-index">{cineFrameLabel}</span>
+                    {buffering && (
+                      <span
+                        className="ml-2 text-foreground-subtle"
+                        data-testid="dicom-buffering"
+                      >
+                        · buffering…
+                      </span>
+                    )}
                   </label>
                   <Button
                     type="button"

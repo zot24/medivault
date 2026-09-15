@@ -14,3 +14,13 @@ export function documentFrameUrl(
 ): string {
   return `/api/documents/${documentId}/files/${position}/frames/${frame}`;
 }
+
+/** An inclusive batch of frames of an uncompressed multi-frame file (plan 12), served as one HTTP range read. */
+export function documentFrameRangeUrl(
+  documentId: number,
+  position: number,
+  from: number,
+  to: number,
+): string {
+  return `/api/documents/${documentId}/files/${position}/frames/${from}-${to}`;
+}

@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  canPlay,
   cineFrameAtElapsed,
   cineFramesToDecode,
   countLoaded,
@@ -111,6 +112,54 @@ describe("cineFramesToDecode", () => {
 
   it("normalises a current index outside the loop", () => {
     expect(cineFramesToDecode(5, 4, 0, none)).toEqual([1]);
+  });
+});
+
+describe("canPlay", () => {
+  // Plan 12 section 1: Play unlocks once the first min(30, frameCount)
+  // frames are resident, not the whole run — and the same decision, applied
+  // to a playhead further along, is what makes playback hold at the last
+  // resident frame instead of racing past frames the preload hasn't landed
+  // yet.
+  it("is false before any frames are resident", () => {
+    expect(canPlay(0, 0, 108)).toBe(false);
+  });
+
+  it("stays false one frame short of the 30-frame threshold", () => {
+    expect(canPlay(29, 0, 108)).toBe(false);
+  });
+
+  it("unlocks once 30 frames are resident, well short of the whole 108-frame run", () => {
+    expect(canPlay(30, 0, 108)).toBe(true);
+  });
+
+  it("unlocks immediately once the whole run is resident", () => {
+    expect(canPlay(108, 0, 108)).toBe(true);
+  });
+
+  it("requires every frame resident for a run shorter than the 30-frame threshold", () => {
+    expect(canPlay(7, 0, 8)).toBe(false);
+    expect(canPlay(8, 0, 8)).toBe(true);
+  });
+
+  it("holds mid-playback when the preload's lead over the playhead has shrunk", () => {
+    // 50 resident, playhead at 45: only 5 frames of runway, short of the
+    // usual 30-frame buffer this far from the end of a 108-frame run.
+    expect(canPlay(50, 45, 108)).toBe(false);
+  });
+
+  it("keeps playing mid-run once the preload has built up a healthy lead again", () => {
+    expect(canPlay(80, 45, 108)).toBe(true);
+  });
+
+  it("only requires runway out to the end of the run, not a full 30 frames near the end", () => {
+    // 8 frames left after playhead 100 of 108; all of them resident is enough.
+    expect(canPlay(108, 100, 108)).toBe(true);
+    expect(canPlay(107, 100, 108)).toBe(false);
+  });
+
+  it("is false for a run with no frames", () => {
+    expect(canPlay(0, 0, 0)).toBe(false);
   });
 });
 
