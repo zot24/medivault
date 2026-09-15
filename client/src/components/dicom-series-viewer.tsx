@@ -1423,7 +1423,7 @@ export default function DicomSeriesViewer({
             )}
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-4 min-w-0">
             {phases && (
               <label className="flex items-center gap-2 text-sm text-foreground-muted">
                 Phase
@@ -1587,7 +1587,7 @@ export default function DicomSeriesViewer({
               // ←/→ still move between them (the onKeyDown handler above
               // treats positions the same way regardless of kind).
               <div
-                className="flex gap-2 overflow-x-auto pb-1"
+                className="flex gap-2 overflow-x-auto pb-1 min-w-0 w-full"
                 data-testid="dicom-view-strip"
               >
                 {positions.map((position, index) =>

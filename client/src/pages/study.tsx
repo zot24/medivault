@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { seriesLabel } from "@shared/dicom-meta";
-import { groupReports, studyCounts, studyLabel } from "@shared/studies";
+import { groupReports, studyCounts, studyKindCountLabel, studyLabel, studySeries } from "@shared/studies";
 import { runLabel, seriesKind, viewLabel } from "@shared/series-kind";
 import { countLabel, localDate } from "@shared/upload-kinds";
 import { useMultiFrameSummary } from "@/lib/multi-frame-summary";
@@ -387,6 +387,9 @@ export default function Study({
   const study = studies?.find(
     (candidate) => candidate.studyInstanceUid === params.studyInstanceUid,
   );
+  // Hook before the early returns below; empty when the study is not loaded yet.
+  const headerMultiFrame = useMultiFrameSummary(study ? studySeries(study) : []);
+
 
   const openViewer = (series: MedicalDocument) => {
     setViewerDocument(series);
@@ -479,7 +482,7 @@ export default function Study({
             {" · "}
             {counts.viewableCount} viewable
             {" · "}
-            {counts.fileCount === 1 ? "1 image" : `${counts.fileCount} images`}
+            {studyKindCountLabel(study, study.primaryPhases, headerMultiFrame)}
           </p>
         </div>
 
