@@ -183,6 +183,42 @@ function hasReadableContent(nodes: SrNode[]): boolean {
   );
 }
 
+/**
+ * One row of a content tree flattened for the report page's outline (plan
+ * 14): every node in depth-first order, alongside its nesting depth and
+ * whether it defaults to collapsed. Only a `CONTAINER` with children has
+ * anything to collapse — a long tree (the CT Coronary report nests one
+ * container per lesion) starts with those closed so the page doesn't dump
+ * every descendant open; every other row (a leaf, or an empty container)
+ * always renders, so it is never collapsed by default.
+ */
+export type SrOutlineRow = {
+  /** Stable and unique within one call — the node's path in the tree, e.g. "0.2.1". */
+  id: string;
+  node: SrNode;
+  depth: number;
+  collapsedByDefault: boolean;
+};
+
+export function outlineFromNodes(nodes: SrNode[]): SrOutlineRow[] {
+  const rows: SrOutlineRow[] = [];
+  walkOutline(nodes, 0, "", rows);
+  return rows;
+}
+
+function walkOutline(nodes: SrNode[], depth: number, parentId: string, out: SrOutlineRow[]) {
+  nodes.forEach((node, index) => {
+    const id = parentId ? `${parentId}.${index}` : `${index}`;
+    out.push({
+      id,
+      node,
+      depth,
+      collapsedByDefault: node.type === "CONTAINER" && node.children.length > 0,
+    });
+    walkOutline(node.children, depth + 1, id, out);
+  });
+}
+
 function sequenceItems(dataSet: DataSet | undefined, tag: string): DataSet[] {
   if (!dataSet) {
     return [];
