@@ -7,7 +7,6 @@ import type { StudySummary } from "@/lib/sdk";
 import type { MedicalDocument } from "@shared/schema";
 import Navigation from "@/components/navigation";
 import DicomSeriesViewer from "@/components/dicom-series-viewer";
-import SrReportView from "@/components/sr-report-view";
 import TypeBadge from "@/components/type-badge";
 import { useThumbnail } from "@/lib/thumbnails";
 import { thumbnailPosition } from "@/lib/study-thumbnail";
@@ -15,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { seriesLabel } from "@shared/dicom-meta";
-import { groupReports, studyCounts, studyLabel, studySeries } from "@shared/studies";
+import { groupReports, studyCounts, studyLabel } from "@shared/studies";
 import { localDate } from "@shared/upload-kinds";
 import { ArrowLeft, Eye, FileText, ScanLine } from "lucide-react";
 
@@ -143,10 +142,10 @@ function Section({
 
 function ReportsSection({
   records,
-  onView,
+  studyInstanceUid,
 }: {
   records: MedicalDocument[];
-  onView: (series: MedicalDocument) => void;
+  studyInstanceUid: string;
 }) {
   const rows = groupReports(records);
   if (rows.length === 0) {
@@ -187,16 +186,22 @@ function ReportsSection({
                 )}
               </div>
               {!nothingToShow && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => onView(row.representative)}
-                  className="border-border text-foreground hover:bg-surface-1 flex-shrink-0"
-                  data-testid={`button-view-report-${row.representative.id}`}
+                // A report opens full-page (plan 14) instead of the dialog
+                // the other sections still use — its content tree can run
+                // long, and a dialog can't scroll past its own viewport.
+                <Link
+                  href={`/studies/${encodeURIComponent(studyInstanceUid)}/reports/${row.representative.id}`}
                 >
-                  <Eye className="mr-2 h-4 w-4" />
-                  <span className="font-body">View</span>
-                </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="border-border text-foreground hover:bg-surface-1 flex-shrink-0"
+                    data-testid={`button-view-report-${row.representative.id}`}
+                  >
+                    <Eye className="mr-2 h-4 w-4" />
+                    <span className="font-body">View</span>
+                  </Button>
+                </Link>
               )}
             </div>
           );
@@ -327,7 +332,10 @@ export default function Study({
           layout="grid"
         />
         <Section title="Analysis" series={study.groups.analysis} onView={openViewer} />
-        <ReportsSection records={study.groups.report} onView={openViewer} />
+        <ReportsSection
+          records={study.groups.report}
+          studyInstanceUid={study.studyInstanceUid}
+        />
         <Section
           title="Other"
           series={[...study.groups.localizer, ...study.groups.other]}
@@ -344,21 +352,11 @@ export default function Study({
         )}
       </div>
 
-      {viewerDocument?.dicomMeta?.modality === "SR" ? (
-        <SrReportView
-          document={viewerDocument}
-          open={viewerOpen}
-          onOpenChange={setViewerOpen}
-          siblingDocuments={studySeries(study)}
-          onOpenSibling={openViewer}
-        />
-      ) : (
-        <DicomSeriesViewer
-          document={viewerDocument}
-          open={viewerOpen}
-          onOpenChange={setViewerOpen}
-        />
-      )}
+      <DicomSeriesViewer
+        document={viewerDocument}
+        open={viewerOpen}
+        onOpenChange={setViewerOpen}
+      />
     </div>
   );
 }
