@@ -1,5 +1,8 @@
 import { expect, test } from "@playwright/test";
+import fs from "fs";
+import os from "os";
 import path from "path";
+import { buildMiniCtDicom } from "../shared/mini-ct-dicom";
 
 const appBase = process.env.E2E_BASE_URL;
 const fixtures = path.resolve(import.meta.dirname, "../shared/fixtures");
@@ -343,4 +346,116 @@ test("shows 'Nothing to display' and no View button for an empty Basic Text SR",
 
   // The study header's viewable count excludes this series.
   await expect(page.getByTestId("text-study-counts")).toContainText("0 viewable");
+});
+
+test.describe("importing a folder from a hospital disc (plan 15)", () => {
+  const IMPORT_STUDY_A = "1.2.826.0.1.3680043.8.498.e2e-import.study-a";
+  const IMPORT_STUDY_B = "1.2.826.0.1.3680043.8.498.e2e-import.study-b";
+
+  /** A small two-study disc folder: a 2-slice CT volume and a 1-file echo still. */
+  function buildImportFolder(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "medivault-import-e2e-"));
+    const studyA = path.join(dir, "ST000001", "SE000007");
+    const studyB = path.join(dir, "ST000002", "SE000000");
+    fs.mkdirSync(studyA, { recursive: true });
+    fs.mkdirSync(studyB, { recursive: true });
+
+    fs.writeFileSync(
+      path.join(studyA, "CT000001"),
+      buildMiniCtDicom({
+        studyInstanceUid: IMPORT_STUDY_A,
+        seriesInstanceUid: `${IMPORT_STUDY_A}.series`,
+        modality: "CT",
+        studyDescription: "Coronary CTA",
+        seriesDescription: "DS_CorCTA 0.6 Bv40 3 BestDiast 77 %",
+        sliceThickness: 0.6,
+        instanceNumber: 1,
+      }),
+    );
+    fs.writeFileSync(
+      path.join(studyA, "CT000002"),
+      buildMiniCtDicom({
+        studyInstanceUid: IMPORT_STUDY_A,
+        seriesInstanceUid: `${IMPORT_STUDY_A}.series`,
+        modality: "CT",
+        studyDescription: "Coronary CTA",
+        seriesDescription: "DS_CorCTA 0.6 Bv40 3 BestDiast 77 %",
+        sliceThickness: 0.6,
+        instanceNumber: 2,
+      }),
+    );
+    fs.writeFileSync(
+      path.join(studyB, "US000001"),
+      buildMiniCtDicom({
+        studyInstanceUid: IMPORT_STUDY_B,
+        seriesInstanceUid: `${IMPORT_STUDY_B}.series`,
+        modality: "US",
+        studyDescription: "Echocardiogram",
+        instanceNumber: 1,
+      }),
+    );
+    return dir;
+  }
+
+  test("picks a folder, previews two studies, and shows both as study cards after import", async ({
+    page,
+  }) => {
+    await page.goto("/login");
+    await page
+      .getByTestId("input-login-email")
+      .fill(process.env.E2E_EMAIL ?? "demo@medivault.app");
+    await page
+      .getByTestId("input-login-password")
+      .fill(process.env.E2E_PASSWORD ?? "demo123");
+    await page.getByTestId("button-login-submit").click();
+    await page.waitForURL(/\/(dashboard|documents)/);
+
+    // This test's own uploads are cleaned up below; track every document id
+    // POST /api/documents hands back so nothing synthetic is left behind in
+    // the shared demo account.
+    const createdIds: number[] = [];
+    page.on("response", (response) => {
+      if (response.request().method() !== "POST" || !response.url().endsWith("/api/documents")) {
+        return;
+      }
+      response
+        .json()
+        .then((body) => {
+          if (typeof body?.id === "number") {
+            createdIds.push(body.id);
+          }
+        })
+        .catch(() => {});
+    });
+
+    const importFolder = buildImportFolder();
+
+    await page.goto("/import");
+    const chooser = page.waitForEvent("filechooser");
+    await page.getByTestId("button-choose-import-folder").click();
+    const dialog = await chooser;
+    await dialog.setFiles(importFolder);
+
+    await expect(page.getByTestId("import-preview")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId(`import-study-${IMPORT_STUDY_A}`)).toBeVisible();
+    await expect(page.getByTestId(`import-study-${IMPORT_STUDY_B}`)).toBeVisible();
+    await expect(page.getByTestId("import-totals")).toContainText("2 studies");
+
+    await page.getByTestId("button-start-import").click();
+    await page.waitForURL("**/documents", { timeout: 30_000 });
+
+    await expect(page.getByTestId(`study-card-${IMPORT_STUDY_A}`)).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId(`study-card-${IMPORT_STUDY_B}`)).toBeVisible({
+      timeout: 30_000,
+    });
+
+    fs.rmSync(importFolder, { recursive: true, force: true });
+
+    expect(createdIds.length).toBeGreaterThan(0);
+    for (const id of createdIds) {
+      await page.request.delete(`/api/documents/${id}`);
+    }
+  });
 });
