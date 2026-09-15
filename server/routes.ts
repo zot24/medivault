@@ -17,7 +17,8 @@ import {
   parseRawToken,
 } from "./share-links";
 import { insertSymptomSchema } from "@shared/schema";
-import { groupIntoStudies } from "@shared/studies";
+import { groupIntoStudies, withPrimaryPhases } from "@shared/studies";
+import { isPhaseCandidate, phaseInfoFromFiles } from "@shared/phases";
 import { z } from "zod";
 
 /** multer.diskStorage puts every field's files on disk (plan 07) — never a Buffer. */
@@ -139,7 +140,23 @@ export async function registerRoutes(app: Express): Promise<void> {
     try {
       const userId = req.user.id;
       const documents = await storage.getMedicalDocuments(userId);
-      res.json(groupIntoStudies(documents));
+      const studies = groupIntoStudies(documents);
+      // Phase detection needs per-file positions; do it here, once, for the
+      // few primary volumes that can be multi-phase, instead of every list
+      // in the client fetching a 5,800-row file list per study.
+      const candidateIds = studies
+        .map((study) => study.primary)
+        .filter((p): p is NonNullable<typeof p> => !!p && isPhaseCandidate(p.dicomMeta, p.fileCount))
+        .map((p) => p.id);
+      const rows = await storage.listPhaseSourceFiles(candidateIds);
+      const byDocument = new Map<number, typeof rows>();
+      for (const row of rows) {
+        (byDocument.get(row.documentId) ?? byDocument.set(row.documentId, []).get(row.documentId)!).push(row);
+      }
+      const phasesById = new Map(
+        Array.from(byDocument.entries(), ([id, files]) => [id, phaseInfoFromFiles(files)] as const),
+      );
+      res.json(withPrimaryPhases(studies, phasesById));
     } catch (error) {
       console.error("Error fetching studies:", error);
       res.status(500).json({ message: "Failed to fetch studies" });

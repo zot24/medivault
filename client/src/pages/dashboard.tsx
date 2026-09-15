@@ -35,7 +35,6 @@ import type { MedicalDocument, Symptom } from "@shared/schema";
 import DicomSeriesViewer from "@/components/dicom-series-viewer";
 import { ownedFileUrl } from "@/lib/owned-file";
 import { isDicomDocument, localDate } from "@shared/upload-kinds";
-import { isPhaseCandidate, usePhaseDetectionMap } from "@/lib/phase-detection";
 import {
   documentItemDate,
   documentItemKey,
@@ -59,8 +58,8 @@ function itemLabel(item: DocumentItem): string {
 /**
  * Plan 13: word a study's file count for what its dominant modality's files
  * actually are — "774 slices" for a CT study, "56 views" for an echo study,
- * "3 runs" for a cath study, "10 phases × 580 slices" once `phase` (from
- * usePhaseDetectionMap below) confirms a detected cardiac cycle — instead
+ * "3 runs" for a cath study, "10 phases × 580 slices" when the server's
+ * phase summary (StudySummary.primaryPhases) confirms a cardiac cycle — instead
  * of the always-generic "N images".
  */
 function studySummaryLine(study: StudySummary, phase: StudyPhaseInfo | null): string {
@@ -70,11 +69,9 @@ function studySummaryLine(study: StudySummary, phase: StudyPhaseInfo | null): st
   ].join(" · ");
 }
 
-function itemSubtitle(item: DocumentItem, phasesById: Map<number, StudyPhaseInfo> | null): string {
+function itemSubtitle(item: DocumentItem): string {
   if (item.kind === "study") {
-    const primaryId = item.study.primary?.id;
-    const phase = primaryId != null ? phasesById?.get(primaryId) ?? null : null;
-    return studySummaryLine(item.study, phase);
+    return studySummaryLine(item.study, item.study.primaryPhases);
   }
   return item.record.doctorName || item.record.facilityName || "Medical document";
 }
@@ -207,25 +204,6 @@ export default function Dashboard() {
     [allDocuments],
   );
 
-  // Plan 13: which studies' file-count line can read "N phases × M slices"
-  // — a study's primary series (its CT/MR volume, if it has one) that
-  // detectPhases (shared/phases.ts) might find a cardiac cycle in. Batched
-  // into one usePhaseDetectionMap call so the dashboard's several studies
-  // cost one query, not one per row.
-  const phaseCandidates = React.useMemo(
-    () =>
-      documentItems
-        .filter((item): item is Extract<DocumentItem, { kind: "study" }> => item.kind === "study")
-        .map((item) => item.study.primary)
-        .filter(
-          (primary): primary is MedicalDocument =>
-            primary != null &&
-            primary.dicomMeta != null &&
-            isPhaseCandidate(primary.dicomMeta, primary.fileCount),
-        ),
-    [documentItems],
-  );
-  const phasesById = usePhaseDetectionMap(phaseCandidates);
 
   const recentItems = React.useMemo(() => documentItems.slice(0, 5), [documentItems]);
 
@@ -257,7 +235,7 @@ export default function Dashboard() {
         id: documentItemKey(item),
         type: 'document',
         title: itemLabel(item),
-        subtitle: itemSubtitle(item, phasesById),
+        subtitle: itemSubtitle(item),
         // A study is dated by the scan, not by the day it was uploaded.
         date:
           item.kind === 'study'
@@ -285,7 +263,7 @@ export default function Dashboard() {
     return activities
       .sort((a, b) => b.date.getTime() - a.date.getTime())
       .slice(0, 8);
-  }, [documentItems, symptoms, phasesById]);
+  }, [documentItems, symptoms]);
 
   const symptomStats = React.useMemo(() => {
     if (!symptoms || symptoms.length === 0) return null;
@@ -639,7 +617,7 @@ export default function Dashboard() {
                           <h5 className="font-medium text-foreground mb-1 font-body truncate">{itemLabel(item)}</h5>
                           <p className="text-sm text-foreground-muted font-body truncate">
                             {item.kind === 'study'
-                              ? `${itemSubtitle(item, phasesById)} • `
+                              ? `${itemSubtitle(item)} • `
                               : item.record.doctorName
                                 ? `${item.record.doctorName} • `
                                 : ''}

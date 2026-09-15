@@ -81,6 +81,8 @@ export interface StudySummary {
   totalBytes: number;
   primary: MedicalDocument | null;
   groups: Record<SeriesGroup, MedicalDocument[]>;
+  /** Server-computed: whether the primary volume is multi-phase and how many slices one phase holds. */
+  primaryPhases: { hasPhases: boolean; sliceCount: number } | null;
 }
 
 /**

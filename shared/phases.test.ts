@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectPhases, type PhaseDetectionResult, type PhaseSourceFile } from "./phases";
+import { detectPhases, type PhaseDetectionResult, type PhaseSourceFile, phaseInfoFromFiles, isPhaseCandidate } from "./phases";
 
 function file(overrides: Partial<PhaseSourceFile> & Pick<PhaseSourceFile, "position">): PhaseSourceFile {
   return {
@@ -241,5 +241,27 @@ describe("detectPhases", () => {
 
     const result = detectPhases(files);
     expect(result).toBeNull();
+  });
+});
+
+describe("phaseInfoFromFiles / isPhaseCandidate", () => {
+  it("summarises a phase-major series as phases × slices per phase", () => {
+    const files = Array.from({ length: 30 }, (_, i) => ({
+      position: i, instanceNumber: i + 1, sliceLocation: -100 - (i % 3) * 5, phase: null,
+    }));
+    expect(phaseInfoFromFiles(files)).toEqual({ hasPhases: true, sliceCount: 3 });
+  });
+
+  it("reports no phases for a plain volume", () => {
+    const files = Array.from({ length: 5 }, (_, i) => ({ position: i, instanceNumber: i + 1, sliceLocation: -100 - i, phase: null }));
+    expect(phaseInfoFromFiles(files)).toEqual({ hasPhases: false, sliceCount: 0 });
+  });
+
+  it("only multi-file CT/MR records are candidates", () => {
+    expect(isPhaseCandidate({ modality: "CT" }, 2)).toBe(true);
+    expect(isPhaseCandidate({ modality: "MR" }, 10)).toBe(true);
+    expect(isPhaseCandidate({ modality: "CT" }, 1)).toBe(false);
+    expect(isPhaseCandidate({ modality: "US" }, 56)).toBe(false);
+    expect(isPhaseCandidate(null, 5)).toBe(false);
   });
 });

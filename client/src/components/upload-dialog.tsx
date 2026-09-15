@@ -43,7 +43,8 @@ import {
   isHeavyUpload,
 } from "@shared/upload-kinds";
 import { seriesKind } from "@shared/series-kind";
-import { detectPhasesFor, isPhaseCandidate } from "@/lib/phase-detection";
+import { detectPhasesFor } from "@/lib/phase-detection";
+import { isPhaseCandidate } from "@shared/phases";
 import { viewabilityFromMeta } from "@shared/viewability";
 import type { MedicalDocument } from "@shared/schema";
 

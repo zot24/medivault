@@ -129,3 +129,28 @@ function orderWithinPhase(group: PhaseSourceFile[]): number[] {
     })
     .map((file) => file.position);
 }
+
+/**
+ * Only a multi-file CT/MR record can hold a cardiac cycle for `detectPhases`
+ * to find; everything else is "no phases" without reading a single file.
+ */
+export function isPhaseCandidate(
+  meta: { modality: string } | null | undefined,
+  fileCount: number,
+): boolean {
+  return !!meta && (meta.modality === "CT" || meta.modality === "MR") && fileCount > 1;
+}
+
+/** What a list needs to word a record's count as "10 phases × 580 slices". */
+export type StudyPhaseInfo = { hasPhases: boolean; sliceCount: number };
+
+export const NO_PHASES: StudyPhaseInfo = { hasPhases: false, sliceCount: 0 };
+
+export function phaseInfoFromFiles(files: PhaseSourceFile[]): StudyPhaseInfo {
+  const detection = detectPhases(files);
+  if (!detection) {
+    return NO_PHASES;
+  }
+  // detectPhases only returns an even split, so this is a whole number.
+  return { hasPhases: true, sliceCount: files.length / detection.phases.length };
+}

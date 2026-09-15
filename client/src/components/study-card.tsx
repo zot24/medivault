@@ -9,7 +9,6 @@ import { thumbnailPosition } from "@/lib/study-thumbnail";
 import { studyKindCountLabel, studyLabel, studySeries } from "@shared/studies";
 import { localDate } from "@shared/upload-kinds";
 import { useMultiFrameSummary } from "@/lib/multi-frame-summary";
-import { isPhaseCandidate, usePhaseDetection } from "@/lib/phase-detection";
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024 * 1024) {
@@ -42,11 +41,7 @@ export default function StudyCard({ study }: StudyCardProps) {
   // subset useMultiFrameSummary sums, or one series' fileCount alone — see
   // studyKindCountLabel.
   const multiFrame = useMultiFrameSummary(studySeries(study));
-  const phaseCandidate =
-    study.primary?.dicomMeta != null &&
-    isPhaseCandidate(study.primary.dicomMeta, study.primary.fileCount);
-  const phase = usePhaseDetection(study.primary?.id ?? -1, phaseCandidate);
-  const fileCountLabel = studyKindCountLabel(study, phase, multiFrame);
+  const fileCountLabel = studyKindCountLabel(study, study.primaryPhases, multiFrame);
 
   return (
     <Card

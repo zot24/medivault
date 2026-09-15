@@ -3,6 +3,7 @@ import { seriesGroup, seriesLabel, type SeriesGroup } from "./dicom-meta";
 import { seriesKind } from "./series-kind";
 import { countLabel, localDate } from "./upload-kinds";
 import { viewabilityFromMeta, type Viewability } from "./viewability";
+import type { StudyPhaseInfo } from "./phases";
 
 export type StudySummary = {
   studyInstanceUid: string;
@@ -14,6 +15,12 @@ export type StudySummary = {
   totalBytes: number;
   primary: MedicalDocument | null;
   groups: Record<SeriesGroup, MedicalDocument[]>;
+  /**
+   * Whether the primary volume is multi-phase, decided once on the server
+   * (GET /api/studies) from its per-file positions — lists never fetch a
+   * record's files just to word a count.
+   */
+  primaryPhases: StudyPhaseInfo | null;
 };
 
 function emptyGroups(): Record<SeriesGroup, MedicalDocument[]> {
@@ -90,6 +97,7 @@ function summarize(
     fileCount,
     totalBytes,
     primary: primarySeries(series),
+    primaryPhases: null,
     groups,
   };
 }
@@ -368,8 +376,18 @@ export function studyFileCountLabel(
   return recordFileCountLabel(study.fileCount, multiFrame?.totalFrames ?? null);
 }
 
-/** What client/src/lib/phase-detection.ts's usePhaseDetection/usePhaseDetectionMap resolve to. */
-export type StudyPhaseInfo = { hasPhases: boolean; sliceCount: number };
+export type { StudyPhaseInfo } from "./phases";
+
+/** Attaches server-computed phase info to the studies whose primary it was computed for. */
+export function withPrimaryPhases(
+  studies: StudySummary[],
+  phasesByDocumentId: ReadonlyMap<number, StudyPhaseInfo>,
+): StudySummary[] {
+  return studies.map((study) => ({
+    ...study,
+    primaryPhases: study.primary ? phasesByDocumentId.get(study.primary.id) ?? null : null,
+  }));
+}
 
 /**
  * Plan 13: the study card / Dashboard's file-count line, worded for what

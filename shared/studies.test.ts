@@ -17,6 +17,7 @@ import {
   studyFileCountLabel,
   studyKindCountLabel,
   studyLabel,
+  withPrimaryPhases,
 } from "./studies";
 
 const BASIC_TEXT_SR = "1.2.840.10008.5.1.4.1.1.88.11";
@@ -854,5 +855,17 @@ describe("documentIdsForItems", () => {
     const items = listDocumentItems(series);
 
     expect(documentIdsForItems([...items, ...items])).toEqual(series.map((s) => s.id));
+  });
+});
+
+describe("withPrimaryPhases", () => {
+  it("attaches server-computed phase info to the study whose primary it belongs to", () => {
+    const volume = record({ dicomMeta: { studyInstanceUid: "s1", modality: "CT" }, fileCount: 30 });
+    const study = groupIntoStudies([volume])[0];
+    expect(study.primaryPhases).toBeNull();
+    const [withPhases] = withPrimaryPhases([study], new Map([[volume.id, { hasPhases: true, sliceCount: 3 }]]));
+    expect(withPhases.primaryPhases).toEqual({ hasPhases: true, sliceCount: 3 });
+    const [untouched] = withPrimaryPhases([study], new Map());
+    expect(untouched.primaryPhases).toBeNull();
   });
 });

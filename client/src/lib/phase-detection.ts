@@ -3,20 +3,7 @@ import { detectPhases, type PhaseSourceFile } from "@shared/phases";
 import type { DicomSeriesMeta } from "@shared/dicom-meta";
 import type { StudyPhaseInfo } from "@shared/studies";
 
-/**
- * Only a multi-file CT/MR record can have anything for `detectPhases`
- * (shared/phases.ts) to find — every other modality, or a single-file
- * record, always resolves to "no phases" without a fetch. Callers use this
- * to decide whether `usePhaseDetection`/`usePhaseDetectionMap` below are
- * worth calling at all, same as `isMultiFrameRecord` gates
- * `useMultiFrameSummary` for XA.
- */
-export function isPhaseCandidate(
-  meta: Pick<DicomSeriesMeta, "modality">,
-  fileCount: number,
-): boolean {
-  return (meta.modality === "CT" || meta.modality === "MR") && fileCount > 1;
-}
+export { isPhaseCandidate } from "@shared/phases";
 
 const NO_PHASES: StudyPhaseInfo = { hasPhases: false, sliceCount: 0 };
 
@@ -48,45 +35,15 @@ async function detectPhasesOf(documentId: number): Promise<StudyPhaseInfo> {
 }
 
 /**
- * Whether `documentId` (a CT/MR record with more than one file — see
- * `isPhaseCandidate`) is actually multi-phase, and how many slices make up
- * one phase — what `shared/series-kind.ts`'s `hasPhases` and
- * `shared/upload-kinds.ts` `countLabel`'s `frames` need to word a record's
- * count as "10 phases × 580 slices" instead of the plain "5800 slices" it
- * reads as without this (plan 13). One GET .../files, only while `enabled`;
- * null until it answers, so callers keep their plain wording until then.
+ * Whether one record is multi-phase — for the study page's volume rows,
+ * where the files of the open study are the only ones ever fetched. Lists
+ * of many studies use the server's StudySummary.primaryPhases instead.
  */
 export function usePhaseDetection(documentId: number, enabled: boolean): StudyPhaseInfo | null {
   const { data } = useQuery({
     queryKey: ["phase-detection", documentId],
     queryFn: () => detectPhasesOf(documentId),
     enabled,
-  });
-  return data ?? null;
-}
-
-/**
- * Batched form of `usePhaseDetection` for a list of candidates (Dashboard's
- * recent items, one per study's primary series) — one GET .../files per
- * candidate, all under one query, so a page with several matches only
- * re-renders once every answer is back, same batching
- * `useMultiFrameSummary` does for XA's totalFrames.
- */
-export function usePhaseDetectionMap(
-  candidates: { id: number }[],
-): Map<number, StudyPhaseInfo> | null {
-  const ids = candidates.map((candidate) => candidate.id);
-  const { data } = useQuery({
-    queryKey: ["phase-detection-map", ids],
-    queryFn: async () => {
-      const entries = await Promise.all(
-        candidates.map(
-          async (candidate) => [candidate.id, await detectPhasesOf(candidate.id)] as const,
-        ),
-      );
-      return new Map(entries);
-    },
-    enabled: ids.length > 0,
   });
   return data ?? null;
 }

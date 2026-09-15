@@ -73,22 +73,22 @@ describe("viewLabel", () => {
 });
 
 describe("runLabel", () => {
-  it("reads projection angles when both are present", () => {
+  it("reads projection angles per DICOM: positive primary is LAO, positive secondary is CRA", () => {
     expect(
       runLabel(
         { positionerPrimaryAngle: 30, positionerSecondaryAngle: 20, numberOfFrames: 92 },
         2,
       ),
-    ).toBe("RAO 30° / CRA 20°");
+    ).toBe("LAO 30° / CRA 20°");
   });
 
-  it("reads negative angles as the opposite side", () => {
+  it("reads negative angles as RAO / CAU", () => {
     expect(
       runLabel(
         { positionerPrimaryAngle: -30, positionerSecondaryAngle: -20, numberOfFrames: 92 },
         1,
       ),
-    ).toBe("LAO 30° / CAU 20°");
+    ).toBe("RAO 30° / CAU 20°");
   });
 
   it("falls back to the run number and frame count when no angle is present", () => {
