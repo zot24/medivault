@@ -344,3 +344,85 @@ test("shows 'Nothing to display' and no View button for an empty Basic Text SR",
   // The study header's viewable count excludes this series.
   await expect(page.getByTestId("text-study-counts")).toContainText("0 viewable");
 });
+
+// mini-sr-report.dcm + mini-sr-report-snapshot.dcm: a synthetic Comprehensive
+// SR whose one lesion's IMAGE content item references the snapshot file's
+// SOP instance UID (plan 14) — mirrors the reference disc's CT Coronary
+// report, which pairs a lesion TEXT identifier, NUM measurement, and IMAGE
+// evidence snapshot as siblings inside one container.
+const SR_REPORT_STUDY_UID = "1.2.826.0.1.3680043.8.498.study.sr-report";
+
+test("opens a readable SR report on its own page with the measurements table and outline", async ({
+  page,
+}) => {
+  await page.goto("/login");
+  await page
+    .getByTestId("input-login-email")
+    .fill(process.env.E2E_EMAIL ?? "demo@medivault.app");
+  await page
+    .getByTestId("input-login-password")
+    .fill(process.env.E2E_PASSWORD ?? "demo123");
+  await page.getByTestId("button-login-submit").click();
+  await page.waitForURL(/\/(dashboard|documents)/);
+
+  // Uploaded as two separate documents (not one multi-file upload) so the
+  // SR's IMAGE reference resolves to a genuine sibling record's file list,
+  // the same cross-document lookup the reference disc needs (the report
+  // and its evidence snapshots are always separate DICOM objects there).
+  await page.goto("/documents");
+  for (const [title, fixture] of [
+    ["Synthetic CT Coronary report", "mini-sr-report.dcm"],
+    ["Synthetic CT Coronary snapshot", "mini-sr-report-snapshot.dcm"],
+  ] as const) {
+    await page.getByTestId("button-upload-document").click();
+    await page.getByTestId("input-upload-title").fill(title);
+    await page.getByTestId("input-upload-date").fill("2026-09-12");
+    const chooser = page.waitForEvent("filechooser");
+    await page.getByTestId("button-choose-upload-files").click();
+    const dialog = await chooser;
+    await dialog.setFiles([path.join(fixtures, fixture)]);
+    const uploaded = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/documents") && response.request().method() === "POST",
+    );
+    await page.getByTestId("button-upload-submit").click();
+    await uploaded;
+  }
+  // See the multi-phase test above: the studies query needs a reload to
+  // pick up freshly uploaded series.
+  await page.reload();
+
+  const studyCard = page.getByTestId(`study-card-${SR_REPORT_STUDY_UID}`);
+  await expect(studyCard).toBeVisible({ timeout: 30_000 });
+  await studyCard.getByTestId(`button-open-study-${SR_REPORT_STUDY_UID}`).click();
+
+  await page.waitForURL(`**/studies/${encodeURIComponent(SR_REPORT_STUDY_UID)}`);
+  await expect(page.getByTestId("study-page")).toBeVisible();
+
+  // "View" on a report navigates to its own page instead of opening a
+  // dialog (plan 14).
+  const reportRow = page.locator('[data-testid^="report-row-"]').first();
+  await expect(reportRow).toBeVisible();
+  await reportRow.locator('[data-testid^="button-view-report-"]').click();
+
+  await page.waitForURL(/\/reports\//);
+  await expect(page.getByTestId("report-page")).toBeVisible();
+  await expect(page.getByTestId("text-report-title")).toHaveText("CT Coronary");
+
+  const table = page.getByTestId("sr-measurements-table");
+  await expect(table).toBeVisible();
+  await expect(table).toContainText("Mid LAD, 40% stenosis");
+  await expect(table).toContainText("40 %");
+  // The measurement's evidence snapshot resolves to its sibling record and
+  // shows as a thumbnail in the table's Snapshot column.
+  await expect(page.locator('[data-testid^="sr-measurement-snapshot-"]')).toBeVisible();
+
+  await expect(page.getByTestId("report-outline-heading")).toHaveText(
+    "Everything in this report",
+  );
+  await expect(page.getByTestId("report-outline")).toBeVisible();
+  // The container is collapsed by default; a sibling TEXT item outside it
+  // stays visible either way.
+  await expect(page.locator('[data-testid^="report-outline-toggle-"]')).toBeVisible();
+  await expect(page.getByText("No significant stenosis elsewhere.")).toBeVisible();
+});
