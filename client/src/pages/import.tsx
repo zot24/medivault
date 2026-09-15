@@ -444,8 +444,7 @@ export default function Import() {
             Point at the folder from a hospital CD and get one card per study. Index files
             (<code className="font-mono">DICOMDIR</code>, the bundled viewer, autorun) are
             skipped automatically — only the <code className="font-mono">ST…/SE…</code> image
-            folders matter. Structured reports, ultrasound cine loops, and angiography runs
-            upload fine but do not draw in the viewer yet.
+            folders matter. Written reports with no content are kept but marked as having nothing to display.
           </p>
         </div>
 
