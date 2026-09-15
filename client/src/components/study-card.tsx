@@ -6,7 +6,7 @@ import { ChevronRight, Layers, ScanLine } from "lucide-react";
 import type { StudySummary } from "@/lib/sdk";
 import { useThumbnail } from "@/lib/thumbnails";
 import { thumbnailPosition } from "@/lib/study-thumbnail";
-import { studyLabel, studySeries, recordFileCountLabel } from "@shared/studies";
+import { studyLabel, studySeries, studyFileCountLabel } from "@shared/studies";
 import { localDate } from "@shared/upload-kinds";
 import { useMultiFrameSummary } from "@/lib/multi-frame-summary";
 
@@ -34,10 +34,11 @@ export default function StudyCard({ study }: StudyCardProps) {
   );
   // Plan 12: same wording as a series row — "3 runs · 298 frames" instead
   // of "3 images" when the study is (or contains) an angiography record.
+  // The file *count* always comes from study.fileCount (every series in
+  // the study), never from the XA-only subset useMultiFrameSummary sums —
+  // see studyFileCountLabel.
   const multiFrame = useMultiFrameSummary(studySeries(study));
-  const fileCountLabel = multiFrame
-    ? recordFileCountLabel(multiFrame.fileCount, multiFrame.totalFrames)
-    : recordFileCountLabel(study.fileCount, null);
+  const fileCountLabel = studyFileCountLabel(study, multiFrame);
 
   return (
     <Card

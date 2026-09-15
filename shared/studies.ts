@@ -350,6 +350,23 @@ export function studySeries(study: StudySummary): MedicalDocument[] {
   return GROUP_ORDER.flatMap((group) => study.groups[group]);
 }
 
+/**
+ * The study card's "N series · <label> · size" file-count segment. Always
+ * reports the study's true total file count (`study.fileCount`, every
+ * series included) — never a subset. `multiFrame` (from
+ * `useMultiFrameSummary`, which only sums the XA multi-frame series among a
+ * study's records) contributes its `totalFrames` when present; its own
+ * `fileCount` — a sum over just the XA candidates — must never stand in for
+ * the study's total, or a study that mixes an angiography run with other
+ * series silently loses those other files from the displayed count.
+ */
+export function studyFileCountLabel(
+  study: StudySummary,
+  multiFrame: { totalFrames: number } | null,
+): string {
+  return recordFileCountLabel(study.fileCount, multiFrame?.totalFrames ?? null);
+}
+
 export type StudyCounts = {
   seriesCount: number;
   /** Series whose viewability is "images" or "report" — has a View button. */
