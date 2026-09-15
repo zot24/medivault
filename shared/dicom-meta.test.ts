@@ -207,6 +207,62 @@ describe("readFileMeta", () => {
   it("returns null for bytes that are not a Part 10 file", () => {
     expect(readFileMeta(new Uint8Array([1, 2, 3, 4]))).toBeNull();
   });
+
+  // Plan 13 (multi-view navigation): per-file header fields a view/run label
+  // needs — see shared/series-kind.ts.
+  it("reads this file's own ImageType", () => {
+    const bytes = buildMiniCtDicom({ imageType: ["DERIVED", "SECONDARY", "M-MODE"] });
+    expect(readFileMeta(new Uint8Array(bytes))?.imageType).toEqual([
+      "DERIVED",
+      "SECONDARY",
+      "M-MODE",
+    ]);
+  });
+
+  it("reads PositionerPrimaryAngle and PositionerSecondaryAngle", () => {
+    const bytes = buildMiniCtDicom({
+      positionerPrimaryAngle: 30,
+      positionerSecondaryAngle: -20,
+    });
+    expect(readFileMeta(new Uint8Array(bytes))).toMatchObject({
+      positionerPrimaryAngle: 30,
+      positionerSecondaryAngle: -20,
+    });
+  });
+
+  it("is null for positioner angles when the file carries none", () => {
+    const bytes = buildMiniCtDicom();
+    expect(readFileMeta(new Uint8Array(bytes))).toMatchObject({
+      positionerPrimaryAngle: null,
+      positionerSecondaryAngle: null,
+    });
+  });
+
+  it("reads SequenceOfUltrasoundRegions' RegionDataType values, in item order", () => {
+    const bytes = buildMiniCtDicom({ usRegionDataTypes: [1, 2, 3] });
+    expect(readFileMeta(new Uint8Array(bytes))?.usRegionDataTypes).toEqual([1, 2, 3]);
+  });
+
+  it("is an empty list for usRegionDataTypes when the file carries no region sequence", () => {
+    const bytes = buildMiniCtDicom();
+    expect(readFileMeta(new Uint8Array(bytes))?.usRegionDataTypes).toEqual([]);
+  });
+
+  it("reads this file's own numberOfFrames and frameRate", () => {
+    const bytes = buildMiniCtDicom({ frames: 12, bitsAllocated: 8, cineRate: 7 });
+    expect(readFileMeta(new Uint8Array(bytes))).toMatchObject({
+      numberOfFrames: 12,
+      frameRate: 7,
+    });
+  });
+
+  it("defaults numberOfFrames to 1 and frameRate to null for a plain single-frame file", () => {
+    const bytes = buildMiniCtDicom();
+    expect(readFileMeta(new Uint8Array(bytes))).toMatchObject({
+      numberOfFrames: 1,
+      frameRate: null,
+    });
+  });
 });
 
 describe("readFileMeta frameIndex", () => {

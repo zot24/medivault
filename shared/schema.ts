@@ -94,6 +94,15 @@ export const documentFiles = pgTable(
     // (server/routes.ts) serve one frame as an HTTP range read instead of
     // decoding or holding the whole file.
     frameIndex: jsonb("frame_index").$type<DicomFrameIndex | null>(),
+    // Plan 13 (multi-view navigation): this file's own header fields, needed
+    // to label one *view* of a multi-file ultrasound record or one *run* of
+    // a multi-file angiography record — see shared/series-kind.ts.
+    imageType: text("image_type").array(), // (0008,0008)
+    positionerPrimaryAngle: real("positioner_primary_angle"), // (0018,1510)
+    positionerSecondaryAngle: real("positioner_secondary_angle"), // (0018,1511)
+    usRegionDataTypes: integer("us_region_data_types").array(), // (0018,6011) items' (0018,6014)
+    numberOfFrames: integer("number_of_frames"), // (0028,0008), this file's own — not the record's dicomMeta.numberOfFrames (first file only)
+    frameRate: real("frame_rate"), // CineRate (0018,0040) fps, else 1000 / FrameTime (0018,1063)
     createdAt: timestamp("created_at").defaultNow(),
   },
   (table) => [

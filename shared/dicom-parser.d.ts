@@ -11,6 +11,8 @@ declare module "dicom-parser" {
     encapsulatedPixelData?: boolean;
     basicOffsetTable?: number[];
     fragments?: Fragment[];
+    /** Present for a Sequence (SQ) element: one entry per item, each with its own nested DataSet (undefined for an item dicom-parser couldn't parse). */
+    items?: { dataSet?: DataSet }[];
   };
 
   export type DataSet = {

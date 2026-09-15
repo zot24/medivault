@@ -142,6 +142,16 @@ export type MiniCtOptions = {
   sliceThickness?: number | string;
   /** (0008,0008) values, joined with backslash as DICOM stores them. */
   imageType?: string[];
+  /** (0018,1510) PositionerPrimaryAngle, degrees (plan 13 angiography run labels). */
+  positionerPrimaryAngle?: number | string;
+  /** (0018,1511) PositionerSecondaryAngle, degrees. */
+  positionerSecondaryAngle?: number | string;
+  /**
+   * (0018,6011) SequenceOfUltrasoundRegions, one item per value with only
+   * (0018,6014) RegionDataType set — enough for `viewLabel` (plan 13) to
+   * tell a colour Doppler region (2 or 3) from a plain 2-D one.
+   */
+  usRegionDataTypes?: number[];
   /** (0020,0032) ImagePositionPatient: x\\y\\z. Only the third (z) value is used today. */
   imagePositionPatient?: [number, number, number];
   /** (0020,1041) SliceLocation, used only when imagePositionPatient is absent. */
@@ -279,6 +289,22 @@ export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
     ...(options.nominalCardiacPhase != null
       ? [explicitElement(0x0020, 0x9241, "DS", ds(options.nominalCardiacPhase))]
       : []),
+    ...(options.positionerPrimaryAngle != null
+      ? [explicitElement(0x0018, 0x1510, "DS", ds(options.positionerPrimaryAngle))]
+      : []),
+    ...(options.positionerSecondaryAngle != null
+      ? [explicitElement(0x0018, 0x1511, "DS", ds(options.positionerSecondaryAngle))]
+      : []),
+    ...(options.usRegionDataTypes
+      ? [
+          explicitElement(
+            0x0018,
+            0x6011,
+            "SQ",
+            Buffer.concat(options.usRegionDataTypes.map(usRegionItem)),
+          ),
+        ]
+      : []),
     explicitElement(0x0028, 0x0002, "US", us(samplesPerPixel)),
     explicitElement(0x0028, 0x0004, "CS", cs(photometric)),
     ...(options.frames != null
@@ -354,6 +380,16 @@ function packOverlayBits(pixels: Uint8Array): Buffer {
     }
   }
   return padEven(packed);
+}
+
+/**
+ * One item of (0018,6011) SequenceOfUltrasoundRegions, carrying only
+ * (0018,6014) RegionDataType — the one sub-field `viewLabel` (plan 13)
+ * needs to tell a colour Doppler region apart from a plain 2-D one.
+ */
+function usRegionItem(regionDataType: number): Buffer {
+  const content = explicitElement(0x0018, 0x6014, "US", us(regionDataType));
+  return Buffer.concat([tag(0xfffe, 0xe000), u32(content.length), content]);
 }
 
 function encapsulatedPixelData(fragment: Buffer): Buffer {
