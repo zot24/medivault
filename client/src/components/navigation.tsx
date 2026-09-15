@@ -9,7 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Shield, FileText, LayoutDashboard, LogOut, Settings, User, Activity, Sun, Moon } from "lucide-react";
+import { Shield, FileText, FolderOpen, LayoutDashboard, LogOut, Settings, User, Activity, Sun, Moon } from "lucide-react";
 
 export default function Navigation() {
   const [location] = useLocation();
@@ -23,6 +23,7 @@ export default function Navigation() {
   const navItems = [
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/documents", label: "Documents", icon: FileText },
+    { href: "/import", label: "Import a disc", icon: FolderOpen },
     { href: "/symptoms", label: "Symptoms", icon: Activity },
   ];
 

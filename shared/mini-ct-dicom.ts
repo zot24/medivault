@@ -60,6 +60,10 @@ function is(value: number): Buffer {
   return padEven(Buffer.from(String(value), "ascii"));
 }
 
+function da(value: string): Buffer {
+  return padEven(Buffer.from(value, "ascii"));
+}
+
 function ds(value: number | string): Buffer {
   return padEven(Buffer.from(String(value), "ascii"));
 }
@@ -130,7 +134,10 @@ export type MiniCtOptions = {
   studyInstanceUid?: string;
   seriesInstanceUid?: string;
   modality?: string;
+  studyDescription?: string;
   seriesDescription?: string;
+  /** StudyDate (0008,0020) as written to the file, e.g. "20260214". */
+  studyDate?: string;
   /** Number for a real value; a raw string (e.g. "" or "  ") to test a blank DS element. */
   sliceThickness?: number | string;
   /** (0008,0008) values, joined with backslash as DICOM stores them. */
@@ -232,6 +239,9 @@ export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
     explicitElement(0x0008, 0x0016, "UI", ui(sopClass)),
     explicitElement(0x0008, 0x0018, "UI", ui(sopInstance)),
     explicitElement(0x0008, 0x0060, "CS", cs(modality)),
+    ...(options.studyDescription
+      ? [explicitElement(0x0008, 0x1030, "LO", cs(options.studyDescription))]
+      : []),
     ...(options.seriesDescription
       ? [explicitElement(0x0008, 0x103e, "LO", cs(options.seriesDescription))]
       : []),
@@ -246,6 +256,9 @@ export function buildMiniCtDicom(options: MiniCtOptions = {}): Buffer {
       : []),
     ...(options.frameTime != null
       ? [explicitElement(0x0018, 0x1063, "DS", ds(options.frameTime))]
+      : []),
+    ...(options.studyDate
+      ? [explicitElement(0x0008, 0x0020, "DA", da(options.studyDate))]
       : []),
     explicitElement(0x0020, 0x000d, "UI", ui(studyInstanceUid)),
     explicitElement(0x0020, 0x000e, "UI", ui(seriesInstanceUid)),
@@ -788,6 +801,8 @@ export type MiniSrOptions = {
   studyInstanceUid?: string;
   seriesInstanceUid?: string;
   instanceNumber?: number;
+  /** StudyDate (0008,0020) as written to the file, e.g. "20260214". */
+  studyDate?: string;
 };
 
 /** Wraps one item's dataset bytes with the (FFFE,E000) item tag and a defined length. */
@@ -874,6 +889,9 @@ export function buildMiniSr(options: MiniSrOptions): Buffer {
     explicitElement(0x0008, 0x0016, "UI", ui(sopClass)),
     explicitElement(0x0008, 0x0018, "UI", ui(sopInstance)),
     explicitElement(0x0008, 0x0060, "CS", cs("SR")),
+    ...(options.studyDate
+      ? [explicitElement(0x0008, 0x0020, "DA", da(options.studyDate))]
+      : []),
     explicitElement(0x0020, 0x000d, "UI", ui(studyInstanceUid)),
     explicitElement(0x0020, 0x000e, "UI", ui(seriesInstanceUid)),
     explicitElement(0x0020, 0x0013, "IS", is(instanceNumber)),

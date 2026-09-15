@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -419,36 +420,15 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
                     Drop your files here, or click to browse
                   </p>
                   <p className="text-sm text-gray-500 mb-4">
-                    PDF, JPEG, PNG, or DICOM. 50MB per file. Select all slices of one DICOM
-                    series and they become one scrollable document.
+                    PDF, JPEG, PNG, or a single DICOM file. 50MB per file.
                   </p>
-                  <details className="text-left text-sm text-gray-600 mb-4 mx-auto max-w-md">
-                    <summary className="cursor-pointer text-medical-blue">
-                      Uploading a CT or MRI from a hospital CD?
-                    </summary>
-                    <ul className="mt-2 space-y-1 list-disc pl-5">
-                      <li>
-                        Open the disc and find the image folders — usually{" "}
-                        <code className="font-mono">DICOM/</code> or{" "}
-                        <code className="font-mono">ST000001/SE000007</code>-style paths.
-                        One <code className="font-mono">SE…</code> folder is one series.
-                      </li>
-                      <li>
-                        Select every file inside a single series folder (they may have no
-                        extension). Skip <code className="font-mono">DICOMDIR</code>, viewer
-                        programs, and <code className="font-mono">.exe</code>/
-                        <code className="font-mono">.dmg</code> files.
-                      </li>
-                      <li>
-                        A thin-slice CT series is often 500–1000 files and 100–300 MB. The
-                        upload is sent in batches; stay on this page until it finishes.
-                      </li>
-                      <li>
-                        Reports (SR), ultrasound cine loops, and angiography runs are not
-                        viewable yet — upload the axial image series first.
-                      </li>
-                    </ul>
-                  </details>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Have a hospital disc?{" "}
+                    <Link href="/import" className="text-medical-blue underline">
+                      Import the whole folder
+                    </Link>{" "}
+                    →
+                  </p>
                   <Button
                     type="button"
                     variant="outline"
