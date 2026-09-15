@@ -27,7 +27,7 @@ import DicomSeriesViewer from "@/components/dicom-series-viewer";
 import SrReportView from "@/components/sr-report-view";
 import TypeBadge from "@/components/type-badge";
 import { ownedFileUrl } from "@/lib/owned-file";
-import { isDicomDocument, localDate, sliceCountLabel } from "@shared/upload-kinds";
+import { countLabel, isDicomDocument, localDate } from "@shared/upload-kinds";
 
 interface DocumentCardProps {
   document: MedicalDocument;
@@ -179,7 +179,11 @@ export default function DocumentCard({
             className="text-sm text-foreground-muted mb-4 font-body"
             data-testid={`document-slice-count-${medicalDocument.id}`}
           >
-            {sliceCountLabel(medicalDocument.fileCount)}
+            {/* This card only ever shows an ordinary (non-DICOM) document — see
+                shared/studies.ts splitDocuments — so there's no series kind to
+                ask for; "volume" just reuses countLabel's plain "N slices"
+                wording for a multi-file upload. */}
+            {countLabel("volume", medicalDocument.fileCount)}
           </p>
         )}
 

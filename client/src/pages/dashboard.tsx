@@ -34,7 +34,8 @@ import { format } from "date-fns";
 import type { MedicalDocument, Symptom } from "@shared/schema";
 import DicomSeriesViewer from "@/components/dicom-series-viewer";
 import { ownedFileUrl } from "@/lib/owned-file";
-import { isDicomDocument, localDate } from "@shared/upload-kinds";
+import { countLabel, isDicomDocument, localDate } from "@shared/upload-kinds";
+import { seriesKind } from "@shared/series-kind";
 import {
   documentItemDate,
   documentItemKey,
@@ -42,6 +43,7 @@ import {
   studyLabel,
   studySeries,
   type DocumentItem,
+  type StudySummary,
 } from "@shared/studies";
 
 /**
@@ -52,16 +54,29 @@ function itemLabel(item: DocumentItem): string {
   return item.kind === "study" ? studyLabel(item.study) : item.record.title;
 }
 
-function studySummaryLine(seriesCount: number, fileCount: number): string {
+/** SR and friends describe a study's paperwork, never the study itself — same rule as shared/studies.ts's own imagingModality. */
+const NON_IMAGING_MODALITIES = new Set(["SR", "PR", "KO", "DOC"]);
+
+function dominantModality(modalities: string[]): string {
+  return modalities.find((modality) => !NON_IMAGING_MODALITIES.has(modality)) ?? modalities[0] ?? "";
+}
+
+/**
+ * Plan 13: word a study's file count for what its dominant modality's files
+ * actually are — "774 slices" for a CT study, "56 views" for an echo study,
+ * "3 runs" for a cath study — instead of the always-generic "N images".
+ */
+function studySummaryLine(study: StudySummary): string {
+  const kind = seriesKind({ modality: dominantModality(study.modalities) }, study.fileCount);
   return [
-    seriesCount === 1 ? "1 series" : `${seriesCount} series`,
-    fileCount === 1 ? "1 image" : `${fileCount} images`,
+    study.seriesCount === 1 ? "1 series" : `${study.seriesCount} series`,
+    countLabel(kind, study.fileCount),
   ].join(" · ");
 }
 
 function itemSubtitle(item: DocumentItem): string {
   if (item.kind === "study") {
-    return studySummaryLine(item.study.seriesCount, item.study.fileCount);
+    return studySummaryLine(item.study);
   }
   return item.record.doctorName || item.record.facilityName || "Medical document";
 }

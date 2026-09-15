@@ -31,6 +31,7 @@ import { Upload, FileText, Layers, X } from "lucide-react";
 import {
   acceptAttribute,
   classifyUpload,
+  countLabel,
   fitsUploadCap,
   isDicomDocument,
   MAX_DICOM_UPLOAD_BYTES,
@@ -41,6 +42,7 @@ import {
   describeSeriesUpload,
   isHeavyUpload,
 } from "@shared/upload-kinds";
+import { seriesKind } from "@shared/series-kind";
 import { viewabilityFromMeta } from "@shared/viewability";
 import type { MedicalDocument } from "@shared/schema";
 
@@ -168,7 +170,14 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
         viewability.kind === "images" || viewability.kind === "report"
           ? variables.files.length === 1
             ? "Document uploaded successfully"
-            : `Series of ${variables.files.length} slices uploaded successfully`
+            : // Plan 13: word the toast for what the uploaded files actually are
+              // ("56 views", "3 runs", "774 slices") instead of always "slices".
+              `Series of ${countLabel(
+                created.dicomMeta
+                  ? seriesKind(created.dicomMeta, variables.files.length)
+                  : "single",
+                variables.files.length,
+              )} uploaded successfully`
           : "Uploaded. This file has no viewable content on this disc; it is kept for completeness.";
 
       toast({
