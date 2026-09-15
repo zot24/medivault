@@ -81,12 +81,27 @@ export type RunLabelInput = {
   numberOfFrames: number;
 };
 
-/** Positive PositionerPrimaryAngle reads as RAO, negative as LAO (this fixture set's own convention — see runLabel's tests). */
+/**
+ * Positive PositionerPrimaryAngle reads as RAO, negative as LAO — this
+ * fixture set's own convention (see runLabel's tests), not something
+ * verified against a real angiography gantry. The DICOM standard doesn't
+ * pin the sign of (0018,1510) to a side, and vendors are known to disagree
+ * on it; a real disc whose acquisition console used the opposite sign
+ * would have this print the mirrored projection ("LAO 30°" for an actual
+ * RAO run) with nothing in the test suite able to catch it, since the
+ * fixtures encode this same assumed convention. Revisit against a real
+ * angiography study's console printout (not a synthetic fixture — see
+ * CLAUDE.md's rule against real patient data in this repo) before trusting
+ * this for a clinical read.
+ */
 function primaryAngleLabel(angle: number): string {
   return `${angle >= 0 ? "RAO" : "LAO"} ${Math.round(Math.abs(angle))}°`;
 }
 
-/** Positive PositionerSecondaryAngle reads as CRA (cranial), negative as CAU (caudal). */
+/**
+ * Positive PositionerSecondaryAngle reads as CRA (cranial), negative as CAU
+ * (caudal) — same unverified-convention caveat as primaryAngleLabel above.
+ */
 function secondaryAngleLabel(angle: number): string {
   return `${angle >= 0 ? "CRA" : "CAU"} ${Math.round(Math.abs(angle))}°`;
 }
