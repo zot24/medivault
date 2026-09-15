@@ -860,7 +860,7 @@ describe("documentIdsForItems", () => {
 
 describe("withPrimaryPhases", () => {
   it("attaches server-computed phase info to the study whose primary it belongs to", () => {
-    const volume = record({ dicomMeta: { studyInstanceUid: "s1", modality: "CT" }, fileCount: 30 });
+    const volume = record({ dicomMeta: { studyInstanceUid: "s1", modality: "CT", sliceThickness: 0.6 }, fileCount: 30 });
     const study = groupIntoStudies([volume])[0];
     expect(study.primaryPhases).toBeNull();
     const [withPhases] = withPrimaryPhases([study], new Map([[volume.id, { hasPhases: true, sliceCount: 3 }]]));
