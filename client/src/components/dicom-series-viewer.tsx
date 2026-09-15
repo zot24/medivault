@@ -130,13 +130,42 @@ type CachedRaster = {
 type CachedCineFrame = CachedBitmap | CachedRaster;
 
 /** One angiography frame's raw 8-bit pixel bytes (plan 07), as fetched — not yet windowed/rasterized. See RANGE_RAW_CACHE_BUDGET_BYTES. */
-type RawFrame = {
+export type RawFrame = {
   kind: "raw8";
   rows: number;
   columns: number;
   bytes: Uint8Array;
   byteCost: number;
 };
+
+/**
+ * Builds one raw frame's cache entry out of a batch range-read response
+ * (plan 12's `pumpRangePreload`, up to RANGE_BATCH_SIZE frames sharing one
+ * ArrayBuffer). Always copies (`.slice()`), never `.subarray()`s a view:
+ * `rangeRawFramesRef`'s LRU charges each entry only its own `frameBytes`
+ * (RANGE_RAW_CACHE_BUDGET_BYTES), so a view over the whole shared batch
+ * buffer would keep that entire buffer reachable — up to
+ * RANGE_BATCH_SIZE x frameBytes — for as long as any single one of its
+ * frames stays resident, silently invalidating the cache's byte-budget
+ * accounting once eviction starts dropping some-but-not-all of a batch's
+ * frames.
+ */
+export function rawFrameFromBatch(
+  batchBytes: Uint8Array,
+  indexInBatch: number,
+  frameBytes: number,
+  rows: number,
+  columns: number,
+): RawFrame {
+  const offset = indexInBatch * frameBytes;
+  return {
+    kind: "raw8",
+    rows,
+    columns,
+    bytes: batchBytes.slice(offset, offset + frameBytes),
+    byteCost: frameBytes,
+  };
+}
 
 /**
  * One playable multi-frame *file* (as opposed to CachedFrame, one *slice*):
@@ -860,14 +889,10 @@ export default function DicomSeriesViewer({
           if (raw.has(index)) {
             continue;
           }
-          const offset = (index - from) * frameBytes;
-          raw.set(index, {
-            kind: "raw8",
-            rows: source.rows,
-            columns: source.columns,
-            bytes: bytes.subarray(offset, offset + frameBytes),
-            byteCost: frameBytes,
-          });
+          raw.set(
+            index,
+            rawFrameFromBatch(bytes, index - from, frameBytes, source.rows, source.columns),
+          );
         }
       },
       () => {

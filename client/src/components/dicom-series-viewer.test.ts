@@ -6,6 +6,7 @@ import {
   countLoaded,
   loadProgressPercent,
   loadRadius,
+  rawFrameFromBatch,
 } from "./dicom-series-viewer";
 import { FrameCache } from "@/lib/frame-cache";
 
@@ -208,5 +209,40 @@ describe("loadRadius", () => {
     // The current position and its neighbours have to be loadable at all.
     expect(loadRadius(CT_BUDGET * 2, CT_BUDGET, 8)).toBe(8);
     expect(loadRadius(CINE_BUDGET * 2, CINE_BUDGET, 1)).toBe(1);
+  });
+});
+
+describe("rawFrameFromBatch", () => {
+  // Regression: pumpRangePreload used to `.subarray()` each frame out of a
+  // batch response, so every frame kept the WHOLE shared batch buffer (up
+  // to 8x one frame's bytes) reachable for as long as any single sibling
+  // frame stayed in the bounded cache — invalidating the cache's
+  // byte-budget accounting once eviction dropped some-but-not-all of a
+  // batch. A copy must not alias the batch buffer at all.
+  const FRAME_BYTES = 4;
+  const ROWS = 2;
+  const COLUMNS = 2;
+
+  it("does not share a buffer with the batch it was cut from", () => {
+    const batch = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]); // 2 frames of 4 bytes
+    const frame = rawFrameFromBatch(batch, 1, FRAME_BYTES, ROWS, COLUMNS);
+
+    expect(Array.from(frame.bytes)).toEqual([5, 6, 7, 8]);
+    expect(frame.bytes.buffer).not.toBe(batch.buffer);
+
+    // Mutating the shared batch buffer afterwards (as happens once its
+    // ArrayBuffer is reused/GC'd elsewhere) must not change frames already
+    // handed out — proof the frame owns an independent copy, not a view.
+    batch[4] = 99;
+    expect(frame.bytes[0]).toBe(5);
+  });
+
+  it("every frame cut from the same batch owns its own buffer, not each other's", () => {
+    const batch = new Uint8Array(3 * FRAME_BYTES).map((_, i) => i);
+    const frames = [0, 1, 2].map((i) => rawFrameFromBatch(batch, i, FRAME_BYTES, ROWS, COLUMNS));
+
+    expect(frames[0].bytes.buffer).not.toBe(frames[1].bytes.buffer);
+    expect(frames[1].bytes.buffer).not.toBe(frames[2].bytes.buffer);
+    expect(frames[0].byteCost).toBe(FRAME_BYTES);
   });
 });
