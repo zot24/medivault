@@ -448,7 +448,12 @@ describe("seriesLabel", () => {
       meta({ modality: "US", numberOfFrames: 1 }),
       "Echo still image",
     ],
-    ["angiography run", meta({ modality: "XA" }), "Angiography run"],
+    ["angiography run with no frame rate in the header", meta({ modality: "XA" }), "Angiography run"],
+    [
+      "angiography run with a known frame rate (plan 12: duration in the label)",
+      meta({ modality: "XA", numberOfFrames: 108, frameRate: 15 }),
+      "Angiography run, 7.2 s",
+    ],
     [
       "anything else, with a description",
       meta({ modality: "OT", seriesDescription: "Cardiac_Function_Global_Findings" }),
@@ -493,7 +498,11 @@ describe("seriesGroup", () => {
     ],
     ["volume", meta({ modality: "CT", sliceThickness: 0.6 }), "volume"],
     ["images (US)", meta({ modality: "US" }), "images"],
-    ["other (XA)", meta({ modality: "XA" }), "other"],
+    [
+      "images (XA — plan 12: angiography runs belong with the other images, not Other)",
+      meta({ modality: "XA" }),
+      "images",
+    ],
     ["other (fallback)", meta({ modality: "OT" }), "other"],
   ])("%s", (_name, input, expected) => {
     expect(seriesGroup(input)).toBe(expected);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { preloadFrames } from "./range-preload";
+import { frameBatches, preloadFrames } from "./range-preload";
 
 /** A promise the test controls the resolution of, plus the function to resolve it. */
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
@@ -141,6 +141,42 @@ describe("preloadFrames", () => {
     );
     expect(outcome).toBe("done");
     expect(calls).toBe(0);
+  });
+});
+
+describe("frameBatches", () => {
+  // Plan 12 section 2: the client preloads in batches of up to
+  // `batchSize` frames, one range request per batch, instead of one
+  // request per frame.
+  it("splits a run into inclusive [from, to] ranges of batchSize frames", () => {
+    expect(frameBatches(20, 8)).toEqual([
+      { from: 0, to: 7 },
+      { from: 8, to: 15 },
+      { from: 16, to: 19 },
+    ]);
+  });
+
+  it("covers every frame exactly once across every batch", () => {
+    const batches = frameBatches(108, 8);
+    const covered = batches.flatMap((batch) =>
+      Array.from({ length: batch.to - batch.from + 1 }, (_, i) => batch.from + i),
+    );
+    expect(covered).toEqual(Array.from({ length: 108 }, (_, i) => i));
+  });
+
+  it("returns one batch no bigger than the whole run", () => {
+    expect(frameBatches(5, 8)).toEqual([{ from: 0, to: 4 }]);
+  });
+
+  it("returns one batch per frame when the run divides evenly", () => {
+    expect(frameBatches(16, 8)).toEqual([
+      { from: 0, to: 7 },
+      { from: 8, to: 15 },
+    ]);
+  });
+
+  it("returns no batches for an empty run", () => {
+    expect(frameBatches(0, 8)).toEqual([]);
   });
 });
 

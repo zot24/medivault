@@ -83,6 +83,21 @@ export interface StudySummary {
   groups: Record<SeriesGroup, MedicalDocument[]>;
 }
 
+/**
+ * A subset of the server's own DicomFrameIndex (server/document-files.ts) —
+ * present only for an uncompressed multi-frame file (plan 07 angiography
+ * runs). Lets a caller know a file's frame count, and split a batch range
+ * read (frameBytes) or size a canvas (rows, columns), without fetching the
+ * file itself. windowCenter/Width aren't included — those still come from
+ * fetching frame 0.
+ */
+export interface DocumentFileFrameIndex {
+  numberOfFrames: number;
+  frameBytes: number;
+  rows: number;
+  columns: number;
+}
+
 /** One file of a document, as listed by GET /api/documents/:id/files. */
 export interface DocumentFileEntry {
   position: number;
@@ -91,6 +106,11 @@ export interface DocumentFileEntry {
   mimeType: string;
   /** (0008,0018) of a DICOM file; null for non-DICOM files or when absent. */
   sopInstanceUid: string | null;
+  instanceNumber: number | null;
+  sliceLocation: number | null;
+  phase: number | null;
+  /** Present only for an uncompressed multi-frame file (plan 07/12). */
+  frameIndex: DocumentFileFrameIndex | null;
 }
 
 export interface InsertMedicalDocument {

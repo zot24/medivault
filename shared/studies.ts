@@ -329,8 +329,42 @@ const GROUP_ORDER: SeriesGroup[] = [
   "other",
 ];
 
+/**
+ * "3 runs · 298 frames" for a multi-frame DICOM record (plan 12: an
+ * angiography record's `fileCount` is its cine runs, not stills, so "3
+ * images" undercounts what there actually is to play), or the plain "N
+ * images" wording when `totalFrames` isn't known (every other kind of
+ * record). Callers pass `totalFrames` only once they know it — see
+ * server/routes.ts's per-file `frameIndex.numberOfFrames`, summed.
+ */
+export function recordFileCountLabel(fileCount: number, totalFrames: number | null): string {
+  if (totalFrames == null) {
+    return fileCount === 1 ? "1 image" : `${fileCount} images`;
+  }
+  const runs = fileCount === 1 ? "1 run" : `${fileCount} runs`;
+  const frames = totalFrames === 1 ? "1 frame" : `${totalFrames} frames`;
+  return `${runs} · ${frames}`;
+}
+
 export function studySeries(study: StudySummary): MedicalDocument[] {
   return GROUP_ORDER.flatMap((group) => study.groups[group]);
+}
+
+/**
+ * The study card's "N series · <label> · size" file-count segment. Always
+ * reports the study's true total file count (`study.fileCount`, every
+ * series included) — never a subset. `multiFrame` (from
+ * `useMultiFrameSummary`, which only sums the XA multi-frame series among a
+ * study's records) contributes its `totalFrames` when present; its own
+ * `fileCount` — a sum over just the XA candidates — must never stand in for
+ * the study's total, or a study that mixes an angiography run with other
+ * series silently loses those other files from the displayed count.
+ */
+export function studyFileCountLabel(
+  study: StudySummary,
+  multiFrame: { totalFrames: number } | null,
+): string {
+  return recordFileCountLabel(study.fileCount, multiFrame?.totalFrames ?? null);
 }
 
 export type StudyCounts = {
