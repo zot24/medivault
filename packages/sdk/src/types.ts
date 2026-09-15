@@ -199,10 +199,17 @@ export type SharedFileMeta = {
   mimeType: string;
 };
 
+/** A shared record as a visitor sees it: everything but who owns it and where it is stored. */
+export type PublicDocument = Omit<MedicalDocument, "userId" | "filePath">;
+
 export type SharePacket = {
   label: string | null;
   expiresAt: string;
   files: SharedFileMeta[];
+  /** Every shared record, ordinary documents and image series alike. */
+  documents: PublicDocument[];
+  /** The shared series grouped into studies, for the share portal. */
+  studies: StudySummary[];
   snapshot: FrozenSymptom[] | null;
 };
 

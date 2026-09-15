@@ -1,6 +1,6 @@
 import { isUncompressedMultiFrame, type DicomSeriesMeta } from "@shared/dicom-meta";
 import type { DicomMono8Frame } from "@shared/dicom-frame";
-import { documentFileUrl, documentFrameUrl } from "./owned-file";
+import { OWNED, fileUrl, frameUrl, type FileSource } from "./file-source";
 
 /**
  * Split out of thumbnails.ts so it can be unit tested without pulling in
@@ -28,11 +28,12 @@ export function thumbnailFrameSource(
   documentId: number,
   position: number,
   dicomMeta: DicomSeriesMeta | null,
+  source: FileSource = OWNED,
 ): ThumbnailFrameSource {
   if (position === 0 && dicomMeta && isUncompressedMultiFrame(dicomMeta)) {
-    return { kind: "frame-range", url: documentFrameUrl(documentId, position, 0) };
+    return { kind: "frame-range", url: frameUrl(source, documentId, position, 0) };
   }
-  return { kind: "whole-file", url: documentFileUrl(documentId, position) };
+  return { kind: "whole-file", url: fileUrl(source, documentId, position) };
 }
 
 /**

@@ -15,6 +15,7 @@ import Study from "@/pages/study";
 import Report from "@/pages/report";
 import Symptoms from "@/pages/symptoms";
 import SharedFile from "@/pages/shared-file";
+import SharedReport from "@/pages/shared-report";
 
 function Router() {
   return (
@@ -27,6 +28,7 @@ function Router() {
       <Route path="/studies/:studyInstanceUid" component={Study} />
       <Route path="/studies/:studyInstanceUid/reports/:documentId" component={Report} />
       <Route path="/symptoms" component={Symptoms} />
+      <Route path="/s/:token/reports/:documentId" component={SharedReport} />
       <Route path="/s/:token" component={SharedFile} />
       <Route component={NotFound} />
     </Switch>

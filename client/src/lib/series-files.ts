@@ -1,3 +1,5 @@
+import { filesListUrl, sourceKey, type FileSource } from "./file-source";
+import { useFileSource } from "./file-source-context";
 import { useQuery } from "@tanstack/react-query";
 
 /**
@@ -16,8 +18,8 @@ export type SeriesFileRow = {
   frameIndex: { numberOfFrames: number } | null;
 };
 
-async function fetchSeriesFiles(documentId: number): Promise<SeriesFileRow[]> {
-  const response = await fetch(`/api/documents/${documentId}/files`, {
+async function fetchSeriesFiles(source: FileSource, documentId: number): Promise<SeriesFileRow[]> {
+  const response = await fetch(filesListUrl(source, documentId), {
     credentials: "include",
   });
   if (!response.ok) {
@@ -32,9 +34,10 @@ async function fetchSeriesFiles(documentId: number): Promise<SeriesFileRow[]> {
  * every other record already has what it needs from `dicomMeta` alone.
  */
 export function useSeriesFiles(documentId: number, enabled: boolean) {
+  const source = useFileSource();
   return useQuery({
-    queryKey: ["series-files", documentId],
-    queryFn: () => fetchSeriesFiles(documentId),
+    queryKey: ["series-files", sourceKey(source), documentId],
+    queryFn: () => fetchSeriesFiles(source, documentId),
     enabled,
   });
 }

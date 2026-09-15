@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createDocumentFiles } from "./document-files";
+import { buildMiniCtDicom } from "@shared/mini-ct-dicom";
 import { MemoryObjectStore } from "./object-store";
 import type {
   DocumentFile,
@@ -41,6 +42,8 @@ function fakeDocument(
 
 function memoryDocuments(rows: MedicalDocument[] = []) {
   const documents = [...rows];
+  const files: DocumentFile[] = [];
+  let nextFileId = 1;
   let nextId = documents.reduce((max, row) => Math.max(max, row.id), 0) + 1;
 
   return {
@@ -61,13 +64,15 @@ function memoryDocuments(rows: MedicalDocument[] = []) {
           doctorName: input.doctorName ?? null,
           facilityName: input.facilityName ?? null,
           tags: input.tags ?? [],
+          fileCount: input.fileCount ?? 1,
+          dicomMeta: input.dicomMeta ?? null,
         });
         documents.push(row);
         return row;
       },
       async createFiles(inputs: InsertDocumentFile[]): Promise<DocumentFile[]> {
-        return inputs.map((input, index) => ({
-          id: index + 1,
+        const created = inputs.map((input) => ({
+          id: nextFileId++,
           documentId: input.documentId,
           position: input.position,
           fileName: input.fileName,
@@ -75,11 +80,23 @@ function memoryDocuments(rows: MedicalDocument[] = []) {
           fileSize: input.fileSize,
           mimeType: input.mimeType,
           sopInstanceUid: input.sopInstanceUid ?? null,
+          instanceNumber: input.instanceNumber ?? null,
+          sliceLocation: input.sliceLocation ?? null,
+          phase: input.phase ?? null,
+          frameIndex: input.frameIndex ?? null,
+          imageType: input.imageType ?? null,
+          positionerPrimaryAngle: input.positionerPrimaryAngle ?? null,
+          positionerSecondaryAngle: input.positionerSecondaryAngle ?? null,
+          usRegionDataTypes: input.usRegionDataTypes ?? null,
+          numberOfFrames: input.numberOfFrames ?? null,
+          frameRate: input.frameRate ?? null,
           createdAt: null,
-        }));
+        })) as DocumentFile[];
+        files.push(...created);
+        return created;
       },
-      async listFiles(): Promise<DocumentFile[]> {
-        return [];
+      async listFiles(documentId: number): Promise<DocumentFile[]> {
+        return files.filter((row) => row.documentId === documentId).sort((a, b) => a.position - b.position);
       },
       async updateTotals(): Promise<void> {},
       async findByFilePath(userId: string, filePath: string) {
@@ -267,6 +284,7 @@ function setup(now?: () => Date, symptoms: Symptom[] = []) {
   const shareLinks = createShareLinks({
     objects,
     documents,
+    documentFiles: files,
     shares,
     symptoms: symptomRecords,
     now,
@@ -539,7 +557,7 @@ describe("createShareLinks", () => {
     expect(minted.share.documentIds).toEqual([labs.id, scan.id]);
     expect(minted.share.documentId).toBe(labs.id);
 
-    expect(await shareLinks.openPacket(minted.share.token)).toEqual({
+    expect(await shareLinks.openPacket(minted.share.token)).toMatchObject({
       kind: "packet",
       packet: {
         label: "Friday visit",
@@ -757,5 +775,90 @@ describe("createShareLinks", () => {
 
     expect(minted).toEqual({ kind: "not_owner" });
     expect(shareRows).toEqual([]);
+  });
+});
+
+describe("share portal (studies and series files)", () => {
+  function slices(count: number) {
+    return Array.from({ length: count }, (_, index) => ({
+      bytes: buildMiniCtDicom({
+        instanceNumber: index + 1,
+        studyInstanceUid: "1.2.3.study",
+        seriesInstanceUid: "1.2.3.series",
+        modality: "CT",
+        seriesDescription: "Axial 0.6",
+        sliceThickness: 0.6,
+      }),
+      mimeType: "",
+      originalName: `CT${String(index + 1).padStart(6, "0")}`,
+    }));
+  }
+
+  async function uploadSeries(files: ReturnType<typeof createDocumentFiles>) {
+    return files.uploadOwnedDocument({
+      userId: "owner-1",
+      files: slices(3),
+      title: "Axial CT",
+      documentType: "x_ray",
+      documentDate: "2026-09-11",
+      tags: [],
+    });
+  }
+
+  it("describes shared series as public documents grouped into studies, without owner-only fields", async () => {
+    const { files, shareLinks } = setup();
+    const series = await uploadSeries(files);
+    const labs = await uploadLabs(files);
+    const minted = await shareLinks.mint({ userId: "owner-1", documentIds: [series.id, labs.id], ttl: "24h" });
+    if (minted.kind !== "minted") throw new Error("mint failed");
+
+    const opened = await shareLinks.openPacket(minted.share.token);
+    if (opened.kind !== "packet") throw new Error("packet expected");
+    const shared = opened.packet.documents.find((d) => d.id === series.id)!;
+    expect(shared).toMatchObject({ title: "Axial CT", fileCount: 3, mimeType: "application/dicom" });
+    expect(shared.dicomMeta?.modality).toBe("CT");
+    expect(Object.keys(shared)).not.toContain("userId");
+    expect(Object.keys(shared)).not.toContain("filePath");
+    expect(opened.packet.studies).toHaveLength(1);
+    expect(opened.packet.studies[0].studyInstanceUid).toBe("1.2.3.study");
+    expect(opened.packet.studies[0].primary?.id).toBe(series.id);
+    // ordinary documents are still listed
+    expect(opened.packet.documents.map((d) => d.id).sort()).toEqual([series.id, labs.id].sort());
+  });
+
+  it("lists and serves a shared series' files by position through the token only", async () => {
+    const { files, shareLinks } = setup();
+    const series = await uploadSeries(files);
+    const other = await uploadSeries(files);
+    const minted = await shareLinks.mint({ userId: "owner-1", documentIds: [series.id], ttl: "24h" });
+    if (minted.kind !== "minted") throw new Error("mint failed");
+    const token = minted.share.token;
+
+    const listed = await shareLinks.openDocumentFiles(token, series.id);
+    expect(listed.kind).toBe("files");
+    if (listed.kind !== "files") return;
+    expect(listed.files.map((f) => f.position)).toEqual([0, 1, 2]);
+
+    const second = await shareLinks.openDocumentFileAt(token, series.id, 1);
+    expect(second.kind).toBe("file");
+    if (second.kind !== "file") return;
+    expect(second.file.mimeType).toBe("application/dicom");
+    expect(second.file.bytes.equals(slices(3)[1].bytes)).toBe(true);
+
+    // a document the share does not include is unknown, even though the owner has it
+    expect((await shareLinks.openDocumentFiles(token, other.id)).kind).toBe("unknown");
+    expect((await shareLinks.openDocumentFileAt(token, other.id, 0)).kind).toBe("unknown");
+    // a bad position is unknown
+    expect((await shareLinks.openDocumentFileAt(token, series.id, 9)).kind).toBe("unknown");
+  });
+
+  it("stops serving series files once the share is revoked", async () => {
+    const { files, shareLinks } = setup();
+    const series = await uploadSeries(files);
+    const minted = await shareLinks.mint({ userId: "owner-1", documentIds: [series.id], ttl: "24h" });
+    if (minted.kind !== "minted") throw new Error("mint failed");
+    await shareLinks.revoke({ userId: "owner-1", documentId: series.id, shareId: minted.share.id });
+    expect((await shareLinks.openDocumentFiles(minted.share.token, series.id)).kind).toBe("dead");
+    expect((await shareLinks.openDocumentFileAt(minted.share.token, series.id, 0)).kind).toBe("dead");
   });
 });

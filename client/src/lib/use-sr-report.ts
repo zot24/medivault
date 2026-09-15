@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { documentFileUrl } from "@/lib/owned-file";
+import { fileUrl, filesListUrl, type FileSource } from "@/lib/file-source";
+import { useFileSource } from "@/lib/file-source-context";
 import { parseSr, type SrNode } from "@shared/dicom-sr";
 import type { MedicalDocument } from "@shared/schema";
 
@@ -7,6 +8,7 @@ export type ParsedSrReport = { title: string; nodes: SrNode[] };
 
 /** Maps a file's SOP instance UID to the sibling record that holds it. */
 async function buildSiblingIndex(
+  source: FileSource,
   siblings: MedicalDocument[],
 ): Promise<Map<string, MedicalDocument>> {
   const index = new Map<string, MedicalDocument>();
@@ -15,7 +17,7 @@ async function buildSiblingIndex(
       .filter((sibling) => sibling.dicomMeta)
       .map(async (sibling) => {
         try {
-          const response = await fetch(`/api/documents/${sibling.id}/files`, {
+          const response = await fetch(filesListUrl(source, sibling.id), {
             credentials: "include",
           });
           if (!response.ok) {
@@ -52,6 +54,7 @@ export function useSrReport(
   error: string | null;
   siblingIndex: Map<string, MedicalDocument>;
 } {
+  const source = useFileSource();
   const [report, setReport] = useState<ParsedSrReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [siblingIndex, setSiblingIndex] = useState<Map<string, MedicalDocument>>(new Map());
@@ -66,7 +69,7 @@ export function useSrReport(
 
     let cancelled = false;
     (async () => {
-      const response = await fetch(documentFileUrl(documentId, 0), {
+      const response = await fetch(fileUrl(source, documentId, 0), {
         credentials: "include",
       });
       if (!response.ok) {
@@ -83,7 +86,7 @@ export function useSrReport(
       setReport(parsed);
 
       if (siblingDocuments && siblingDocuments.length > 0) {
-        const index = await buildSiblingIndex(siblingDocuments);
+        const index = await buildSiblingIndex(source, siblingDocuments);
         if (!cancelled) {
           setSiblingIndex(index);
         }
@@ -100,7 +103,7 @@ export function useSrReport(
     // siblingDocuments is derived fresh from the study each render; only the
     // document identity and enabled flag should restart the fetch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, documentId]);
+  }, [enabled, documentId, source]);
 
   return { report, error, siblingIndex };
 }

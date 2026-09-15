@@ -1,3 +1,5 @@
+import { filesListUrl, sourceKey, type FileSource } from "./file-source";
+import { useFileSource } from "./file-source-context";
 import { useQuery } from "@tanstack/react-query";
 import type { MedicalDocument } from "@shared/schema";
 
@@ -14,8 +16,8 @@ export function isMultiFrameRecord(record: MedicalDocument): boolean {
   return record.dicomMeta?.modality === "XA" && (record.dicomMeta?.numberOfFrames ?? 1) > 1;
 }
 
-async function totalFramesOf(documentId: number): Promise<number> {
-  const response = await fetch(`/api/documents/${documentId}/files`, {
+async function totalFramesOf(source: FileSource, documentId: number): Promise<number> {
+  const response = await fetch(filesListUrl(source, documentId), {
     credentials: "include",
   });
   if (!response.ok) {
@@ -38,12 +40,13 @@ export type MultiFrameSummary = { fileCount: number; totalFrames: number };
  * callers keep their default "N images" wording in that case.
  */
 export function useMultiFrameSummary(records: MedicalDocument[]): MultiFrameSummary | null {
+  const source = useFileSource();
   const candidates = records.filter(isMultiFrameRecord);
   const ids = candidates.map((record) => record.id);
   const { data: totalFrames } = useQuery({
-    queryKey: ["multi-frame-total", ids],
+    queryKey: ["multi-frame-total", sourceKey(source), ids],
     queryFn: async () => {
-      const totals = await Promise.all(candidates.map((record) => totalFramesOf(record.id)));
+      const totals = await Promise.all(candidates.map((record) => totalFramesOf(source, record.id)));
       return totals.reduce((sum, total) => sum + total, 0);
     },
     enabled: candidates.length > 0,

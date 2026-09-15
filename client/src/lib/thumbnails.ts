@@ -13,6 +13,8 @@ import {
 import type { DicomSeriesMeta } from "@shared/dicom-meta";
 import { thumbnailCacheKey } from "@shared/thumbnail-cache";
 import { useAuth } from "@/hooks/useAuth";
+import { useFileSource } from "./file-source-context";
+import { sourceKey } from "./file-source";
 import { mono8FrameFromRangeResponse, thumbnailFrameSource } from "./thumbnail-frame-source";
 
 const THUMBNAIL_SIZE = 128;
@@ -144,7 +146,9 @@ export function useThumbnail(
   dicomMeta: DicomSeriesMeta | null = null,
 ): string | null {
   const { user } = useAuth();
-  const userId = user?.id ?? null;
+  const fileSource = useFileSource();
+  // A visitor's thumbnails are keyed by the token, an owner's by their id.
+  const userId = fileSource.kind === "owned" ? user?.id ?? null : sourceKey(fileSource);
   const [dataUrl, setDataUrl] = useState<string | null>(
     () => readCache(userId, documentId, position) ?? null,
   );
@@ -164,7 +168,7 @@ export function useThumbnail(
     setDataUrl(null);
 
     (async () => {
-      const source = thumbnailFrameSource(documentId, position, dicomMeta);
+      const source = thumbnailFrameSource(documentId, position, dicomMeta, fileSource);
       const response = await fetch(source.url, { credentials: "include" });
       if (!response.ok) {
         throw new Error("Could not load file");

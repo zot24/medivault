@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ScanLine } from "lucide-react";
-import { documentFileUrl, documentFrameRangeUrl, documentFrameUrl } from "@/lib/owned-file";
+import { fileUrl, filesListUrl, frameRangeUrl, frameUrl } from "@/lib/file-source";
+import { useFileSource } from "@/lib/file-source-context";
 import { FrameCache } from "@/lib/frame-cache";
 import { frameBatches, preloadFrames } from "@/lib/range-preload";
 import { useThumbnail } from "@/lib/thumbnails";
@@ -471,6 +472,7 @@ export default function DicomSeriesViewer({
   onOpenChange,
   initialPosition,
 }: DicomSeriesViewerProps) {
+  const fileSource = useFileSource();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cacheRef = useRef(new FrameCache<CachedFrame>(CACHE_BUDGET_BYTES));
   const frameCostRef = useRef<number | null>(null);
@@ -635,7 +637,7 @@ export default function DicomSeriesViewer({
       // of a file that can be ~100 MB.
       return loadRangeCineSource(position, frameCount, signal);
     }
-    const response = await fetch(documentFileUrl(documentId!, position), {
+    const response = await fetch(fileUrl(fileSource, documentId!, position), {
       credentials: "include",
       signal,
     });
@@ -663,7 +665,7 @@ export default function DicomSeriesViewer({
     frame: number,
     signal?: AbortSignal,
   ): Promise<Response> {
-    const response = await fetch(documentFrameUrl(documentId!, position, frame), {
+    const response = await fetch(frameUrl(fileSource, documentId!, position, frame), {
       credentials: "include",
       signal,
     });
@@ -680,7 +682,7 @@ export default function DicomSeriesViewer({
     to: number,
     signal?: AbortSignal,
   ): Promise<Uint8Array> {
-    const response = await fetch(documentFrameRangeUrl(documentId!, position, from, to), {
+    const response = await fetch(frameRangeUrl(fileSource, documentId!, position, from, to), {
       credentials: "include",
       signal,
     });
@@ -1056,7 +1058,7 @@ export default function DicomSeriesViewer({
     }
 
     (async () => {
-      const response = await fetch(`/api/documents/${documentId}/files`, {
+      const response = await fetch(filesListUrl(fileSource, documentId), {
         credentials: "include",
         signal: controller.signal,
       });

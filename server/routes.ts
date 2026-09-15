@@ -15,6 +15,7 @@ import {
   createShareBodySchema,
   createCaseShareBodySchema,
   parseRawToken,
+  type RawShareToken,
 } from "./share-links";
 import { insertSymptomSchema } from "@shared/schema";
 import { groupIntoStudies, withPrimaryPhases } from "@shared/studies";
@@ -99,6 +100,8 @@ function getShareLinks() {
       documents: {
         get: (id, userId) => storage.getMedicalDocument(id, userId),
       },
+      documentFiles: getDocumentFiles(),
+      phaseSources: (ids) => storage.listPhaseSourceFiles(ids),
       shares: {
         insert: (row) => storage.insertShareLink(row),
         listByDocument: (createdBy, documentId) =>
@@ -658,6 +661,110 @@ export async function registerRoutes(app: Express): Promise<void> {
         return res.status(503).json({ message: error.message });
       }
       console.error("Error opening share file:", error);
+      res.status(500).json({ message: "Failed to open share" });
+    }
+  });
+
+  // Share portal: a visitor with a live token reads a shared series exactly
+  // as its owner does — file list, one file, one frame, a frame batch —
+  // scoped by the token, never by a session. Same headers as the owner's
+  // routes above, but never cached by shared caches.
+  function sharedParams(req: any): { token: RawShareToken; documentId: number; position: number } | null {
+    const token = parseRawToken(req.params.token);
+    const documentId = parseInt(req.params.id, 10);
+    const position = req.params.position == null ? 0 : parseInt(req.params.position, 10);
+    if (!token || !Number.isInteger(documentId) || !Number.isInteger(position) || position < 0) {
+      return null;
+    }
+    return { token, documentId, position };
+  }
+
+  function sharedStatus(kind: "unknown" | "dead", res: any) {
+    return kind === "dead"
+      ? res.status(410).json({ message: "Gone" })
+      : res.status(404).json({ message: "Not found" });
+  }
+
+  app.get("/api/s/:token/documents/:id/files", async (req, res) => {
+    try {
+      const p = sharedParams(req);
+      if (!p) return res.status(404).json({ message: "Not found" });
+      const opened = await getShareLinks().openDocumentFiles(p.token, p.documentId);
+      if (opened.kind !== "files") return sharedStatus(opened.kind, res);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.json(opened.files);
+    } catch (error) {
+      console.error("Error listing shared files:", error);
+      res.status(500).json({ message: "Failed to open share" });
+    }
+  });
+
+  app.get("/api/s/:token/documents/:id/files/:position/frames/:from-:to", async (req, res) => {
+    try {
+      const p = sharedParams(req);
+      const from = parseInt(req.params.from, 10);
+      const to = parseInt(req.params.to, 10);
+      if (!p || !Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to < from) {
+        return res.status(404).json({ message: "Not found" });
+      }
+      const opened = await getShareLinks().openDocumentFrameRange(p.token, p.documentId, p.position, from, to);
+      if (opened.kind !== "frames") return sharedStatus(opened.kind, res);
+      const owned = opened.frames;
+      res.setHeader("Content-Type", "application/octet-stream");
+      res.setHeader("X-Frame-Rows", String(owned.rows));
+      res.setHeader("X-Frame-Columns", String(owned.columns));
+      res.setHeader("X-Frame-Bits", String(owned.bitsAllocated));
+      res.setHeader("X-Frame-Photometric", owned.photometric);
+      res.setHeader("X-Window-Center", String(owned.windowCenter));
+      res.setHeader("X-Window-Width", String(owned.windowWidth));
+      res.setHeader("X-Frame-From", String(owned.from));
+      res.setHeader("X-Frame-To", String(owned.to));
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.send(owned.bytes);
+    } catch (error) {
+      if (error instanceof ObjectStoreConfigError) return res.status(503).json({ message: error.message });
+      console.error("Error reading shared frame range:", error);
+      res.status(500).json({ message: "Failed to open share" });
+    }
+  });
+
+  app.get("/api/s/:token/documents/:id/files/:position/frames/:frame", async (req, res) => {
+    try {
+      const p = sharedParams(req);
+      const frame = parseInt(req.params.frame, 10);
+      if (!p || !Number.isInteger(frame) || frame < 0) return res.status(404).json({ message: "Not found" });
+      const opened = await getShareLinks().openDocumentFrame(p.token, p.documentId, p.position, frame);
+      if (opened.kind !== "frame") return sharedStatus(opened.kind, res);
+      const owned = opened.frame;
+      res.setHeader("Content-Type", "application/octet-stream");
+      res.setHeader("X-Frame-Rows", String(owned.rows));
+      res.setHeader("X-Frame-Columns", String(owned.columns));
+      res.setHeader("X-Frame-Bits", String(owned.bitsAllocated));
+      res.setHeader("X-Frame-Photometric", owned.photometric);
+      res.setHeader("X-Window-Center", String(owned.windowCenter));
+      res.setHeader("X-Window-Width", String(owned.windowWidth));
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.send(owned.bytes);
+    } catch (error) {
+      if (error instanceof ObjectStoreConfigError) return res.status(503).json({ message: error.message });
+      console.error("Error reading shared frame:", error);
+      res.status(500).json({ message: "Failed to open share" });
+    }
+  });
+
+  app.get("/api/s/:token/documents/:id/files/:position", async (req, res) => {
+    try {
+      const p = sharedParams(req);
+      if (!p) return res.status(404).json({ message: "Not found" });
+      const opened = await getShareLinks().openDocumentFileAt(p.token, p.documentId, p.position);
+      if (opened.kind !== "file") return sharedStatus(opened.kind, res);
+      res.setHeader("Content-Type", opened.file.mimeType);
+      res.setHeader("Content-Disposition", `inline; filename="${opened.file.fileName.replace(/"/g, "")}"`);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.send(opened.file.bytes);
+    } catch (error) {
+      if (error instanceof ObjectStoreConfigError) return res.status(503).json({ message: error.message });
+      console.error("Error reading shared file:", error);
       res.status(500).json({ message: "Failed to open share" });
     }
   });
