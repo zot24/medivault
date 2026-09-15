@@ -51,20 +51,23 @@ function seriesFileLabel(
 /** One thumbnail of the inline view/run strip (plan 13 section D). */
 function ViewStripThumbnail({
   documentId,
-  position,
+  file,
   dicomMeta,
   label,
   onClick,
   testId,
 }: {
   documentId: number;
-  position: number;
+  file: SeriesFileRow;
   dicomMeta: MedicalDocument["dicomMeta"];
   label: string;
   onClick: () => void;
   testId: string;
 }) {
-  const dataUrl = useThumbnail(documentId, position, dicomMeta);
+  // The row itself says whether this file has a frame range endpoint, so a
+  // 90 MB angiography run past position 0 draws from one frame's bytes
+  // rather than the whole file (which the thumbnail path can't decode).
+  const dataUrl = useThumbnail(documentId, file.position, dicomMeta, file);
   return (
     <button
       type="button"
@@ -120,7 +123,7 @@ function SeriesViewStrip({
         <ViewStripThumbnail
           key={file.position}
           documentId={series.id}
-          position={file.position}
+          file={file}
           dicomMeta={series.dicomMeta}
           label={seriesFileLabel(kind, file, index + 1)}
           onClick={() => onOpenAt(series, file.position)}

@@ -14,23 +14,36 @@ export type ThumbnailFrameSource =
   | { kind: "whole-file"; url: string };
 
 /**
+ * What a caller knows about one file of the record, from the files list
+ * (`GET .../files`): the server attaches `frameIndex` only to an
+ * uncompressed multi-frame file, so its presence alone says "this file has
+ * a frame range endpoint".
+ */
+export type ThumbnailFileHint = { frameIndex: unknown | null } | null;
+
+/**
  * Which endpoint a thumbnail should come from. For an uncompressed
- * multi-frame file (plan 07: an angiography cine run, ~100 MB) at position
- * 0, frame 0's own byte range is enough — fetching and parsing the whole
- * file just to draw a still would defeat the point of the range endpoint,
- * and `pixelFrameFromPart10`/`multiFrameSourceFromPart10` can't draw an
- * 8-bit uncompressed frame anyway. `dicomMeta` describes only the
- * document's first file (see readSeriesMeta's comment in
- * shared/dicom-meta.ts), so this only applies at position 0; every other
- * position falls back to fetching the whole file, as before.
+ * multi-frame file (plan 07: an angiography cine run, ~100 MB), frame 0's
+ * own byte range is enough — fetching and parsing the whole file just to
+ * draw a still would defeat the point of the range endpoint, and
+ * `pixelFrameFromPart10`/`multiFrameSourceFromPart10` can't draw an 8-bit
+ * uncompressed frame anyway. `dicomMeta` describes only the document's
+ * first file (see readSeriesMeta's comment in shared/dicom-meta.ts), so on
+ * its own it only settles position 0; a later position needs the file's
+ * own row (`file`) to say it is range-readable, otherwise it falls back to
+ * fetching the whole file, as before.
  */
 export function thumbnailFrameSource(
   documentId: number,
   position: number,
   dicomMeta: DicomSeriesMeta | null,
   source: FileSource = OWNED,
+  file: ThumbnailFileHint = null,
 ): ThumbnailFrameSource {
-  if (position === 0 && dicomMeta && isUncompressedMultiFrame(dicomMeta)) {
+  const rangeReadable =
+    file?.frameIndex != null ||
+    (position === 0 && dicomMeta != null && isUncompressedMultiFrame(dicomMeta));
+  if (rangeReadable) {
     return { kind: "frame-range", url: frameUrl(source, documentId, position, 0) };
   }
   return { kind: "whole-file", url: fileUrl(source, documentId, position) };

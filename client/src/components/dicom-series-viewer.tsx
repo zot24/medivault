@@ -231,6 +231,8 @@ type FileRow = {
 function ViewStripThumb({
   documentId,
   position,
+  index,
+  rangeReadable,
   dicomMeta,
   label,
   selected,
@@ -239,18 +241,28 @@ function ViewStripThumb({
 }: {
   documentId: number;
   position: number;
+  /** Index in the strip, for the scroll-into-view observer. */
+  index: number;
+  /** This file is uncompressed multi-frame: thumbnail it from one frame's range. */
+  rangeReadable: boolean;
   dicomMeta: DicomSeriesMeta | null;
   label: string;
   selected: boolean;
   onSelect: () => void;
   testId: string;
 }) {
-  const dataUrl = useThumbnail(documentId, position, dicomMeta);
+  const dataUrl = useThumbnail(
+    documentId,
+    position,
+    dicomMeta,
+    rangeReadable ? { frameIndex: true } : null,
+  );
   return (
     <button
       type="button"
       onClick={onSelect}
       data-testid={testId}
+      data-strip-index={index}
       className={`flex-shrink-0 w-24 text-left rounded-md border-2 transition-colors ${
         selected ? "border-primary" : "border-transparent"
       }`}
@@ -341,6 +353,22 @@ export function isViewStripThumbLoaded(
   radius: number = VIEW_STRIP_LOAD_RADIUS,
 ): boolean {
   return Math.abs(index - selectedIndex) <= radius;
+}
+
+/**
+ * Whether one thumbnail of the view/run strip should be mounted (and so
+ * fetch its file): near the current selection, or already scrolled into
+ * view once (`seen` — an index stays loaded after that, so scrolling back
+ * doesn't refetch). The radius alone left everything past it as a blank
+ * placeholder however far a person scrolled.
+ */
+export function shouldLoadViewStripThumb(
+  index: number,
+  selectedIndex: number,
+  seen: ReadonlySet<number>,
+  radius: number = VIEW_STRIP_LOAD_RADIUS,
+): boolean {
+  return seen.has(index) || isViewStripThumbLoaded(index, selectedIndex, radius);
 }
 
 /** Percentage for the loading progress bar, capped at 100. */
@@ -575,6 +603,9 @@ export default function DicomSeriesViewer({
   // the files list has loaded.
   const [kind, setKind] = useState<SeriesKind | null>(null);
   const [viewLabels, setViewLabels] = useState<Map<number, string>>(new Map());
+  // Strip thumbnails that have been scrolled into view at least once.
+  const [seenStripIndices, setSeenStripIndices] = useState<ReadonlySet<number>>(new Set());
+  const viewStripRef = useRef<HTMLDivElement | null>(null);
   const [selectedPhaseIndex, setSelectedPhaseIndex] = useState(0);
   const [sliceIndex, setSliceIndex] = useState(0);
   const [loaded, setLoaded] = useState(0);
@@ -1347,6 +1378,42 @@ export default function DicomSeriesViewer({
   // Plan 13: "views" (echo) and "runs" (angiography) navigate with a
   // thumbnail strip instead of the position slider.
   const isViewStrip = kind === "views" || kind === "runs";
+
+  // Load a strip thumbnail once it scrolls into view, not only when it is
+  // near the selection: observe the strip's children, remember each index
+  // that has intersected. Re-armed whenever the strip's contents change.
+  useEffect(() => {
+    const strip = viewStripRef.current;
+    if (!open || !isViewStrip || !strip || typeof IntersectionObserver === "undefined") {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const revealed = entries
+          .filter((entry) => entry.isIntersecting)
+          .map((entry) => Number((entry.target as HTMLElement).dataset.stripIndex))
+          .filter((index) => Number.isInteger(index));
+        if (revealed.length === 0) {
+          return;
+        }
+        setSeenStripIndices((previous) => {
+          if (revealed.every((index) => previous.has(index))) {
+            return previous;
+          }
+          const next = new Set(previous);
+          for (const index of revealed) {
+            next.add(index);
+          }
+          return next;
+        });
+      },
+      { root: strip, threshold: 0.1 },
+    );
+    for (const child of Array.from(strip.children)) {
+      observer.observe(child);
+    }
+    return () => observer.disconnect();
+  }, [open, isViewStrip, positions]);
   // For an angiography run (plan 07 section D), the whole run keeps
   // preloading in the background (rangeRawFramesRef) — but Play unlocks
   // progressively (plan 12), once canPlay says the first stretch of frames
@@ -1589,15 +1656,18 @@ export default function DicomSeriesViewer({
               // ←/→ still move between them (the onKeyDown handler above
               // treats positions the same way regardless of kind).
               <div
+                ref={viewStripRef}
                 className="flex gap-2 overflow-x-auto pb-1 min-w-0 w-full"
                 data-testid="dicom-view-strip"
               >
                 {positions.map((position, index) =>
-                  isViewStripThumbLoaded(index, sliceIndex) ? (
+                  shouldLoadViewStripThumb(index, sliceIndex, seenStripIndices) ? (
                     <ViewStripThumb
                       key={position}
                       documentId={documentId!}
                       position={position}
+                      index={index}
+                      rangeReadable={rangeFrameCountRef.current.has(position)}
                       dicomMeta={focus?.dicomMeta ?? null}
                       label={viewLabels.get(position) ?? ""}
                       selected={index === sliceIndex}
@@ -1614,6 +1684,7 @@ export default function DicomSeriesViewer({
                       type="button"
                       onClick={() => setSliceIndex(index)}
                       data-testid={`dicom-view-${index}`}
+                      data-strip-index={index}
                       className="flex-shrink-0 w-24 text-left rounded-md border-2 border-transparent"
                     >
                       <div className="w-24 h-24 rounded bg-black/40 flex items-center justify-center">

@@ -15,7 +15,11 @@ import { thumbnailCacheKey } from "@shared/thumbnail-cache";
 import { useAuth } from "@/hooks/useAuth";
 import { useFileSource } from "./file-source-context";
 import { sourceKey } from "./file-source";
-import { mono8FrameFromRangeResponse, thumbnailFrameSource } from "./thumbnail-frame-source";
+import {
+  mono8FrameFromRangeResponse,
+  thumbnailFrameSource,
+  type ThumbnailFileHint,
+} from "./thumbnail-frame-source";
 
 const THUMBNAIL_SIZE = 128;
 
@@ -138,17 +142,21 @@ function drawCineThumbnail(bitmap: ImageBitmap): string | null {
  * `Math.floor(fileCount / 2)` rather than 0, so the thumbnail is mid-chest.
  * Pass `dicomMeta` (the document's series metadata) when available so an
  * uncompressed multi-frame file (plan 07 angiography) can be thumbnailed
- * from a single frame range instead of the whole ~100 MB file.
+ * from a single frame range instead of the whole ~100 MB file; pass the
+ * file's own row from the files list as `file` for any position past 0,
+ * since `dicomMeta` only vouches for the first file.
  */
 export function useThumbnail(
   documentId: number,
   position = 0,
   dicomMeta: DicomSeriesMeta | null = null,
+  file: ThumbnailFileHint = null,
 ): string | null {
   const { user } = useAuth();
   const fileSource = useFileSource();
   // A visitor's thumbnails are keyed by the token, an owner's by their id.
   const userId = fileSource.kind === "owned" ? user?.id ?? null : sourceKey(fileSource);
+  const rangeReadable = file?.frameIndex != null;
   const [dataUrl, setDataUrl] = useState<string | null>(
     () => readCache(userId, documentId, position) ?? null,
   );
@@ -168,7 +176,13 @@ export function useThumbnail(
     setDataUrl(null);
 
     (async () => {
-      const source = thumbnailFrameSource(documentId, position, dicomMeta, fileSource);
+      const source = thumbnailFrameSource(
+        documentId,
+        position,
+        dicomMeta,
+        fileSource,
+        rangeReadable ? { frameIndex: true } : null,
+      );
       const response = await fetch(source.url, { credentials: "include" });
       if (!response.ok) {
         throw new Error("Could not load file");
@@ -209,7 +223,7 @@ export function useThumbnail(
     return () => {
       cancelled = true;
     };
-  }, [userId, documentId, position, dicomMeta]);
+  }, [userId, documentId, position, dicomMeta, rangeReadable]);
 
   return dataUrl;
 }

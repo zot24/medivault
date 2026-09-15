@@ -5,6 +5,7 @@ import {
   cineFramesToDecode,
   countLoaded,
   isViewStripThumbLoaded,
+  shouldLoadViewStripThumb,
   loadProgressPercent,
   loadRadius,
   rawFrameFromBatch,
@@ -238,6 +239,25 @@ describe("isViewStripThumbLoaded", () => {
     );
     expect(loaded.length).toBeLessThan(total);
     expect(loaded.length).toBeLessThanOrEqual(2 * VIEW_STRIP_LOAD_RADIUS + 1);
+  });
+});
+
+describe("shouldLoadViewStripThumb", () => {
+  it("loads a thumbnail past the radius once it has been scrolled into view", () => {
+    // Regression: a 56-view echo record's strip showed a blank placeholder
+    // for every view past the radius however far a person scrolled.
+    const far = VIEW_STRIP_LOAD_RADIUS + 20;
+    expect(shouldLoadViewStripThumb(far, 0, new Set())).toBe(false);
+    expect(shouldLoadViewStripThumb(far, 0, new Set([far]))).toBe(true);
+  });
+
+  it("still loads the selection's neighbours before they scroll into view", () => {
+    expect(shouldLoadViewStripThumb(3, 0, new Set())).toBe(true);
+  });
+
+  it("keeps a seen thumbnail loaded after the selection moves away", () => {
+    expect(shouldLoadViewStripThumb(30, 0, new Set([30]))).toBe(true);
+    expect(shouldLoadViewStripThumb(30, 55, new Set([30]))).toBe(true);
   });
 });
 

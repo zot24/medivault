@@ -50,12 +50,30 @@ describe("thumbnailFrameSource", () => {
     expect(source).toEqual({ kind: "whole-file", url: documentFileUrl(42, 0) });
   });
 
-  it("fetches the whole file at a non-zero position, even for an uncompressed multi-frame series", () => {
+  it("fetches the whole file at a non-zero position when nothing vouches for that file", () => {
     // dicomMeta describes only the document's first file (shared/dicom-meta.ts);
     // a later position's own dimensions/transfer syntax may differ, so the
-    // range-endpoint shortcut only applies at position 0.
+    // series-level shortcut only applies at position 0.
     const source = thumbnailFrameSource(42, 1, xaMeta());
     expect(source).toEqual({ kind: "whole-file", url: documentFileUrl(42, 1) });
+  });
+
+  it("uses the range endpoint at a non-zero position when the file's own row carries a frame index", () => {
+    // Regression: runs 2 and 3 of a real cath record (92 MB and 98 MB,
+    // uncompressed multi-frame) were fetched whole for a 128 px thumbnail
+    // — and then couldn't be drawn, so the strip showed a blank placeholder.
+    // The files list marks each such file with `frameIndex`; that is enough.
+    const source = thumbnailFrameSource(42, 2, xaMeta(), undefined, {
+      frameIndex: { numberOfFrames: 98 },
+    });
+    expect(source).toEqual({ kind: "frame-range", url: documentFrameUrl(42, 2, 0) });
+  });
+
+  it("ignores a row without a frame index (a JPEG echo loop past position 0)", () => {
+    const source = thumbnailFrameSource(42, 2, xaMeta({ transferSyntaxUid: "1.2.840.10008.1.2.4.50" }), undefined, {
+      frameIndex: null,
+    });
+    expect(source).toEqual({ kind: "whole-file", url: documentFileUrl(42, 2) });
   });
 });
 
