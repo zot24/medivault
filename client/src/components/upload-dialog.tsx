@@ -161,6 +161,9 @@ export default function UploadDialog({ open, onOpenChange }: UploadDialogProps) 
     onSuccess: async (created, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/documents"] });
       queryClient.invalidateQueries({ queryKey: ["documents"] });
+      // The list pages read studies, not documents: a fresh upload has to
+      // appear there too, not only after the next full reload.
+      queryClient.invalidateQueries({ queryKey: ["studies"] });
 
       analytics.documentUploaded(
         variables.documentType,

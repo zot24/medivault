@@ -47,6 +47,7 @@ export type {
   ListedShare,
   FrozenSymptom,
   SharePacket,
+  PublicDocument,
   SharedFileMeta,
   DicomSeriesMeta,
   SeriesGroup,

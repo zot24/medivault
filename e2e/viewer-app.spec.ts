@@ -624,3 +624,114 @@ test("opens a readable SR report on its own page with the measurements table and
   await expect(page.locator('[data-testid^="report-outline-toggle-"]')).toBeVisible();
   await expect(page.getByText("No significant stenosis elsewhere.")).toBeVisible();
 });
+
+// The share portal (feat/share-portal): a visitor with no session opens
+// /s/:token and sees the shared study rendered like the owner's study page —
+// viewer included — under MediVault branding, with nothing to download.
+test("a visitor sees a shared study in the viewer without signing in", async ({
+  page,
+  browser,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto("/login");
+  await page
+    .getByTestId("input-login-email")
+    .fill(process.env.E2E_EMAIL ?? "demo@medivault.app");
+  await page
+    .getByTestId("input-login-password")
+    .fill(process.env.E2E_PASSWORD ?? "demo123");
+  await page.getByTestId("button-login-submit").click();
+  await page.waitForURL(/\/(dashboard|documents)/);
+
+  await page.goto("/documents");
+  await page.getByTestId("button-upload-document").click();
+  await page.getByTestId("input-upload-title").fill("Shared synthetic CT");
+  await page.getByTestId("input-upload-date").fill("2026-09-15");
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByTestId("button-choose-upload-files").click();
+  await (await chooser).setFiles([
+    path.join(fixtures, "mini-ct-01.dcm"),
+    path.join(fixtures, "mini-ct-02.dcm"),
+  ]);
+  const uploaded = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/api/documents") && response.request().method() === "POST",
+  );
+  await page.getByTestId("button-upload-submit").click();
+  expect((await uploaded).status()).toBe(201);
+  await expect(page.getByTestId(`study-card-${FIXTURE_STUDY_UID}`)).toBeVisible({
+    timeout: 30_000,
+  });
+
+  // Mint the share through the API with the owner's session cookies.
+  const documents = (await (await page.request.get("/api/documents")).json()) as {
+    id: number;
+    title: string;
+  }[];
+  const shared = documents.filter((d) => d.title === "Shared synthetic CT");
+  expect(shared.length).toBeGreaterThan(0);
+  const minted = await page.request.post("/api/shares", {
+    data: { documentIds: shared.map((d) => d.id), ttl: "1h", label: "For the e2e visitor" },
+  });
+  expect(minted.status()).toBe(201);
+  const { path: sharePath } = (await minted.json()) as { path: string };
+  const token = sharePath.split("/s/")[1];
+  expect(token).toBeTruthy();
+
+  // A brand-new context: no cookies, no session.
+  const visitorContext = await browser.newContext();
+  const visitor = await visitorContext.newPage();
+  const ownerOnly: string[] = [];
+  visitor.on("response", (response) => {
+    if (response.status() === 401 && response.url().includes("/api/documents/")) {
+      ownerOnly.push(response.url());
+    }
+  });
+  await visitor.goto(`/s/${token}`);
+
+  await expect(visitor.getByTestId("share-title")).toHaveText("For the e2e visitor");
+  await expect(visitor.getByTestId("share-header")).toContainText("MediVault");
+  await expect(visitor.getByTestId("share-study-label").first()).toBeVisible();
+  await expect(visitor.getByTestId("share-cta-join")).toBeVisible();
+  await expect(visitor.getByTestId("share-footer")).toContainText("©");
+  await expect(visitor.getByRole("button", { name: /download/i })).toHaveCount(0);
+  await expect(visitor.locator("a[download]")).toHaveCount(0);
+
+  await visitor.locator('[data-testid^="button-view-series-"]').first().click();
+  const canvas = visitor.getByTestId("dicom-viewer-canvas");
+  await expect(canvas).toBeVisible();
+  await expect(visitor.getByTestId("dicom-viewer-error")).toHaveCount(0);
+  await expect(visitor.getByTestId("dicom-viewer-loading")).toHaveCount(0);
+  const pixel = await canvas.evaluate((node) => {
+    if (!(node instanceof HTMLCanvasElement)) {
+      throw new Error("viewer canvas missing");
+    }
+    const context = node.getContext("2d");
+    if (!context) {
+      throw new Error("viewer context missing");
+    }
+    // The mini CT's corner is black; any lit pixel proves the slice drew.
+    const data = context.getImageData(0, 0, node.width, node.height).data;
+    let lit = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i] + data[i + 1] + data[i + 2] > 0) lit += 1;
+    }
+    return { width: node.width, height: node.height, lit };
+  });
+  expect(pixel.width).toBeGreaterThan(0);
+  expect(pixel.lit).toBeGreaterThan(0);
+
+  // Every byte the visitor saw came through the share token, never the owner routes.
+  expect(ownerOnly).toEqual([]);
+
+  // A wrong token gets the friendly dead end, not a blank page.
+  await visitor.goto("/s/not-a-real-token");
+  await expect(visitor.getByTestId("share-page")).toContainText("doesn't lead anywhere");
+  await visitorContext.close();
+
+  // Leave the demo account as we found it, so the other specs' first
+  // series is still their own upload.
+  for (const document of shared) {
+    await page.request.delete(`/api/documents/${document.id}`);
+  }
+});

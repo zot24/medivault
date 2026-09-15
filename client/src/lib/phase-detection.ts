@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { detectPhases, type PhaseSourceFile } from "@shared/phases";
 import type { DicomSeriesMeta } from "@shared/dicom-meta";
 import type { StudyPhaseInfo } from "@shared/studies";
+import { OWNED, filesListUrl, sourceKey, type FileSource } from "@/lib/file-source";
+import { useFileSource } from "@/lib/file-source-context";
 
 export { isPhaseCandidate } from "@shared/phases";
 
@@ -14,11 +16,11 @@ const NO_PHASES: StudyPhaseInfo = { hasPhases: false, sliceCount: 0 };
  * the same fetch-and-detect, for callers that render.
  */
 export async function detectPhasesFor(documentId: number): Promise<StudyPhaseInfo> {
-  return detectPhasesOf(documentId);
+  return detectPhasesOf(OWNED, documentId);
 }
 
-async function detectPhasesOf(documentId: number): Promise<StudyPhaseInfo> {
-  const response = await fetch(`/api/documents/${documentId}/files`, {
+async function detectPhasesOf(source: FileSource, documentId: number): Promise<StudyPhaseInfo> {
+  const response = await fetch(filesListUrl(source, documentId), {
     credentials: "include",
   });
   if (!response.ok) {
@@ -40,9 +42,10 @@ async function detectPhasesOf(documentId: number): Promise<StudyPhaseInfo> {
  * of many studies use the server's StudySummary.primaryPhases instead.
  */
 export function usePhaseDetection(documentId: number, enabled: boolean): StudyPhaseInfo | null {
+  const source = useFileSource();
   const { data } = useQuery({
-    queryKey: ["phase-detection", documentId],
-    queryFn: () => detectPhasesOf(documentId),
+    queryKey: ["phase-detection", sourceKey(source), documentId],
+    queryFn: () => detectPhasesOf(source, documentId),
     enabled,
   });
   return data ?? null;

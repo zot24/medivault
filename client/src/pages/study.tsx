@@ -288,10 +288,10 @@ function Section({
 
 function ReportsSection({
   records,
-  studyInstanceUid,
+  reportHref,
 }: {
   records: MedicalDocument[];
-  studyInstanceUid: string;
+  reportHref: (documentId: number) => string;
 }) {
   const rows = groupReports(records);
   if (rows.length === 0) {
@@ -336,7 +336,7 @@ function ReportsSection({
                 // the other sections still use — its content tree can run
                 // long, and a dialog can't scroll past its own viewport.
                 <Link
-                  href={`/studies/${encodeURIComponent(studyInstanceUid)}/reports/${row.representative.id}`}
+                  href={reportHref(row.representative.id)}
                 >
                   <Button
                     variant="outline"
@@ -368,28 +368,27 @@ function orderedImages(study: StudySummary): MedicalDocument[] {
   return [study.primary, ...rest, ...images];
 }
 
-export default function Study({
-  params,
-}: RouteComponentProps<{ studyInstanceUid: string }>) {
-  const { isAuthenticated, isLoading } = useAuth();
-  const { data: studies, isLoading: studiesLoading } = useStudies({
-    enabled: isAuthenticated,
-  });
+
+/**
+ * A study's sections (images, measurements, analysis, reports, other) and
+ * the viewer they open — shared by the owner's study page and the share
+ * portal, which differ only in where files come from (FileSourceProvider)
+ * and where report links go.
+ */
+export function StudyContent({
+  study,
+  reportHref,
+}: {
+  study: StudySummary;
+  reportHref: (documentId: number) => string;
+}) {
   const [viewerDocument, setViewerDocument] = useState<MedicalDocument | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
-  // Plan 13 section D: which file the viewer opens on, when a person picks
-  // a thumbnail from a row's inline view/run strip instead of the plain
-  // View button (which always opens on the first file).
+  // Which file's position the viewer opens on when a person picks a thumbnail
+  // from a row's inline view/run strip instead of the plain View button.
   const [viewerInitialPosition, setViewerInitialPosition] = useState<number | undefined>(
     undefined,
   );
-
-  const study = studies?.find(
-    (candidate) => candidate.studyInstanceUid === params.studyInstanceUid,
-  );
-  // Hook before the early returns below; empty when the study is not loaded yet.
-  const headerMultiFrame = useMultiFrameSummary(study ? studySeries(study) : []);
-
 
   const openViewer = (series: MedicalDocument) => {
     setViewerDocument(series);
@@ -402,6 +401,70 @@ export default function Study({
     setViewerInitialPosition(position);
     setViewerOpen(true);
   };
+
+  return (
+    <>
+      <Section
+        title="Images"
+        series={orderedImages(study)}
+        onView={openViewer}
+        onOpenAt={openViewerAt}
+      />
+      <Section
+        title="Measurements"
+        series={study.groups.snapshot}
+        onView={openViewer}
+        onOpenAt={openViewerAt}
+        layout="grid"
+      />
+      <Section
+        title="Analysis"
+        series={study.groups.analysis}
+        onView={openViewer}
+        onOpenAt={openViewerAt}
+      />
+      <ReportsSection records={study.groups.report} reportHref={reportHref} />
+      <Section
+        title="Other"
+        series={[...study.groups.localizer, ...study.groups.other]}
+        onView={openViewer}
+        onOpenAt={openViewerAt}
+      />
+
+      {study.seriesCount === 0 && (
+        <Card className="card-sanctuary">
+          <CardContent className="p-8 text-center text-foreground-muted font-body">
+            <FileText className="h-8 w-8 mx-auto mb-3 text-foreground-subtle" />
+            No series in this study yet.
+          </CardContent>
+        </Card>
+      )}
+
+      <DicomSeriesViewer
+        document={viewerDocument}
+        open={viewerOpen}
+        onOpenChange={setViewerOpen}
+        initialPosition={viewerInitialPosition}
+      />
+    </>
+  );
+}
+
+export default function Study({
+  params,
+}: RouteComponentProps<{ studyInstanceUid: string }>) {
+  const { isAuthenticated, isLoading } = useAuth();
+  const { data: studies, isLoading: studiesLoading } = useStudies({
+    enabled: isAuthenticated,
+  });
+
+  const study = studies?.find(
+    (candidate) => candidate.studyInstanceUid === params.studyInstanceUid,
+  );
+  // Hook before the early returns below; empty when the study is not loaded yet.
+  const headerMultiFrame = useMultiFrameSummary(study ? studySeries(study) : []);
+
+
 
   if (isLoading || studiesLoading) {
     return (
@@ -486,52 +549,13 @@ export default function Study({
           </p>
         </div>
 
-        <Section
-          title="Images"
-          series={orderedImages(study)}
-          onView={openViewer}
-          onOpenAt={openViewerAt}
+        <StudyContent
+          study={study}
+          reportHref={(documentId) =>
+            `/studies/${encodeURIComponent(study.studyInstanceUid)}/reports/${documentId}`
+          }
         />
-        <Section
-          title="Measurements"
-          series={study.groups.snapshot}
-          onView={openViewer}
-          onOpenAt={openViewerAt}
-          layout="grid"
-        />
-        <Section
-          title="Analysis"
-          series={study.groups.analysis}
-          onView={openViewer}
-          onOpenAt={openViewerAt}
-        />
-        <ReportsSection
-          records={study.groups.report}
-          studyInstanceUid={study.studyInstanceUid}
-        />
-        <Section
-          title="Other"
-          series={[...study.groups.localizer, ...study.groups.other]}
-          onView={openViewer}
-          onOpenAt={openViewerAt}
-        />
-
-        {study.seriesCount === 0 && (
-          <Card className="card-sanctuary">
-            <CardContent className="p-8 text-center text-foreground-muted font-body">
-              <FileText className="h-8 w-8 mx-auto mb-3 text-foreground-subtle" />
-              No series in this study yet.
-            </CardContent>
-          </Card>
-        )}
       </div>
-
-      <DicomSeriesViewer
-        document={viewerDocument}
-        open={viewerOpen}
-        onOpenChange={setViewerOpen}
-        initialPosition={viewerInitialPosition}
-      />
     </div>
   );
 }

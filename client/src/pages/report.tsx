@@ -3,6 +3,7 @@ import { Link, type RouteComponentProps } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
 import { useStudies } from "@/lib/sdk";
 import type { MedicalDocument } from "@shared/schema";
+import type { StudySummary } from "@shared/studies";
 import Navigation from "@/components/navigation";
 import DicomSeriesViewer from "@/components/dicom-series-viewer";
 import { useSrReport } from "@/lib/use-sr-report";
@@ -264,27 +265,28 @@ function ContentOutline({
   );
 }
 
-export default function Report({
-  params,
-}: RouteComponentProps<{ studyInstanceUid: string; documentId: string }>) {
-  const { isAuthenticated, isLoading } = useAuth();
-  const { data: studies, isLoading: studiesLoading } = useStudies({
-    enabled: isAuthenticated,
-  });
+/**
+ * A structured report rendered for a record of `study`: measurements table,
+ * evidence snapshots, the full outline, and the viewer the snapshots open.
+ * Used by the owner's report page and the share portal; only the back link
+ * and the file source (FileSourceProvider) differ.
+ */
+export function ReportContent({
+  study,
+  record,
+  backHref,
+  backLabel = "Back to study",
+}: {
+  study: StudySummary;
+  record: MedicalDocument;
+  backHref: string;
+  backLabel?: string;
+}) {
   const [viewerDocument, setViewerDocument] = useState<MedicalDocument | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
-
-  const study = studies?.find(
-    (candidate) => candidate.studyInstanceUid === params.studyInstanceUid,
-  );
-  const documentId = Number(params.documentId);
-  const record = study
-    ? (studySeries(study).find((candidate) => candidate.id === documentId) ?? null)
-    : null;
-  const siblingDocuments = study ? studySeries(study) : undefined;
-
+  const siblingDocuments = studySeries(study);
   const { report, error, siblingIndex } = useSrReport(
-    record ? record.id : null,
+    record.id,
     true,
     siblingDocuments,
   );
@@ -293,46 +295,6 @@ export default function Report({
     setViewerDocument(document);
     setViewerOpen(true);
   };
-
-  const studyHref = `/studies/${encodeURIComponent(params.studyInstanceUid)}`;
-
-  if (isLoading || studiesLoading) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Navigation />
-        <div className="max-w-3xl mx-auto px-6 lg:px-8 py-8">
-          <Skeleton className="h-10 w-64 mb-4" />
-          <Skeleton className="h-5 w-96" />
-        </div>
-      </div>
-    );
-  }
-
-  if (!isAuthenticated) {
-    return null;
-  }
-
-  if (!study || !record) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Navigation />
-        <div className="max-w-3xl mx-auto px-6 lg:px-8 py-16 text-center">
-          <h1 className="text-2xl font-semibold text-foreground mb-3 font-display">
-            Report not found
-          </h1>
-          <p className="text-foreground-muted mb-6 font-body">
-            This report isn't in your account, or it's still loading.
-          </p>
-          <Link href={study ? studyHref : "/documents"}>
-            <Button variant="outline" data-testid="button-back-to-study">
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              <span className="font-body">{study ? "Back to study" : "Back to documents"}</span>
-            </Button>
-          </Link>
-        </div>
-      </div>
-    );
-  }
 
   const measurements = report ? flattenMeasurements(report.nodes) : [];
   // A deep link can land here for a record whose report turns out to be
@@ -351,10 +313,8 @@ export default function Report({
     : "This report has no readable content.";
 
   return (
-    <div className="min-h-screen bg-background" data-testid="report-page">
-      <Navigation />
-      <div className="max-w-3xl mx-auto px-6 lg:px-8 py-8">
-        <Link href={studyHref}>
+    <>
+        <Link href={backHref}>
           <Button
             variant="ghost"
             size="sm"
@@ -362,7 +322,7 @@ export default function Report({
             data-testid="button-back-to-study"
           >
             <ArrowLeft className="mr-2 h-4 w-4" />
-            <span className="font-body">Back to study</span>
+            <span className="font-body">{backLabel}</span>
           </Button>
         </Link>
 
@@ -413,9 +373,74 @@ export default function Report({
             </div>
           </div>
         )}
-      </div>
 
       <DicomSeriesViewer document={viewerDocument} open={viewerOpen} onOpenChange={setViewerOpen} />
+    </>
+  );
+}
+
+export default function Report({
+  params,
+}: RouteComponentProps<{ studyInstanceUid: string; documentId: string }>) {
+  const { isAuthenticated, isLoading } = useAuth();
+  const { data: studies, isLoading: studiesLoading } = useStudies({
+    enabled: isAuthenticated,
+  });
+
+  const study = studies?.find(
+    (candidate) => candidate.studyInstanceUid === params.studyInstanceUid,
+  );
+  const documentId = Number(params.documentId);
+  const record = study
+    ? (studySeries(study).find((candidate) => candidate.id === documentId) ?? null)
+    : null;
+
+  const studyHref = `/studies/${encodeURIComponent(params.studyInstanceUid)}`;
+
+  if (isLoading || studiesLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <div className="max-w-3xl mx-auto px-6 lg:px-8 py-8">
+          <Skeleton className="h-10 w-64 mb-4" />
+          <Skeleton className="h-5 w-96" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return null;
+  }
+
+  if (!study || !record) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <div className="max-w-3xl mx-auto px-6 lg:px-8 py-16 text-center">
+          <h1 className="text-2xl font-semibold text-foreground mb-3 font-display">
+            Report not found
+          </h1>
+          <p className="text-foreground-muted mb-6 font-body">
+            This report isn't in your account, or it's still loading.
+          </p>
+          <Link href={study ? studyHref : "/documents"}>
+            <Button variant="outline" data-testid="button-back-to-study">
+              <ArrowLeft className="mr-2 h-4 w-4" />
+              <span className="font-body">{study ? "Back to study" : "Back to documents"}</span>
+            </Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background" data-testid="report-page">
+      <Navigation />
+      <div className="max-w-3xl mx-auto px-6 lg:px-8 py-8">
+        <ReportContent study={study} record={record} backHref={studyHref} />
+      </div>
     </div>
   );
 }

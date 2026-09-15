@@ -1,5 +1,9 @@
 import { createHash, randomBytes } from "crypto";
 import { z } from "zod";
+import { groupIntoStudies, withPrimaryPhases, type StudySummary } from "@shared/studies";
+import { isPhaseCandidate, phaseInfoFromFiles, type PhaseSourceFile } from "@shared/phases";
+import type { DocumentFile, MedicalDocument } from "@shared/schema";
+import type { createDocumentFiles } from "./document-files";
 import type { FrozenSymptom, Symptom } from "@shared/schema";
 import { asObjectKey, type ObjectStore } from "./object-store";
 import type { DocumentRecords } from "./document-files";
@@ -67,6 +71,9 @@ export type PublicOpen =
   | { kind: "dead" }
   | { kind: "file"; file: SharedFile };
 
+/** A shared record as a visitor may see it: everything but who owns it and where it is stored. */
+export type PublicDocument = Omit<MedicalDocument, "userId" | "filePath">;
+
 export type PublicPacket =
   | { kind: "unknown" }
   | { kind: "dead" }
@@ -76,9 +83,40 @@ export type PublicPacket =
         label: string | null;
         expiresAt: Date;
         files: SharedFileMeta[];
+        /** Every shared record, ordinary documents and image series alike. */
+        documents: PublicDocument[];
+        /** The shared series grouped into studies, for the share portal's study view. */
+        studies: StudySummary[];
         snapshot: FrozenSymptom[] | null;
       };
     };
+
+export type PublicFileEntry = Omit<DocumentFile, "filePath" | "documentId" | "id" | "createdAt">;
+
+export type PublicFiles =
+  | { kind: "unknown" }
+  | { kind: "dead" }
+  | { kind: "files"; files: PublicFileEntry[] };
+
+type OwnedFileService = Pick<
+  ReturnType<typeof createDocumentFiles>,
+  "listOwnedFiles" | "openOwnedFileAt" | "openOwnedFrame" | "openOwnedFrameRange"
+>;
+
+export type PublicFrame =
+  | { kind: "unknown" }
+  | { kind: "dead" }
+  | { kind: "frame"; frame: NonNullable<Awaited<ReturnType<OwnedFileService["openOwnedFrame"]>>> };
+
+export type PublicFrameRange =
+  | { kind: "unknown" }
+  | { kind: "dead" }
+  | { kind: "frames"; frames: NonNullable<Awaited<ReturnType<OwnedFileService["openOwnedFrameRange"]>>> };
+
+export function toPublicDocument(document: MedicalDocument): PublicDocument {
+  const { userId: _userId, filePath: _filePath, ...rest } = document;
+  return rest;
+}
 
 export type ShareLinkRow = {
   id: number;
@@ -241,6 +279,10 @@ function listedFrom(row: ShareLinkRow, now: Date): ListedShare {
 export function createShareLinks(deps: {
   objects: ObjectStore;
   documents: Pick<DocumentRecords, "get">;
+  /** Serves a shared series' files exactly as the owner's own endpoints do, scoped by the token. */
+  documentFiles?: OwnedFileService;
+  /** Per-file positions for phase detection on the shared studies' primary volumes. */
+  phaseSources?: (documentIds: number[]) => Promise<(PhaseSourceFile & { documentId: number })[]>;
   shares: ShareLinkRecords;
   symptoms?: SymptomRecords;
   now?: () => Date;
@@ -286,7 +328,86 @@ export function createShareLinks(deps: {
     };
   }
 
+  async function studiesOf(documents: MedicalDocument[]): Promise<StudySummary[]> {
+    const studies = groupIntoStudies(documents);
+    if (!deps.phaseSources) {
+      return studies;
+    }
+    const candidateIds = studies
+      .map((study) => study.primary)
+      .filter((p): p is MedicalDocument => !!p && isPhaseCandidate(p.dicomMeta, p.fileCount))
+      .map((p) => p.id);
+    const rows = await deps.phaseSources(candidateIds);
+    const byDocument = new Map<number, PhaseSourceFile[]>();
+    for (const row of rows) {
+      const list = byDocument.get(row.documentId) ?? [];
+      list.push(row);
+      byDocument.set(row.documentId, list);
+    }
+    return withPrimaryPhases(
+      studies,
+      new Map(Array.from(byDocument.entries(), ([id, files]) => [id, phaseInfoFromFiles(files)] as const)),
+    );
+  }
+
+  /** The live row for a token whose packet includes `documentId`, or why not. */
+  async function loadSharedDocument(
+    token: RawShareToken,
+    documentId: number,
+  ): Promise<{ kind: "unknown" } | { kind: "dead" } | { kind: "live"; row: ShareLinkRow }> {
+    const loaded = await loadLiveRow(token);
+    if (loaded.kind !== "live") {
+      return loaded;
+    }
+    if (!shareIncludesDocument(loaded.row, documentId) || !deps.documentFiles) {
+      return { kind: "unknown" };
+    }
+    return loaded;
+  }
+
   return {
+    async openDocumentFiles(token: RawShareToken, documentId: number): Promise<PublicFiles> {
+      const loaded = await loadSharedDocument(token, documentId);
+      if (loaded.kind !== "live") {
+        return loaded;
+      }
+      const files = await deps.documentFiles!.listOwnedFiles(loaded.row.createdBy, documentId);
+      if (!files) {
+        return { kind: "unknown" };
+      }
+      return {
+        kind: "files",
+        files: files.map(({ filePath: _p, documentId: _d, id: _i, createdAt: _c, ...rest }) => rest),
+      };
+    },
+
+    async openDocumentFileAt(token: RawShareToken, documentId: number, position: number): Promise<PublicOpen> {
+      const loaded = await loadSharedDocument(token, documentId);
+      if (loaded.kind !== "live") {
+        return loaded;
+      }
+      const file = await deps.documentFiles!.openOwnedFileAt(loaded.row.createdBy, documentId, position);
+      return file ? { kind: "file", file } : { kind: "unknown" };
+    },
+
+    async openDocumentFrame(token: RawShareToken, documentId: number, position: number, frame: number): Promise<PublicFrame> {
+      const loaded = await loadSharedDocument(token, documentId);
+      if (loaded.kind !== "live") {
+        return loaded;
+      }
+      const opened = await deps.documentFiles!.openOwnedFrame(loaded.row.createdBy, documentId, position, frame);
+      return opened ? { kind: "frame", frame: opened } : { kind: "unknown" };
+    },
+
+    async openDocumentFrameRange(token: RawShareToken, documentId: number, position: number, from: number, to: number): Promise<PublicFrameRange> {
+      const loaded = await loadSharedDocument(token, documentId);
+      if (loaded.kind !== "live") {
+        return loaded;
+      }
+      const opened = await deps.documentFiles!.openOwnedFrameRange(loaded.row.createdBy, documentId, position, from, to);
+      return opened ? { kind: "frames", frames: opened } : { kind: "unknown" };
+    },
+
     async mint(input: {
       userId: string;
       documentId?: number;
@@ -422,6 +543,7 @@ export function createShareLinks(deps: {
       }
 
       const files: SharedFileMeta[] = [];
+      const documents: MedicalDocument[] = [];
       for (const documentId of packetIds(loaded.row)) {
         const document = await deps.documents.get(
           documentId,
@@ -430,6 +552,7 @@ export function createShareLinks(deps: {
         if (!document) {
           continue;
         }
+        documents.push(document);
         files.push({
           id: document.id,
           title: document.title,
@@ -447,6 +570,8 @@ export function createShareLinks(deps: {
           label: loaded.row.label,
           expiresAt: loaded.row.expiresAt,
           files,
+          documents: documents.map(toPublicDocument),
+          studies: await studiesOf(documents),
           snapshot: loaded.row.symptomSnapshot,
         },
       };

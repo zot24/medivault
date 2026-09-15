@@ -43,6 +43,7 @@ export type {
   FrozenSymptom,
   SharedFileMeta,
   SharePacket,
+  PublicDocument,
 } from './types';
 export { DOCUMENT_TYPES } from './types';
 
