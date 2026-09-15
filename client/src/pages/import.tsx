@@ -12,10 +12,8 @@ import { Progress } from "@/components/ui/progress";
 import { FolderOpen, Layers, ScanLine } from "lucide-react";
 import { postFiles } from "@/components/upload-dialog";
 import {
-  IMPORT_HEAD_BYTES,
   planImport,
   type ImportPlan,
-  type ImportSourceFile,
   type PlannedSeries,
 } from "@shared/import-plan";
 import {
@@ -24,6 +22,7 @@ import {
   type ImportSeriesTask,
   type SeriesProgress,
 } from "@/lib/import-runner";
+import { buildSourceFiles } from "@/lib/import-source-files";
 import type { MedicalDocument } from "@shared/schema";
 
 function formatBytes(bytes: number): string {
@@ -45,22 +44,6 @@ function formatEta(seconds: number): string {
 function filePath(file: File, index: number): string {
   const relative = (file as unknown as { webkitRelativePath?: string }).webkitRelativePath;
   return relative || `${index}:${file.name}`;
-}
-
-async function buildSourceFiles(
-  files: File[],
-): Promise<{ sources: ImportSourceFile[]; byPath: Map<string, File> }> {
-  const byPath = new Map<string, File>();
-  const sources: ImportSourceFile[] = new Array(files.length);
-  await Promise.all(
-    files.map(async (file, index) => {
-      const path = filePath(file, index);
-      byPath.set(path, file);
-      const head = new Uint8Array(await file.slice(0, IMPORT_HEAD_BYTES).arrayBuffer());
-      sources[index] = { path, size: file.size, head };
-    }),
-  );
-  return { sources, byPath };
 }
 
 function defaultSelection(plan: ImportPlan): Set<string> {
@@ -242,13 +225,30 @@ export default function Import() {
     }
     setBuilding(true);
     try {
-      const { sources, byPath } = await buildSourceFiles(files);
+      const { sources, byPath, unreadable } = await buildSourceFiles(files, filePath);
       byPathRef.current = byPath;
       const today = new Date().toISOString().slice(0, 10);
       const nextPlan = planImport(sources, { today });
-      setPlan(nextPlan);
-      setSelected(defaultSelection(nextPlan));
+      // A file that couldn't be read (a scratched-disc I/O error, a
+      // permission error) is skipped rather than aborting the whole scan —
+      // the rest of the folder still gets a plan (plan 15 review).
+      const plannedWithUnreadable: ImportPlan =
+        unreadable.length === 0
+          ? nextPlan
+          : { ...nextPlan, skipped: [...unreadable, ...nextPlan.skipped] };
+      setPlan(plannedWithUnreadable);
+      setSelected(defaultSelection(plannedWithUnreadable));
       setResults({});
+      if (unreadable.length > 0) {
+        toast({
+          title:
+            unreadable.length === 1
+              ? "1 file couldn't be read"
+              : `${unreadable.length} files couldn't be read`,
+          description: "The rest of the folder was read fine — those files were skipped.",
+          variant: "destructive",
+        });
+      }
     } catch (error) {
       toast({
         title: "Couldn't read that folder",
@@ -388,6 +388,12 @@ export default function Import() {
   const totals = plan?.totals;
   const failedResults = Object.values(results).filter((r) => r.status === "failed");
   const selectedCount = selected.size;
+  const overallTotalFiles = allTasksRef.current.reduce((sum, t) => sum + t.files.length, 0);
+  const overallSentFiles = allTasksRef.current.reduce(
+    (sum, t) => sum + (results[t.key]?.sent ?? 0),
+    0,
+  );
+  const overallDoneSeries = Object.values(results).filter((r) => r.status === "done").length;
 
   return (
     <div className="min-h-screen bg-background">
@@ -499,6 +505,20 @@ export default function Import() {
               <Card data-testid="import-progress">
                 <CardContent className="p-4 space-y-3">
                   <h3 className="font-semibold text-foreground font-display">Progress</h3>
+                  <div data-testid="import-progress-overall">
+                    <div className="flex items-center justify-between text-sm font-body mb-1">
+                      <span className="font-medium">Overall</span>
+                      <span className="text-foreground-muted">
+                        {overallDoneSeries} / {allTasksRef.current.length} series ·{" "}
+                        {overallSentFiles} / {overallTotalFiles} files
+                      </span>
+                    </div>
+                    <Progress
+                      value={
+                        overallTotalFiles === 0 ? 0 : (overallSentFiles / overallTotalFiles) * 100
+                      }
+                    />
+                  </div>
                   {Object.values(results).map((progress) => (
                     <div key={progress.key} data-testid={`import-progress-${progress.key}`}>
                       <div className="flex items-center justify-between text-sm font-body mb-1">
