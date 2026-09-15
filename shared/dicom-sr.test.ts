@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { flattenMeasurements, formatMeasurement, parseSr, srViewability } from "./dicom-sr";
+import {
+  flattenMeasurements,
+  formatMeasurement,
+  outlineFromNodes,
+  parseSr,
+  srViewability,
+} from "./dicom-sr";
 import {
   SOP_BASIC_TEXT_SR,
   buildMiniCtDicom,
@@ -252,5 +258,75 @@ describe("formatMeasurement", () => {
 
   it("omits the unit entirely when there isn't one", () => {
     expect(formatMeasurement(0.5, "")).toBe("0.5");
+  });
+});
+
+describe("outlineFromNodes", () => {
+  it("flattens a nested tree in depth-first order with each row's depth", () => {
+    const nodes = [
+      {
+        type: "CONTAINER",
+        name: "LAD",
+        children: [
+          { type: "TEXT", name: "Identifier", text: "LAD proximal", children: [] },
+          { type: "NUM", name: "Length", value: 12.4, unit: "cm", children: [] },
+        ],
+      },
+      { type: "TEXT", name: "Impression", text: "No significant stenosis.", children: [] },
+    ];
+
+    const rows = outlineFromNodes(nodes);
+
+    expect(rows.map((row) => [row.node.type, row.node.name, row.depth])).toEqual([
+      ["CONTAINER", "LAD", 0],
+      ["TEXT", "Identifier", 1],
+      ["NUM", "Length", 1],
+      ["TEXT", "Impression", 0],
+    ]);
+  });
+
+  it("defaults a container with children to collapsed", () => {
+    const nodes = [
+      {
+        type: "CONTAINER",
+        name: "LAD",
+        children: [{ type: "TEXT", name: "Identifier", text: "LAD proximal", children: [] }],
+      },
+    ];
+
+    const rows = outlineFromNodes(nodes);
+
+    expect(rows[0].collapsedByDefault).toBe(true);
+  });
+
+  it("does not default a leaf, or an empty container, to collapsed", () => {
+    const nodes = [
+      { type: "TEXT", name: "Impression", text: "No significant stenosis.", children: [] },
+      { type: "CONTAINER", name: "Empty", children: [] },
+    ];
+
+    const rows = outlineFromNodes(nodes);
+
+    expect(rows.map((row) => row.collapsedByDefault)).toEqual([false, false]);
+  });
+
+  it("gives every row a stable, unique id tracing its position in the tree", () => {
+    const nodes = [
+      {
+        type: "CONTAINER",
+        name: "LAD",
+        children: [{ type: "TEXT", name: "Identifier", text: "LAD proximal", children: [] }],
+      },
+      { type: "TEXT", name: "Impression", text: "No significant stenosis.", children: [] },
+    ];
+
+    const rows = outlineFromNodes(nodes);
+
+    const ids = rows.map((row) => row.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("returns an empty outline for an empty tree", () => {
+    expect(outlineFromNodes([])).toEqual([]);
   });
 });
