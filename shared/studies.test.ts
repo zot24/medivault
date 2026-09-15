@@ -11,6 +11,7 @@ import {
   groupReports,
   listDocumentItems,
   primarySeries,
+  recordFileCountLabel,
   splitDocuments,
   studyCounts,
   studyLabel,
@@ -457,6 +458,28 @@ describe("studyCounts", () => {
       viewableCount: 2,
       fileCount: 774 + 1 + 1 + 1,
     });
+  });
+});
+
+describe("recordFileCountLabel", () => {
+  // Plan 12: a multi-file angiography record (e.g. the reference cath study's
+  // 108/92/98-frame runs) reads as "3 runs · 298 frames", not "3 images" —
+  // the file count alone hides that each file is many frames of playback.
+  it("reads as N images when no total frame count is known (every non-cine record)", () => {
+    expect(recordFileCountLabel(1, null)).toBe("1 image");
+    expect(recordFileCountLabel(32, null)).toBe("32 images");
+  });
+
+  it("reads as runs and frames when a total frame count is given", () => {
+    expect(recordFileCountLabel(3, 298)).toBe("3 runs · 298 frames");
+  });
+
+  it("keeps 'run' singular for one file", () => {
+    expect(recordFileCountLabel(1, 108)).toBe("1 run · 108 frames");
+  });
+
+  it("keeps 'frame' singular for a single-frame total", () => {
+    expect(recordFileCountLabel(1, 1)).toBe("1 run · 1 frame");
   });
 });
 

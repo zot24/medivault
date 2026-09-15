@@ -6,8 +6,9 @@ import { ChevronRight, Layers, ScanLine } from "lucide-react";
 import type { StudySummary } from "@/lib/sdk";
 import { useThumbnail } from "@/lib/thumbnails";
 import { thumbnailPosition } from "@/lib/study-thumbnail";
-import { studyLabel } from "@shared/studies";
+import { studyLabel, studySeries, recordFileCountLabel } from "@shared/studies";
 import { localDate } from "@shared/upload-kinds";
+import { useMultiFrameSummary } from "@/lib/multi-frame-summary";
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024 * 1024) {
@@ -31,6 +32,12 @@ export default function StudyCard({ study }: StudyCardProps) {
     thumbnailSource ? thumbnailPosition(thumbnailSource) : 0,
     thumbnailSource?.dicomMeta ?? null,
   );
+  // Plan 12: same wording as a series row — "3 runs · 298 frames" instead
+  // of "3 images" when the study is (or contains) an angiography record.
+  const multiFrame = useMultiFrameSummary(studySeries(study));
+  const fileCountLabel = multiFrame
+    ? recordFileCountLabel(multiFrame.fileCount, multiFrame.totalFrames)
+    : recordFileCountLabel(study.fileCount, null);
 
   return (
     <Card
@@ -84,7 +91,7 @@ export default function StudyCard({ study }: StudyCardProps) {
             <span data-testid={`study-summary-${study.studyInstanceUid}`}>
               {study.seriesCount === 1 ? "1 series" : `${study.seriesCount} series`}
               {" · "}
-              {study.fileCount === 1 ? "1 image" : `${study.fileCount} images`}
+              {fileCountLabel}
               {" · "}
               {formatBytes(study.totalBytes)}
             </span>

@@ -329,6 +329,23 @@ const GROUP_ORDER: SeriesGroup[] = [
   "other",
 ];
 
+/**
+ * "3 runs · 298 frames" for a multi-frame DICOM record (plan 12: an
+ * angiography record's `fileCount` is its cine runs, not stills, so "3
+ * images" undercounts what there actually is to play), or the plain "N
+ * images" wording when `totalFrames` isn't known (every other kind of
+ * record). Callers pass `totalFrames` only once they know it — see
+ * server/routes.ts's per-file `frameIndex.numberOfFrames`, summed.
+ */
+export function recordFileCountLabel(fileCount: number, totalFrames: number | null): string {
+  if (totalFrames == null) {
+    return fileCount === 1 ? "1 image" : `${fileCount} images`;
+  }
+  const runs = fileCount === 1 ? "1 run" : `${fileCount} runs`;
+  const frames = totalFrames === 1 ? "1 frame" : `${totalFrames} frames`;
+  return `${runs} · ${frames}`;
+}
+
 export function studySeries(study: StudySummary): MedicalDocument[] {
   return GROUP_ORDER.flatMap((group) => study.groups[group]);
 }
