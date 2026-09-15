@@ -77,17 +77,23 @@ This is not a PACS. JPEG 2000, JPEG-LS, and other transfer syntaxes still do not
 
 A patient CD usually holds several studies, a bundled viewer, and an index. Only the image series are worth uploading.
 
+**Import the whole disc**
+
+Open **Import a disc** and choose (or drag in) the disc's top-level folder. The app reads every file's header client-side, groups them into studies and series, and shows a preview tree — one card per study, each series labeled with its file count, size, and whether it will draw in the viewer — before anything uploads. Index files and viewer programs are skipped automatically; series with nothing to view are unchecked by default but can still be included. **Import** then uploads every checked series, one at a time, and lands on Documents with one card per study.
+
+The three rules below describe what is actually on the disc; `/import` applies them for you.
+
 **What is on the disc**
 
-- `DICOMDIR`, `Studies_List.txt`, `Autorun.inf` — index files. Skip them.
-- `*.exe`, `*.dmg`, `viewers/`, `weasis/` — the viewer programs the hospital bundles. Skip them.
+- `DICOMDIR`, `Studies_List.txt`, `Autorun.inf` — index files. Skipped automatically.
+- `*.exe`, `*.dmg`, `viewers/`, `weasis/` — the viewer programs the hospital bundles. Skipped automatically.
 - Folders like `ST000001/SE000007` (or `DICOM/…`) — one `ST` folder per study, one `SE` folder per series. Files inside often have no extension (`CT000001`, `XA000001`). **These are the images.**
 
 **What to pick**
 
-- Upload **one `SE` folder at a time**: select every file in it. The app stores it as one document with one file per slice and shows it as one card.
-- For a CT, start with the thin-slice axial series (the folder with the most files, around 0.5–1 mm slices). Thick 3 mm reconstructions, MPR snapshots, and dose sheets are also fine, one series each.
-- A 4D or multi-phase series (thousands of files) works but is slow to upload and view; take the single best-phase series first.
+- To upload a single series instead of a whole disc, use **Upload document** and select every file in one `SE` folder. The app stores it as one document with one file per slice and shows it as one card.
+- For a CT, the thin-slice axial series (the folder with the most files, around 0.5–1 mm slices) is the one worth reviewing first. Thick 3 mm reconstructions, MPR snapshots, and dose sheets are also fine, one series each.
+- A 4D or multi-phase series (thousands of files) works but is slow to upload and view.
 
 **What will not draw yet**
 

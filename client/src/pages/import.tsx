@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
+import { format } from "date-fns";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import Navigation from "@/components/navigation";
@@ -16,9 +17,12 @@ import {
   type ImportPlan,
   type PlannedSeries,
 } from "@shared/import-plan";
+import { localDate } from "@shared/upload-kinds";
 import {
+  estimateEtaSeconds,
   failedTasks,
   runImport,
+  type EtaEstimate,
   type ImportSeriesTask,
   type SeriesProgress,
 } from "@/lib/import-runner";
@@ -35,9 +39,11 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
-function formatEta(seconds: number): string {
-  const minutes = Math.max(1, Math.round(seconds / 60));
-  return minutes === 1 ? "about 1 minute" : `about ${minutes} minutes`;
+/** "about N min (estimate)" before anything has been measured, "about N minutes" once refined from a real measured batch (see estimateEtaSeconds). */
+function formatEta(estimate: EtaEstimate): string {
+  const minutes = Math.max(1, Math.round(estimate.seconds / 60));
+  const label = minutes === 1 ? "about 1 minute" : `about ${minutes} minutes`;
+  return estimate.measured ? label : `${label} (estimate)`;
 }
 
 /** Every source file's own display path, unique even for two files sharing a bare name (drag/drop and e2e fixtures don't always carry webkitRelativePath). */
@@ -88,18 +94,23 @@ function totalSelectedBytes(plan: ImportPlan, selected: Set<string>): number {
     .reduce((sum, series) => sum + series.totalBytes, 0);
 }
 
-async function sendCreate(task: ImportSeriesTask, files: File[]): Promise<{ id: number }> {
+async function sendCreate(
+  task: ImportSeriesTask,
+  files: File[],
+): Promise<{ id: number; fileCount: number }> {
   const fields = new FormData();
   fields.append("title", task.title);
   fields.append("documentType", task.documentType);
   fields.append("documentDate", task.documentDate);
   fields.append("tags", JSON.stringify([]));
   const response = await postFiles("/api/documents", fields, files);
-  return (await response.json()) as MedicalDocument;
+  const document = (await response.json()) as MedicalDocument;
+  return { id: document.id, fileCount: document.fileCount };
 }
 
-async function sendAppend(documentId: number, files: File[]): Promise<void> {
-  await postFiles(`/api/documents/${documentId}/files`, new FormData(), files);
+async function sendAppend(documentId: number, files: File[]): Promise<{ fileCount: number }> {
+  const response = await postFiles(`/api/documents/${documentId}/files`, new FormData(), files);
+  return (await response.json()) as { fileCount: number };
 }
 
 function SeriesRow({
@@ -156,11 +167,13 @@ function StudySection({
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h3 className="font-semibold text-foreground font-display truncate">{study.label}</h3>
-            {study.studyDescription && (
-              <p className="text-sm text-foreground-muted font-body truncate">
-                {study.studyDescription}
-              </p>
-            )}
+            <p
+              className="text-sm text-foreground-muted font-body truncate"
+              data-testid={`import-study-date-${study.studyInstanceUid}`}
+            >
+              {format(localDate(study.documentDate), "MMM d, yyyy")}
+              {study.studyDescription ? ` · ${study.studyDescription}` : ""}
+            </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap justify-end">
             {study.modalities.map((modality) => (
@@ -209,7 +222,25 @@ export default function Import() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [importing, setImporting] = useState(false);
   const [results, setResults] = useState<Record<string, SeriesProgress>>({});
-  const [etaLabel, setEtaLabel] = useState<string | null>(null);
+  // Refined once the first real batch has gone over the wire (updateEta
+  // below); until then the totals bar falls back to the upfront estimate.
+  const [measuredEtaLabel, setMeasuredEtaLabel] = useState<string | null>(null);
+
+  // Upfront estimate shown as soon as a plan exists — total selected bytes
+  // at the assumed 8 MB/s rate — before a single byte has actually been
+  // sent. Once running, updateEta refines measuredEtaLabel from real
+  // throughput and that takes over the display.
+  const upfrontEtaLabel = useMemo(() => {
+    if (!plan) {
+      return null;
+    }
+    const bytes = totalSelectedBytes(plan, selected);
+    if (bytes <= 0) {
+      return null;
+    }
+    return formatEta(estimateEtaSeconds(bytes));
+  }, [plan, selected]);
+  const etaLabel = measuredEtaLabel ?? upfrontEtaLabel;
 
   const byPathRef = useRef<Map<string, File>>(new Map());
   const allTasksRef = useRef<ImportSeriesTask[]>([]);
@@ -302,6 +333,9 @@ export default function Import() {
     });
   };
 
+  // Refines the upfront (assumed 8 MB/s) estimate to this run's actually
+  // observed throughput, once at least a second and a byte of real upload
+  // have happened — see estimateEtaSeconds.
   const updateEta = (task: ImportSeriesTask, progress: SeriesProgress) => {
     if (uploadStartRef.current == null) {
       uploadStartRef.current = Date.now();
@@ -314,9 +348,12 @@ export default function Import() {
     }
     const elapsedSeconds = (Date.now() - uploadStartRef.current) / 1000;
     if (elapsedSeconds >= 1 && bytesSentRef.current > 0) {
-      const rate = bytesSentRef.current / elapsedSeconds;
       const remaining = Math.max(0, selectedBytesRef.current - bytesSentRef.current);
-      setEtaLabel(formatEta(remaining / rate));
+      const estimate = estimateEtaSeconds(remaining, {
+        bytesSent: bytesSentRef.current,
+        elapsedSeconds,
+      });
+      setMeasuredEtaLabel(formatEta(estimate));
     }
   };
 
@@ -371,7 +408,7 @@ export default function Import() {
     bytesSentRef.current = 0;
     uploadStartRef.current = null;
     lastSentByKeyRef.current = {};
-    setEtaLabel(null);
+    setMeasuredEtaLabel(null);
     setResults({});
     runTasks(tasks);
   };

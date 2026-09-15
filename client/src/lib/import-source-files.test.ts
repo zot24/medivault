@@ -70,4 +70,49 @@ describe("buildSourceFiles", () => {
 
     expect(result.byPath.get("0:a.dcm")).toBe(files[0]);
   });
+
+  it("reads in bounded batches rather than all files at once, while still skipping (not failing on) an unreadable file", async () => {
+    // Round 1 fixed the "one bad read must not be fatal" behaviour; round 2
+    // asked that this also never opens more than `batchSize` reads at once
+    // — cover both in one test.
+    const batchSize = 2;
+    let inFlight = 0;
+    let maxInFlight = 0;
+
+    function trackedFile(name: string, shouldFail: boolean): FakeFile {
+      return {
+        name,
+        size: 1,
+        slice: () => ({
+          arrayBuffer: async () => {
+            inFlight += 1;
+            maxInFlight = Math.max(maxInFlight, inFlight);
+            // Yield so overlapping reads within a batch are actually
+            // concurrent, and a bug that reads everything at once would
+            // show up as inFlight exceeding batchSize.
+            await new Promise((resolve) => setTimeout(resolve, 0));
+            inFlight -= 1;
+            if (shouldFail) {
+              throw new Error("I/O error");
+            }
+            return new Uint8Array([1]).buffer;
+          },
+        }),
+      };
+    }
+
+    const files = [
+      trackedFile("a.dcm", false),
+      trackedFile("b.dcm", false),
+      trackedFile("c.dcm", true),
+      trackedFile("d.dcm", false),
+      trackedFile("e.dcm", false),
+    ];
+
+    const result = await buildSourceFiles(files, pathFor, { batchSize });
+
+    expect(maxInFlight).toBeLessThanOrEqual(batchSize);
+    expect(result.sources.map((s) => s.path)).toEqual(["0:a.dcm", "1:b.dcm", "3:d.dcm", "4:e.dcm"]);
+    expect(result.unreadable).toEqual([{ path: "2:c.dcm", reason: "couldn't be read — I/O error" }]);
+  });
 });
