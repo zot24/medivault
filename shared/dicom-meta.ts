@@ -359,7 +359,8 @@ export function seriesLabel(meta: DicomSeriesMeta): string {
     return duration ? `Echo cine loop, ${duration}` : "Echo cine loop";
   }
   if (meta.modality === "XA") {
-    return "Angiography run";
+    const duration = cineDuration(meta.numberOfFrames, meta.frameRate);
+    return duration ? `Angiography run, ${duration}` : "Angiography run";
   }
   return description || meta.modality;
 }
@@ -384,7 +385,7 @@ export function seriesGroup(meta: DicomSeriesMeta): SeriesGroup {
   if (meta.modality === "CT" && meta.sliceThickness != null) {
     return "volume";
   }
-  if (meta.modality === "US") {
+  if (meta.modality === "US" || meta.modality === "XA") {
     return "images";
   }
   return "other";

@@ -80,6 +80,20 @@ export type OwnedFrameBytes = {
   windowWidth: number;
 };
 
+/**
+ * `from`..`to` inclusive frames of an uncompressed multi-frame DICOM file
+ * (plan 12), read as one contiguous byte range instead of one HTTP round
+ * trip per frame — `bytes` is every frame's pixel data back to back, in
+ * order, so the caller splits it on its own known frame size.
+ */
+export type OwnedFrameRangeBytes = OwnedFrameBytes & {
+  from: number;
+  to: number;
+};
+
+/** Bound on a batch range request (plan 12) — big enough to cut round trips a lot, small enough that one slow batch never stalls the whole preload. */
+export const MAX_FRAME_RANGE = 8;
+
 export type RemoveDocumentResult = "deleted" | "not_found";
 
 export type AppendFilesResult =
@@ -437,6 +451,59 @@ export function createDocumentFiles(deps: {
         photometric: frameIndex.photometric || "MONOCHROME2",
         windowCenter: frameIndex.windowCenter,
         windowWidth: frameIndex.windowWidth,
+      };
+    },
+
+    /**
+     * `from`..`to` inclusive frames of an uncompressed multi-frame file, as
+     * one contiguous byte range (plan 12) — the batch counterpart to
+     * openOwnedFrame, so the client's whole-run preload can fetch several
+     * frames per HTTP request instead of one. Null for the same reasons as
+     * openOwnedFrame, plus an inverted or over-wide range (more than
+     * MAX_FRAME_RANGE frames) — the client is expected to ask for bounded
+     * batches; this is the server-side backstop, not a place to clamp.
+     */
+    async openOwnedFrameRange(
+      userId: string,
+      documentId: number,
+      position: number,
+      from: number,
+      to: number,
+    ): Promise<OwnedFrameRangeBytes | null> {
+      const document = await deps.documents.get(documentId, userId);
+      if (!document) {
+        return null;
+      }
+      const files = await deps.documents.listFiles(documentId);
+      const row = files.find((file) => file.position === position);
+      const frameIndex = row?.frameIndex;
+      if (
+        !row ||
+        !frameIndex ||
+        from < 0 ||
+        to < from ||
+        to - from + 1 > MAX_FRAME_RANGE ||
+        to >= frameIndex.numberOfFrames
+      ) {
+        return null;
+      }
+      const frameCount = to - from + 1;
+      const start = frameIndex.pixelDataOffset + from * frameIndex.frameBytes;
+      const end = start + frameCount * frameIndex.frameBytes - 1;
+      const bytes = await deps.objects.getRange(asObjectKey(row.filePath), start, end);
+      if (!bytes || bytes.length !== frameCount * frameIndex.frameBytes) {
+        return null;
+      }
+      return {
+        bytes,
+        rows: frameIndex.rows,
+        columns: frameIndex.columns,
+        bitsAllocated: frameIndex.bitsAllocated,
+        photometric: frameIndex.photometric || "MONOCHROME2",
+        windowCenter: frameIndex.windowCenter,
+        windowWidth: frameIndex.windowWidth,
+        from,
+        to,
       };
     },
 

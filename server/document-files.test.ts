@@ -848,3 +848,121 @@ describe("openOwnedFrame", () => {
     expect(await files.openOwnedFrame("intruder-2", created.id, 0, 0)).toBeNull();
   });
 });
+
+describe("openOwnedFrameRange", () => {
+  // Plan 12: a batch of frames read in one range request, so the client's
+  // whole-run preload doesn't pay one HTTP round trip per frame.
+  const meta = {
+    userId: "owner-1",
+    title: "Angiography run",
+    documentType: "x_ray",
+    documentDate: "2026-09-11",
+    tags: ["XA"],
+  };
+
+  /** 10 frames of 2x2 8-bit MONOCHROME2: frame i is filled with value i*10. */
+  function tenFramePixels(): Uint8Array {
+    const perFrame = 4;
+    const pixels = new Uint8Array(perFrame * 10);
+    for (let frame = 0; frame < 10; frame++) {
+      pixels.fill(frame * 10, frame * perFrame, (frame + 1) * perFrame);
+    }
+    return pixels;
+  }
+
+  async function tenFrameFixture() {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const bytes = buildMiniCtDicom({
+      rows: 2,
+      columns: 2,
+      bitsAllocated: 8,
+      frames: 10,
+      pixels8: tenFramePixels(),
+      windowCenter: 128,
+      windowWidth: 256,
+    });
+    const created = await files.uploadOwnedDocument({
+      ...meta,
+      files: [{ bytes, mimeType: "", originalName: "XA000001" }],
+    });
+    return { files, created };
+  }
+
+  it("returns the concatenated bytes for an inclusive frame range", async () => {
+    const { files, created } = await tenFrameFixture();
+
+    const range = await files.openOwnedFrameRange("owner-1", created.id, 0, 2, 4);
+    expect(range).toMatchObject({
+      rows: 2,
+      columns: 2,
+      bitsAllocated: 8,
+      photometric: "MONOCHROME2",
+      windowCenter: 128,
+      windowWidth: 256,
+      from: 2,
+      to: 4,
+    });
+    // 3 frames of 4 bytes: 20,20,20,20, 30,30,30,30, 40,40,40,40.
+    expect(Array.from(range!.bytes)).toEqual([
+      20, 20, 20, 20, 30, 30, 30, 30, 40, 40, 40, 40,
+    ]);
+  });
+
+  it("returns a single frame when from equals to", async () => {
+    const { files, created } = await tenFrameFixture();
+
+    const range = await files.openOwnedFrameRange("owner-1", created.id, 0, 0, 0);
+    expect(Array.from(range!.bytes)).toEqual([0, 0, 0, 0]);
+  });
+
+  it("rejects a range wider than 8 frames", async () => {
+    const { files, created } = await tenFrameFixture();
+
+    expect(await files.openOwnedFrameRange("owner-1", created.id, 0, 0, 8)).toBeNull();
+  });
+
+  it("accepts a range of exactly 8 frames", async () => {
+    const { files, created } = await tenFrameFixture();
+
+    const range = await files.openOwnedFrameRange("owner-1", created.id, 0, 0, 7);
+    expect(range?.bytes.length).toBe(8 * 4);
+  });
+
+  it("rejects to < from", async () => {
+    const { files, created } = await tenFrameFixture();
+
+    expect(await files.openOwnedFrameRange("owner-1", created.id, 0, 3, 2)).toBeNull();
+  });
+
+  it("rejects a range past the end of the run", async () => {
+    const { files, created } = await tenFrameFixture();
+
+    expect(await files.openOwnedFrameRange("owner-1", created.id, 0, 8, 10)).toBeNull();
+  });
+
+  it("rejects a negative start", async () => {
+    const { files, created } = await tenFrameFixture();
+
+    expect(await files.openOwnedFrameRange("owner-1", created.id, 0, -1, 2)).toBeNull();
+  });
+
+  it("returns null for a still (single-frame) file, which has no frame index", async () => {
+    const objects = new MemoryObjectStore();
+    const { records } = memoryRecords();
+    const files = createDocumentFiles({ objects, documents: records });
+    const created = await files.uploadOwnedDocument({
+      ...meta,
+      files: [{ bytes: buildMiniCtDicom(), mimeType: "", originalName: "CT000001" }],
+    });
+
+    expect(await files.openOwnedFrameRange("owner-1", created.id, 0, 0, 0)).toBeNull();
+  });
+
+  it("returns null for another user's document", async () => {
+    const { files, created } = await tenFrameFixture();
+
+    expect(await files.openOwnedFrameRange("intruder-2", created.id, 0, 0, 2)).toBeNull();
+  });
+});

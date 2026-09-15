@@ -11,8 +11,10 @@ import {
   groupReports,
   listDocumentItems,
   primarySeries,
+  recordFileCountLabel,
   splitDocuments,
   studyCounts,
+  studyFileCountLabel,
   studyLabel,
 } from "./studies";
 
@@ -457,6 +459,56 @@ describe("studyCounts", () => {
       viewableCount: 2,
       fileCount: 774 + 1 + 1 + 1,
     });
+  });
+});
+
+describe("recordFileCountLabel", () => {
+  // Plan 12: a multi-file angiography record (e.g. the reference cath study's
+  // 108/92/98-frame runs) reads as "3 runs · 298 frames", not "3 images" —
+  // the file count alone hides that each file is many frames of playback.
+  it("reads as N images when no total frame count is known (every non-cine record)", () => {
+    expect(recordFileCountLabel(1, null)).toBe("1 image");
+    expect(recordFileCountLabel(32, null)).toBe("32 images");
+  });
+
+  it("reads as runs and frames when a total frame count is given", () => {
+    expect(recordFileCountLabel(3, 298)).toBe("3 runs · 298 frames");
+  });
+
+  it("keeps 'run' singular for one file", () => {
+    expect(recordFileCountLabel(1, 108)).toBe("1 run · 108 frames");
+  });
+
+  it("keeps 'frame' singular for a single-frame total", () => {
+    expect(recordFileCountLabel(1, 1)).toBe("1 run · 1 frame");
+  });
+});
+
+describe("studyFileCountLabel", () => {
+  // Regression: a cath study with 3 XA angiography series (298 frames
+  // total) plus 2 non-XA series (study.fileCount = 5) must still report
+  // all 5 files, not just the 3 useMultiFrameSummary sums over the XA
+  // subset — those other 2 files must not vanish from the card's summary.
+  it("uses the study's true total file count, not the XA-only subset sum", () => {
+    const [study] = groupIntoStudies([
+      record({ dicomMeta: { modality: "XA", numberOfFrames: 108 } }),
+      record({ dicomMeta: { modality: "XA", numberOfFrames: 92 } }),
+      record({ dicomMeta: { modality: "XA", numberOfFrames: 98 } }),
+      record({ dicomMeta: { modality: "OT", numberOfFrames: 1 } }),
+      record({ dicomMeta: { modality: "SR", numberOfFrames: 1 } }),
+    ]);
+
+    expect(study.fileCount).toBe(5);
+    expect(studyFileCountLabel(study, { totalFrames: 298 })).toBe("5 runs · 298 frames");
+  });
+
+  it("falls back to plain image wording when no multi-frame summary is available", () => {
+    const [study] = groupIntoStudies([
+      record({ dicomMeta: { modality: "CT" } }),
+      record({ dicomMeta: { modality: "CT" } }),
+    ]);
+
+    expect(studyFileCountLabel(study, null)).toBe("2 images");
   });
 });
 

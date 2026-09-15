@@ -9,6 +9,29 @@
  * (state that drives the "Loading n / N" bar and gates the Play button).
  */
 
+export type FrameBatch = {
+  /** First frame of the batch, inclusive. */
+  from: number;
+  /** Last frame of the batch, inclusive. */
+  to: number;
+};
+
+/**
+ * Splits `[0, frameCount)` into consecutive inclusive ranges of up to
+ * `batchSize` frames each (plan 12 section 2) — what the whole-run preload
+ * fetches one range request per batch, instead of one per frame, matching
+ * the server's `.../frames/:from-:to` route (server/document-files.ts's
+ * MAX_FRAME_RANGE). The last batch is whatever is left over, so it may be
+ * smaller than `batchSize`.
+ */
+export function frameBatches(frameCount: number, batchSize: number): FrameBatch[] {
+  const batches: FrameBatch[] = [];
+  for (let from = 0; from < frameCount; from += batchSize) {
+    batches.push({ from, to: Math.min(from + batchSize, frameCount) - 1 });
+  }
+  return batches;
+}
+
 export type PreloadOutcome = "done" | "aborted";
 
 export type PreloadOptions = {

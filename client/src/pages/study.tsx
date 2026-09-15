@@ -14,8 +14,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { seriesLabel } from "@shared/dicom-meta";
-import { groupReports, studyCounts, studyLabel } from "@shared/studies";
+import { groupReports, recordFileCountLabel, studyCounts, studyLabel } from "@shared/studies";
 import { localDate } from "@shared/upload-kinds";
+import { useMultiFrameSummary } from "@/lib/multi-frame-summary";
 import { ArrowLeft, Eye, FileText, ScanLine } from "lucide-react";
 
 function Thumbnail({
@@ -47,6 +48,12 @@ function SeriesRow({
   onView: (series: MedicalDocument) => void;
 }) {
   const label = series.dicomMeta ? seriesLabel(series.dicomMeta) : series.title;
+  // Plan 12: an angiography record's fileCount is its cine runs, not
+  // stills — "3 runs · 298 frames" reads truer than "3 images".
+  const multiFrame = useMultiFrameSummary([series]);
+  const countLabel = multiFrame
+    ? recordFileCountLabel(multiFrame.fileCount, multiFrame.totalFrames)
+    : recordFileCountLabel(series.fileCount, null);
   return (
     <div
       className="flex items-center gap-4 p-3 rounded-xl border border-border hover:border-primary/30 hover:bg-surface-1 transition-colors"
@@ -63,9 +70,7 @@ function SeriesRow({
             {series.dicomMeta.seriesDescription}
           </p>
         )}
-        <p className="text-sm text-foreground-muted font-body">
-          {series.fileCount === 1 ? "1 image" : `${series.fileCount} images`}
-        </p>
+        <p className="text-sm text-foreground-muted font-body">{countLabel}</p>
       </div>
       <Button
         variant="outline"
