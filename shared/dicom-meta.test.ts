@@ -5,6 +5,7 @@ import {
   readFileMeta,
   readSeriesMeta,
   readSopInstanceUid,
+  readStudyDate,
   seriesGroup,
   seriesLabel,
 } from "./dicom-meta";
@@ -509,5 +510,31 @@ describe("readSopInstanceUid", () => {
 
   it("returns null for a non-Part-10 buffer", () => {
     expect(readSopInstanceUid(new Uint8Array([1, 2, 3]))).toBeNull();
+  });
+});
+
+describe("readStudyDate", () => {
+  it("formats StudyDate as YYYY-MM-DD", () => {
+    const bytes = buildMiniCtDicom({ studyDate: "20260214" });
+    expect(readStudyDate(new Uint8Array(bytes))).toBe("2026-02-14");
+  });
+
+  it("returns null when StudyDate is absent", () => {
+    const bytes = buildMiniCtDicom();
+    expect(readStudyDate(new Uint8Array(bytes))).toBeNull();
+  });
+
+  it("returns null for a malformed StudyDate", () => {
+    const bytes = buildMiniCtDicom({ studyDate: "not-a-date" });
+    expect(readStudyDate(new Uint8Array(bytes))).toBeNull();
+  });
+
+  it("returns null for a non-Part-10 buffer", () => {
+    expect(readStudyDate(new Uint8Array([1, 2, 3]))).toBeNull();
+  });
+
+  it("reads StudyDate from a Structured Report too", () => {
+    const bytes = buildMiniSr({ title: "Report", nodes: [], studyDate: "20260101" });
+    expect(readStudyDate(new Uint8Array(bytes))).toBe("2026-01-01");
   });
 });

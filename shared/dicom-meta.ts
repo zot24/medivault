@@ -219,6 +219,33 @@ export function readSopInstanceUid(bytes: Uint8Array): string | null {
   return readFileMeta(bytes)?.sopInstanceUid ?? null;
 }
 
+/**
+ * StudyDate (0008,0020) as "YYYY-MM-DD", for a new record's `documentDate`
+ * at import time only (shared/import-plan.ts) — never added to
+ * DicomSeriesMeta, which deliberately excludes every date tag (see this
+ * file's key-list test). Null when absent, blank, or not an 8-digit DA.
+ */
+export function readStudyDate(bytes: Uint8Array): string | null {
+  if (!isPart10(bytes)) {
+    return null;
+  }
+  try {
+    // untilTag: (0008,0020) is always well before pixel data.
+    const dataSet = dicomParser.parseDicom(bytes, { untilTag: "x7fe00010" });
+    return formatDicomDate(dataSet.string("x00080020"));
+  } catch {
+    return null;
+  }
+}
+
+function formatDicomDate(raw: string | undefined): string | null {
+  const value = trimmed(raw);
+  if (!/^\d{8}$/.test(value)) {
+    return null;
+  }
+  return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+}
+
 function sliceLocationOf(dataSet: DataSet): number | null {
   const fromPosition = nthFloat(dataSet.string("x00200032"), 2);
   if (fromPosition != null) {

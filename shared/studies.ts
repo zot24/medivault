@@ -458,7 +458,7 @@ const MODALITY_LABELS: ModalityLabel[] = [
 /** SR and friends describe a study's paperwork, never the study itself. */
 const NON_IMAGING_MODALITIES = new Set(["SR", "PR", "KO", "DOC"]);
 
-function imagingModality(study: StudySummary): string {
+function imagingModality(study: Pick<StudySummary, "modalities">): string {
   return (
     study.modalities.find((modality) => !NON_IMAGING_MODALITIES.has(modality)) ??
     study.modalities[0] ??
@@ -471,8 +471,12 @@ function imagingModality(study: StudySummary): string {
  * built from its imaging modality and description, falling back to the raw
  * description and then to the bare modality. Keep the raw description
  * alongside as secondary text — this label drops its detail on purpose.
+ *
+ * Takes just the two fields it needs (not the whole StudySummary) so
+ * shared/import-plan.ts can reuse the same rules on a study that hasn't
+ * been uploaded yet and has no MedicalDocument records to summarize.
  */
-export function studyLabel(study: StudySummary): string {
+export function studyLabel(study: Pick<StudySummary, "modalities" | "studyDescription">): string {
   const description = study.studyDescription;
   const labeled = study.modalities
     .map((modality) => MODALITY_LABELS.find((entry) => entry.modality === modality))
