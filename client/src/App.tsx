@@ -12,6 +12,7 @@ import Dashboard from "@/pages/dashboard";
 import Documents from "@/pages/documents";
 import Import from "@/pages/import";
 import Study from "@/pages/study";
+import Report from "@/pages/report";
 import Symptoms from "@/pages/symptoms";
 import SharedFile from "@/pages/shared-file";
 
@@ -24,6 +25,7 @@ function Router() {
       <Route path="/documents" component={Documents} />
       <Route path="/import" component={Import} />
       <Route path="/studies/:studyInstanceUid" component={Study} />
+      <Route path="/studies/:studyInstanceUid/reports/:documentId" component={Report} />
       <Route path="/symptoms" component={Symptoms} />
       <Route path="/s/:token" component={SharedFile} />
       <Route component={NotFound} />

@@ -1,6 +1,5 @@
-import { useEffect, useState } from "react";
 import { ChevronRight, ImageIcon } from "lucide-react";
-import { documentFileUrl } from "@/lib/owned-file";
+import { useSrReport } from "@/lib/use-sr-report";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +20,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { flattenMeasurements, formatMeasurement, parseSr, srViewability, type SrNode } from "@shared/dicom-sr";
+import { flattenMeasurements, formatMeasurement, srViewability, type SrNode } from "@shared/dicom-sr";
 import type { MedicalDocument } from "@shared/schema";
 import { EMPTY_REPORT_REASON, OPAQUE_VENDOR_SESSION_REASON } from "@shared/viewability";
 
@@ -37,38 +36,6 @@ type SrReportViewProps = {
   siblingDocuments?: MedicalDocument[];
   onOpenSibling?: (document: MedicalDocument) => void;
 };
-
-type ParsedReport = { title: string; nodes: SrNode[] };
-
-/** Maps a file's SOP instance UID to the sibling record that holds it. */
-async function buildSiblingIndex(
-  siblings: MedicalDocument[],
-): Promise<Map<string, MedicalDocument>> {
-  const index = new Map<string, MedicalDocument>();
-  await Promise.all(
-    siblings
-      .filter((sibling) => sibling.dicomMeta)
-      .map(async (sibling) => {
-        try {
-          const response = await fetch(`/api/documents/${sibling.id}/files`, {
-            credentials: "include",
-          });
-          if (!response.ok) {
-            return;
-          }
-          const files = (await response.json()) as { sopInstanceUid?: string | null }[];
-          for (const file of files) {
-            if (file.sopInstanceUid) {
-              index.set(file.sopInstanceUid, sibling);
-            }
-          }
-        } catch {
-          // Best-effort: the report still renders with plain UIDs.
-        }
-      }),
-  );
-  return index;
-}
 
 function NodeTree({ node }: { node: SrNode }) {
   return (
@@ -109,56 +76,8 @@ export default function SrReportView({
   siblingDocuments,
   onOpenSibling,
 }: SrReportViewProps) {
-  const [report, setReport] = useState<ParsedReport | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [siblingIndex, setSiblingIndex] = useState<Map<string, MedicalDocument>>(new Map());
   const documentId = focus?.id ?? null;
-
-  useEffect(() => {
-    setReport(null);
-    setError(null);
-    setSiblingIndex(new Map());
-    if (!open || documentId == null) {
-      return;
-    }
-
-    let cancelled = false;
-    (async () => {
-      const response = await fetch(documentFileUrl(documentId, 0), {
-        credentials: "include",
-      });
-      if (!response.ok) {
-        throw new Error("Could not load this report.");
-      }
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      const parsed = parseSr(bytes);
-      if (cancelled) {
-        return;
-      }
-      if (!parsed) {
-        throw new Error("This file isn't a readable structured report.");
-      }
-      setReport(parsed);
-
-      if (siblingDocuments && siblingDocuments.length > 0) {
-        const index = await buildSiblingIndex(siblingDocuments);
-        if (!cancelled) {
-          setSiblingIndex(index);
-        }
-      }
-    })().catch((caught: unknown) => {
-      if (!cancelled) {
-        setError(caught instanceof Error ? caught.message : "Could not load this report.");
-      }
-    });
-
-    return () => {
-      cancelled = true;
-    };
-    // siblingDocuments is derived fresh from the study each render; only the
-    // document identity and dialog visibility should restart the fetch.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, documentId]);
+  const { report, error, siblingIndex } = useSrReport(documentId, open, siblingDocuments);
 
   const measurements = report ? flattenMeasurements(report.nodes) : [];
   // The row that opens this dialog already hides itself for an
