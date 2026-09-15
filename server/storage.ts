@@ -15,6 +15,9 @@ import {
   type InsertSymptom,
 } from "@shared/schema";
 import { db } from "./db";
+import type { PhaseSourceFile } from "@shared/phases";
+
+export type PhaseSourceRow = PhaseSourceFile & { documentId: number };
 import { eq, desc, and, ilike, or, inArray, sql } from "drizzle-orm";
 import type {
   RevokeResult,
@@ -39,6 +42,8 @@ export interface IStorage {
   deleteMedicalDocument(id: number, userId: string): Promise<boolean>;
   createDocumentFiles(files: InsertDocumentFile[]): Promise<DocumentFile[]>;
   listDocumentFiles(documentId: number): Promise<DocumentFile[]>;
+  /** Position metadata for many records at once — one query, ordered by record then position. */
+  listPhaseSourceFiles(documentIds: number[]): Promise<PhaseSourceRow[]>;
   updateDocumentTotals(id: number, totals: { fileCount: number; fileSize: string }): Promise<void>;
 
   insertShareLink(row: Omit<ShareLinkRow, "id" | "createdAt">): Promise<ShareLinkRow>;
@@ -202,6 +207,23 @@ export class DatabaseStorage implements IStorage {
       return [];
     }
     return await db.insert(documentFiles).values(files).returning();
+  }
+
+  async listPhaseSourceFiles(documentIds: number[]): Promise<PhaseSourceRow[]> {
+    if (documentIds.length === 0) {
+      return [];
+    }
+    return await db
+      .select({
+        documentId: documentFiles.documentId,
+        position: documentFiles.position,
+        instanceNumber: documentFiles.instanceNumber,
+        sliceLocation: documentFiles.sliceLocation,
+        phase: documentFiles.phase,
+      })
+      .from(documentFiles)
+      .where(inArray(documentFiles.documentId, documentIds))
+      .orderBy(documentFiles.documentId, documentFiles.position);
   }
 
   async listDocumentFiles(documentId: number): Promise<DocumentFile[]> {

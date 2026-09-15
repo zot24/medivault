@@ -133,6 +133,21 @@ export type DicomFileMeta = {
   sliceLocation: number | null; // third value of (0020,0032), else (0020,1041)
   phase: number | null; // (0020,9241) %, else (0018,1060) ms
   frameIndex: DicomFrameIndex | null;
+  // Plan 13 (multi-view navigation): this file's own header fields, needed
+  // to label one *view* of a multi-file ultrasound record or one *run* of a
+  // multi-file angiography record — see shared/series-kind.ts.
+  imageType: string[]; // (0008,0008) split on backslash
+  positionerPrimaryAngle: number | null; // (0018,1510) degrees
+  positionerSecondaryAngle: number | null; // (0018,1511) degrees
+  /** (0018,6011) SequenceOfUltrasoundRegions' (0018,6014) RegionDataType values; a colour Doppler region is 2 or 3. */
+  usRegionDataTypes: number[];
+  // Per-file frame count/rate — distinct from DicomSeriesMeta's own
+  // (read once from the record's first file only). Needed for a US view's
+  // "Loop 12 · 1.7 s" fallback label: an encapsulated JPEG cine (plan 06)
+  // never gets a frameIndex (that's uncompressed-only, plan 07), so it's
+  // otherwise unknown without downloading the whole file.
+  numberOfFrames: number; // (0028,0008), default 1
+  frameRate: number | null; // CineRate (0018,0040) fps, else 1000 / FrameTime (0018,1063)
 };
 
 /** Uncompressed transfer syntaxes: a frame is a fixed byte range, no decoding needed. */
@@ -159,6 +174,12 @@ export function readFileMeta(bytes: Uint8Array): DicomFileMeta | null {
       sliceLocation: sliceLocationOf(dataSet),
       phase: phaseOfDataSet(dataSet),
       frameIndex: frameIndexOfDataSet(dataSet),
+      imageType: splitBackslash(dataSet.string("x00080008")),
+      positionerPrimaryAngle: firstFloat(dataSet.string("x00181510")),
+      positionerSecondaryAngle: firstFloat(dataSet.string("x00181511")),
+      usRegionDataTypes: regionDataTypesOf(dataSet),
+      numberOfFrames: firstInt(dataSet.string("x00280008")) ?? 1,
+      frameRate: frameRateOfDataSet(dataSet),
     };
   } catch {
     return null;
@@ -244,6 +265,22 @@ function formatDicomDate(raw: string | undefined): string | null {
     return null;
   }
   return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+}
+
+/** (0018,6011) SequenceOfUltrasoundRegions' (0018,6014) RegionDataType values, one per item, in item order. */
+function regionDataTypesOf(dataSet: DataSet): number[] {
+  const element = dataSet.elements.x00186011;
+  if (!element?.items) {
+    return [];
+  }
+  const types: number[] = [];
+  for (const item of element.items) {
+    const value = item.dataSet?.uint16("x00186014");
+    if (value != null) {
+      types.push(value);
+    }
+  }
+  return types;
 }
 
 function sliceLocationOf(dataSet: DataSet): number | null {
@@ -451,8 +488,12 @@ function phaseOf(description: string): string | null {
   return match ? match[1] : null;
 }
 
-/** "2.1 s" from a frame count and rate; null when the rate isn't known. */
-function cineDuration(numberOfFrames: number, frameRate: number | null): string | null {
+/**
+ * "2.1 s" from a frame count and rate; null when the rate isn't known.
+ * Exported for shared/series-kind.ts's per-file view label (plan 13), which
+ * needs the same "N frames · duration" formatting at file granularity.
+ */
+export function cineDuration(numberOfFrames: number, frameRate: number | null): string | null {
   if (frameRate == null || frameRate <= 0) {
     return null;
   }

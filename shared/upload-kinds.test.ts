@@ -3,6 +3,7 @@ import {
   acceptedExtensions,
   chunkFiles,
   classifyUpload,
+  countLabel,
   describeSeriesUpload,
   exceedsAggregateUploadCap,
   fitsUploadCap,
@@ -11,7 +12,6 @@ import {
   localDate,
   MAX_REQUEST_UPLOAD_BYTES,
   nextSliceToLoad,
-  sliceCountLabel,
   sliceDeltaFromKey,
   stepSliceIndex,
 } from "./upload-kinds";
@@ -123,10 +123,35 @@ describe("isDicomDocument", () => {
   });
 });
 
-describe("sliceCountLabel", () => {
-  it("uses the plural form for more than one slice", () => {
-    expect(sliceCountLabel(24)).toBe("24 slices");
-    expect(sliceCountLabel(1)).toBe("1 slice");
+describe("countLabel", () => {
+  it("reads a volume as N slices", () => {
+    expect(countLabel("volume", 774)).toBe("774 slices");
+    expect(countLabel("volume", 1)).toBe("1 slice");
+  });
+
+  it("reads phases as phase count x slices per phase, frames carrying the per-phase slice count", () => {
+    expect(countLabel("phases", 5800, 580)).toBe("10 phases × 580 slices");
+  });
+
+  it("reads a multi-file ultrasound record as N views", () => {
+    expect(countLabel("views", 56)).toBe("56 views");
+    expect(countLabel("views", 1)).toBe("1 view");
+  });
+
+  it("reads runs as N runs, with a frame total when it's known", () => {
+    expect(countLabel("runs", 3, 298)).toBe("3 runs · 298 frames");
+    expect(countLabel("runs", 3)).toBe("3 runs");
+    expect(countLabel("runs", 1, 108)).toBe("1 run · 108 frames");
+    expect(countLabel("runs", 1, 1)).toBe("1 run · 1 frame");
+  });
+
+  it("reads a single-file record as 1 image", () => {
+    expect(countLabel("single", 1)).toBe("1 image");
+  });
+
+  it("reads a report record as N reports", () => {
+    expect(countLabel("report", 1)).toBe("1 report");
+    expect(countLabel("report", 3)).toBe("3 reports");
   });
 });
 

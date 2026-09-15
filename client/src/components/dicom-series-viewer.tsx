@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { ScanLine } from "lucide-react";
 import { documentFileUrl, documentFrameRangeUrl, documentFrameUrl } from "@/lib/owned-file";
 import { FrameCache } from "@/lib/frame-cache";
 import { frameBatches, preloadFrames } from "@/lib/range-preload";
+import { useThumbnail } from "@/lib/thumbnails";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -29,12 +31,22 @@ import {
   stepSliceIndex,
 } from "@shared/upload-kinds";
 import { detectPhases, type Phase } from "@shared/phases";
+import { runLabel, seriesKind, viewLabel, type SeriesKind } from "@shared/series-kind";
+import type { DicomSeriesMeta } from "@shared/dicom-meta";
 import type { MedicalDocument } from "@shared/schema";
 
 type DicomSeriesViewerProps = {
   document: MedicalDocument | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Which file's *position* to open on (plan 13 section D: clicking a
+   * thumbnail in the study page's inline view/run strip jumps straight to
+   * that view, instead of always opening on position 0). Applied once, when
+   * the file list first loads for this open — not on every render, so
+   * scrubbing afterward isn't fought.
+   */
+  initialPosition?: number;
 };
 
 /** Parallel fetches while filling the stack in the background. */
@@ -204,7 +216,57 @@ type FileRow = {
   sliceLocation: number | null;
   phase: number | null;
   frameIndex: FileRowFrameIndex | null;
+  // Plan 13 (multi-view navigation): this file's own header fields, used to
+  // label one thumbnail of the view/run strip — see shared/series-kind.ts.
+  imageType: string[] | null;
+  positionerPrimaryAngle: number | null;
+  positionerSecondaryAngle: number | null;
+  usRegionDataTypes: number[] | null;
+  numberOfFrames: number | null;
+  frameRate: number | null;
 };
+
+/** One thumbnail of the view/run strip (plan 13 section C/D). */
+function ViewStripThumb({
+  documentId,
+  position,
+  dicomMeta,
+  label,
+  selected,
+  onSelect,
+  testId,
+}: {
+  documentId: number;
+  position: number;
+  dicomMeta: DicomSeriesMeta | null;
+  label: string;
+  selected: boolean;
+  onSelect: () => void;
+  testId: string;
+}) {
+  const dataUrl = useThumbnail(documentId, position, dicomMeta);
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      data-testid={testId}
+      className={`flex-shrink-0 w-24 text-left rounded-md border-2 transition-colors ${
+        selected ? "border-primary" : "border-transparent"
+      }`}
+    >
+      <div className="w-24 h-24 rounded bg-black/80 flex items-center justify-center overflow-hidden">
+        {dataUrl ? (
+          <img src={dataUrl} alt="" className="w-full h-full object-contain" />
+        ) : (
+          <ScanLine className="h-5 w-5 text-white/50" />
+        )}
+      </div>
+      <p className="mt-1 text-xs text-foreground-muted font-body truncate px-0.5" title={label}>
+        {label}
+      </p>
+    </button>
+  );
+}
 
 type CachedFrame = DicomFrame & { overlays: DicomOverlay[] };
 
@@ -254,6 +316,30 @@ export function loadRadius(
     return Infinity;
   }
   return Math.max(minRadius, Math.floor((budgetBytes / costBytes - 1) / 2));
+}
+
+/**
+ * Plan 13's view/run strip mounts one ViewStripThumb per file, and each one
+ * fires its own `useThumbnail` fetch — a whole-file fetch for a
+ * JPEG-compressed cine (thumbnail-frame-source.ts's cheap frame-range path
+ * only applies to an *uncompressed* multi-frame file at position 0), so an
+ * unbounded strip for a 56-view echo record would fire 56 of those at
+ * once. Only a thumbnail within `radius` of the current selection actually
+ * mounts (`isViewStripThumbLoaded`); everything else renders a plain,
+ * still-clickable placeholder until scrolled or clicked into range — the
+ * same cap in spirit as the study page's own inline strip (section D's
+ * VIEW_STRIP_PREVIEW_LIMIT), but centered on the current view instead of
+ * always the first few, since every position here has to stay reachable
+ * via ←/→.
+ */
+export const VIEW_STRIP_LOAD_RADIUS = 8;
+
+export function isViewStripThumbLoaded(
+  index: number,
+  selectedIndex: number,
+  radius: number = VIEW_STRIP_LOAD_RADIUS,
+): boolean {
+  return Math.abs(index - selectedIndex) <= radius;
 }
 
 /** Percentage for the loading progress bar, capped at 100. */
@@ -383,6 +469,7 @@ export default function DicomSeriesViewer({
   document: focus,
   open,
   onOpenChange,
+  initialPosition,
 }: DicomSeriesViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cacheRef = useRef(new FrameCache<CachedFrame>(CACHE_BUDGET_BYTES));
@@ -480,6 +567,12 @@ export default function DicomSeriesViewer({
 
   const [positions, setPositions] = useState<number[]>([]);
   const [phases, setPhases] = useState<Phase[] | null>(null);
+  // Plan 13: "views" (echo) and "runs" (angiography) swap the position
+  // slider for a thumbnail strip — see the render below and
+  // shared/series-kind.ts. Null for a document with no dicomMeta, or before
+  // the files list has loaded.
+  const [kind, setKind] = useState<SeriesKind | null>(null);
+  const [viewLabels, setViewLabels] = useState<Map<number, string>>(new Map());
   const [selectedPhaseIndex, setSelectedPhaseIndex] = useState(0);
   const [sliceIndex, setSliceIndex] = useState(0);
   const [loaded, setLoaded] = useState(0);
@@ -947,6 +1040,8 @@ export default function DicomSeriesViewer({
     cancelledRef.current = false;
     setPositions([]);
     setPhases(null);
+    setKind(null);
+    setViewLabels(new Map());
     setSelectedPhaseIndex(0);
     setSliceIndex(0);
     setLoaded(0);
@@ -987,8 +1082,59 @@ export default function DicomSeriesViewer({
         })),
       );
       const allPositions = files.map((file) => file.position);
+      const initialPositions = detection ? detection.phases[0].positions : allPositions;
       setPhases(detection?.phases ?? null);
-      setPositions(detection ? detection.phases[0].positions : allPositions);
+      setPositions(initialPositions);
+      if (initialPosition != null) {
+        const startIndex = initialPositions.indexOf(initialPosition);
+        if (startIndex >= 0) {
+          setSliceIndex(startIndex);
+        }
+      }
+
+      // Plan 13: "views" (echo) and "runs" (angiography) get a thumbnail
+      // strip instead of the position slider — see the render below. Labels
+      // are keyed by position, computed once from the files list. `kind`
+      // only gates that choice here, but still needs `detection` (just
+      // computed above) to ever read "phases" rather than "volume" — a CT
+      // record with a detected cardiac cycle isn't a views/runs strip
+      // either way, but a null-vs-non-null `kind` elsewhere (e.g. a future
+      // caller keying off it) should still see this record's real kind.
+      const seriesMeta = focus?.dicomMeta ?? null;
+      const recordKind = seriesMeta ? seriesKind(seriesMeta, files.length, detection != null) : null;
+      setKind(recordKind);
+      if (recordKind === "views") {
+        const labels = new Map<number, string>();
+        for (const file of files) {
+          labels.set(
+            file.position,
+            viewLabel({
+              imageType: file.imageType ?? [],
+              usRegionDataTypes: file.usRegionDataTypes ?? [],
+              numberOfFrames: file.numberOfFrames ?? 1,
+              frameRate: file.frameRate,
+            }),
+          );
+        }
+        setViewLabels(labels);
+      } else if (recordKind === "runs") {
+        const labels = new Map<number, string>();
+        files.forEach((file, index) => {
+          labels.set(
+            file.position,
+            runLabel(
+              {
+                positionerPrimaryAngle: file.positionerPrimaryAngle,
+                positionerSecondaryAngle: file.positionerSecondaryAngle,
+                numberOfFrames: file.frameIndex?.numberOfFrames ?? file.numberOfFrames ?? 1,
+              },
+              index + 1,
+            ),
+          );
+        });
+        setViewLabels(labels);
+      }
+
       kickLoaders(controller.signal);
     })().catch((caught: unknown) => {
       if (!cancelledRef.current) {
@@ -1196,6 +1342,9 @@ export default function DicomSeriesViewer({
   const loadedInPhase = countLoaded(positions, loadedPositionsRef.current);
   const loading = count > 0 && loadedInPhase < count;
   const single = count === 1;
+  // Plan 13: "views" (echo) and "runs" (angiography) navigate with a
+  // thumbnail strip instead of the position slider.
+  const isViewStrip = kind === "views" || kind === "runs";
   // For an angiography run (plan 07 section D), the whole run keeps
   // preloading in the background (rangeRawFramesRef) — but Play unlocks
   // progressively (plan 12), once canPlay says the first stretch of frames
@@ -1259,7 +1408,9 @@ export default function DicomSeriesViewer({
               ? "Cine loop. Press play, or use the frame slider / arrow keys / space bar to scrub and play."
               : single
                 ? "Single image."
-                : "Stay in this dialog. Use the slider, the mouse wheel, or the arrow keys to move through slices. Space bar cines through phases."}
+                : isViewStrip
+                  ? `Click a thumbnail, or use the arrow keys, to switch ${kind === "views" ? "views" : "runs"}.`
+                  : "Stay in this dialog. Use the slider, the mouse wheel, or the arrow keys to move through slices. Space bar cines through phases."}
           </DialogDescription>
         </DialogHeader>
         {error ? (
@@ -1374,19 +1525,31 @@ export default function DicomSeriesViewer({
               </div>
             )}
             <div className="flex items-center justify-between gap-4">
-              <label
-                className="text-sm text-foreground-muted"
-                htmlFor="dicom-slice"
-                hidden={single}
-              >
-                Slice{" "}
-                <span data-testid="dicom-slice-index">{sliceLabel}</span>
-                {loading && (
-                  <span className="ml-2 text-foreground-subtle" data-testid="dicom-loaded-count">
-                    · loaded {loadedInPhase} / {count}
-                  </span>
-                )}
-              </label>
+              {isViewStrip ? (
+                <label className="text-sm text-foreground-muted">
+                  {kind === "views" ? "View" : "Run"}{" "}
+                  <span data-testid="dicom-slice-index">{sliceLabel}</span>
+                  {loading && (
+                    <span className="ml-2 text-foreground-subtle" data-testid="dicom-loaded-count">
+                      · loaded {loadedInPhase} / {count}
+                    </span>
+                  )}
+                </label>
+              ) : (
+                <label
+                  className="text-sm text-foreground-muted"
+                  htmlFor="dicom-slice"
+                  hidden={single}
+                >
+                  Slice{" "}
+                  <span data-testid="dicom-slice-index">{sliceLabel}</span>
+                  {loading && (
+                    <span className="ml-2 text-foreground-subtle" data-testid="dicom-loaded-count">
+                      · loaded {loadedInPhase} / {count}
+                    </span>
+                  )}
+                </label>
+              )}
               <div className="flex items-center gap-4">
                 {hasOverlays && (
                   <label className="flex items-center gap-2 text-sm text-foreground-muted">
@@ -1418,25 +1581,72 @@ export default function DicomSeriesViewer({
                 )}
               </div>
             </div>
-            <input
-              id="dicom-slice"
-              type="range"
-              min={0}
-              max={Math.max(count - 1, 0)}
-              value={sliceIndex}
-              disabled={count < 2}
-              onChange={(event) => setSliceIndex(Number(event.target.value))}
-              className="w-full"
-              data-testid="dicom-slice-slider"
-              hidden={single}
-            />
-            {loading && !single && (
-              <div className="h-1 w-full rounded bg-surface-1" aria-hidden="true">
-                <div
-                  className="h-1 rounded bg-primary transition-[width]"
-                  style={{ width: `${loadProgressPercent(loadedInPhase, count)}%` }}
-                />
+            {isViewStrip ? (
+              // Plan 13: one thumbnail per view/run, frame 0, current one
+              // highlighted — replaces the position slider for these kinds.
+              // ←/→ still move between them (the onKeyDown handler above
+              // treats positions the same way regardless of kind).
+              <div
+                className="flex gap-2 overflow-x-auto pb-1"
+                data-testid="dicom-view-strip"
+              >
+                {positions.map((position, index) =>
+                  isViewStripThumbLoaded(index, sliceIndex) ? (
+                    <ViewStripThumb
+                      key={position}
+                      documentId={documentId!}
+                      position={position}
+                      dicomMeta={focus?.dicomMeta ?? null}
+                      label={viewLabels.get(position) ?? ""}
+                      selected={index === sliceIndex}
+                      onSelect={() => setSliceIndex(index)}
+                      testId={`dicom-view-${index}`}
+                    />
+                  ) : (
+                    // Outside the load window (see isViewStripThumbLoaded)
+                    // — still selectable, so ←/→ or a click keeps reaching
+                    // every view, but doesn't fire its thumbnail fetch
+                    // until it's actually near the current selection.
+                    <button
+                      key={position}
+                      type="button"
+                      onClick={() => setSliceIndex(index)}
+                      data-testid={`dicom-view-${index}`}
+                      className="flex-shrink-0 w-24 text-left rounded-md border-2 border-transparent"
+                    >
+                      <div className="w-24 h-24 rounded bg-black/40 flex items-center justify-center">
+                        <ScanLine className="h-5 w-5 text-white/30" />
+                      </div>
+                      <p className="mt-1 text-xs text-foreground-subtle font-body truncate px-0.5">
+                        {viewLabels.get(position) ?? ""}
+                      </p>
+                    </button>
+                  ),
+                )}
               </div>
+            ) : (
+              <>
+                <input
+                  id="dicom-slice"
+                  type="range"
+                  min={0}
+                  max={Math.max(count - 1, 0)}
+                  value={sliceIndex}
+                  disabled={count < 2}
+                  onChange={(event) => setSliceIndex(Number(event.target.value))}
+                  className="w-full"
+                  data-testid="dicom-slice-slider"
+                  hidden={single}
+                />
+                {loading && !single && (
+                  <div className="h-1 w-full rounded bg-surface-1" aria-hidden="true">
+                    <div
+                      className="h-1 rounded bg-primary transition-[width]"
+                      style={{ width: `${loadProgressPercent(loadedInPhase, count)}%` }}
+                    />
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}

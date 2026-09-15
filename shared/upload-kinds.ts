@@ -1,3 +1,5 @@
+import type { SeriesKind } from "./series-kind";
+
 /** "2026-09-11" -> a Date at local midnight, so calendar dates don't shift with the timezone. */
 export function localDate(isoDate: string): Date {
   const [y, m, d] = isoDate.split("-").map(Number);
@@ -189,8 +191,43 @@ export function chunkFiles<T>(items: T[], size: number): T[][] {
   return chunks;
 }
 
-export function sliceCountLabel(count: number): string {
-  return count === 1 ? "1 slice" : `${count} slices`;
+/**
+ * The file-count line for a record, worded for what its files actually are
+ * (plan 13) — a volume's files are slices, an echocardiogram's are views, an
+ * angiography record's are runs, and so on. Replaces the old, DICOM-kind-
+ * blind `sliceCountLabel`. `n` is the record's file count; `frames` means a
+ * different thing per kind (there being nothing else to pass it as, since
+ * every kind already spends its two required numbers): the slice count of
+ * *one phase* for "phases" (so the phase count is `n / frames`), or the
+ * summed frame count across every run for "runs" — omit it for every other
+ * kind, or when it isn't known yet.
+ */
+export function countLabel(kind: SeriesKind, n: number, frames?: number | null): string {
+  switch (kind) {
+    case "volume":
+      return n === 1 ? "1 slice" : `${n} slices`;
+    case "phases": {
+      const perPhase = frames && frames > 0 ? frames : n;
+      const phaseCount = frames && frames > 0 ? Math.round(n / frames) : 1;
+      if (phaseCount <= 1) {
+        return perPhase === 1 ? "1 slice" : `${perPhase} slices`;
+      }
+      return `${phaseCount} phases × ${perPhase} slices`;
+    }
+    case "views":
+      return n === 1 ? "1 view" : `${n} views`;
+    case "runs": {
+      const runs = n === 1 ? "1 run" : `${n} runs`;
+      if (frames == null) {
+        return runs;
+      }
+      return `${runs} · ${frames === 1 ? "1 frame" : `${frames} frames`}`;
+    }
+    case "single":
+      return "1 image";
+    case "report":
+      return n === 1 ? "1 report" : `${n} reports`;
+  }
 }
 
 export function stepSliceIndex(

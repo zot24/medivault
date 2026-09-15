@@ -1,7 +1,9 @@
 import type { MedicalDocument } from "./schema";
 import { seriesGroup, seriesLabel, type SeriesGroup } from "./dicom-meta";
-import { localDate } from "./upload-kinds";
+import { seriesKind } from "./series-kind";
+import { countLabel, localDate } from "./upload-kinds";
 import { viewabilityFromMeta, type Viewability } from "./viewability";
+import type { StudyPhaseInfo } from "./phases";
 
 export type StudySummary = {
   studyInstanceUid: string;
@@ -13,6 +15,12 @@ export type StudySummary = {
   totalBytes: number;
   primary: MedicalDocument | null;
   groups: Record<SeriesGroup, MedicalDocument[]>;
+  /**
+   * Whether the primary volume is multi-phase, decided once on the server
+   * (GET /api/studies) from its per-file positions — lists never fetch a
+   * record's files just to word a count.
+   */
+  primaryPhases: StudyPhaseInfo | null;
 };
 
 function emptyGroups(): Record<SeriesGroup, MedicalDocument[]> {
@@ -89,6 +97,7 @@ function summarize(
     fileCount,
     totalBytes,
     primary: primarySeries(series),
+    primaryPhases: null,
     groups,
   };
 }
@@ -367,6 +376,43 @@ export function studyFileCountLabel(
   return recordFileCountLabel(study.fileCount, multiFrame?.totalFrames ?? null);
 }
 
+export type { StudyPhaseInfo } from "./phases";
+
+/** Attaches server-computed phase info to the studies whose primary it was computed for. */
+export function withPrimaryPhases(
+  studies: StudySummary[],
+  phasesByDocumentId: ReadonlyMap<number, StudyPhaseInfo>,
+): StudySummary[] {
+  return studies.map((study) => ({
+    ...study,
+    primaryPhases: study.primary ? phasesByDocumentId.get(study.primary.id) ?? null : null,
+  }));
+}
+
+/**
+ * Plan 13: the study card / Dashboard's file-count line, worded for what
+ * the study's dominant modality's files actually are — "56 views", "3 runs
+ * · 298 frames", "10 phases × 580 slices" — instead of the modality-blind
+ * "N images" studyFileCountLabel above gives every study regardless of
+ * kind. A study that mixes kinds across series still reads as its single
+ * *dominant* modality's kind (imagingModality) and its true total file
+ * count (study.fileCount) — the same simplification studyLabel already
+ * makes for the study's display name, and studyFileCountLabel makes for
+ * its count. `phase` (null until known) is CT/MR's detected multi-phase
+ * structure (shared/phases.ts detectPhases, over the study's primary
+ * series — see client/src/lib/phase-detection.ts); `multiFrame` is XA's
+ * totalFrames, same as studyFileCountLabel takes.
+ */
+export function studyKindCountLabel(
+  study: StudySummary,
+  phase: StudyPhaseInfo | null,
+  multiFrame: { totalFrames: number } | null,
+): string {
+  const kind = seriesKind({ modality: imagingModality(study) }, study.fileCount, phase?.hasPhases ?? false);
+  const frames = kind === "phases" ? phase?.sliceCount ?? null : multiFrame?.totalFrames ?? null;
+  return countLabel(kind, study.fileCount, frames);
+}
+
 export type StudyCounts = {
   seriesCount: number;
   /** Series whose viewability is "images" or "report" — has a View button. */
@@ -492,7 +538,13 @@ const MODALITY_LABELS: ModalityLabel[] = [
 /** SR and friends describe a study's paperwork, never the study itself. */
 const NON_IMAGING_MODALITIES = new Set(["SR", "PR", "KO", "DOC"]);
 
-function imagingModality(study: Pick<StudySummary, "modalities">): string {
+/**
+ * A study's imaging modality for wording purposes: the first modality among
+ * its series that isn't paperwork (SR/PR/KO/DOC), else its first modality
+ * at all. Exported so dashboard.tsx and studyKindCountLabel below use the
+ * one rule instead of each re-deriving it.
+ */
+export function imagingModality(study: Pick<StudySummary, "modalities">): string {
   return (
     study.modalities.find((modality) => !NON_IMAGING_MODALITIES.has(modality)) ??
     study.modalities[0] ??

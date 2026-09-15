@@ -227,6 +227,12 @@ function fileRows(
       sliceLocation: fileMeta?.sliceLocation ?? null,
       phase: fileMeta?.phase ?? null,
       frameIndex: fileMeta?.frameIndex ?? null,
+      imageType: fileMeta?.imageType.length ? fileMeta.imageType : null,
+      positionerPrimaryAngle: fileMeta?.positionerPrimaryAngle ?? null,
+      positionerSecondaryAngle: fileMeta?.positionerSecondaryAngle ?? null,
+      usRegionDataTypes: fileMeta?.usRegionDataTypes.length ? fileMeta.usRegionDataTypes : null,
+      numberOfFrames: fileMeta?.numberOfFrames ?? null,
+      frameRate: fileMeta?.frameRate ?? null,
     };
   });
 }

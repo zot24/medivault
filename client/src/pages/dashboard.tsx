@@ -39,9 +39,12 @@ import {
   documentItemDate,
   documentItemKey,
   listDocumentItems,
+  studyKindCountLabel,
   studyLabel,
   studySeries,
   type DocumentItem,
+  type StudyPhaseInfo,
+  type StudySummary,
 } from "@shared/studies";
 
 /**
@@ -52,16 +55,23 @@ function itemLabel(item: DocumentItem): string {
   return item.kind === "study" ? studyLabel(item.study) : item.record.title;
 }
 
-function studySummaryLine(seriesCount: number, fileCount: number): string {
+/**
+ * Plan 13: word a study's file count for what its dominant modality's files
+ * actually are — "774 slices" for a CT study, "56 views" for an echo study,
+ * "3 runs" for a cath study, "10 phases × 580 slices" when the server's
+ * phase summary (StudySummary.primaryPhases) confirms a cardiac cycle — instead
+ * of the always-generic "N images".
+ */
+function studySummaryLine(study: StudySummary, phase: StudyPhaseInfo | null): string {
   return [
-    seriesCount === 1 ? "1 series" : `${seriesCount} series`,
-    fileCount === 1 ? "1 image" : `${fileCount} images`,
+    study.seriesCount === 1 ? "1 series" : `${study.seriesCount} series`,
+    studyKindCountLabel(study, phase, null),
   ].join(" · ");
 }
 
 function itemSubtitle(item: DocumentItem): string {
   if (item.kind === "study") {
-    return studySummaryLine(item.study.seriesCount, item.study.fileCount);
+    return studySummaryLine(item.study, item.study.primaryPhases);
   }
   return item.record.doctorName || item.record.facilityName || "Medical document";
 }
@@ -193,6 +203,7 @@ export default function Dashboard() {
     () => listDocumentItems(allDocuments ?? []),
     [allDocuments],
   );
+
 
   const recentItems = React.useMemo(() => documentItems.slice(0, 5), [documentItems]);
 

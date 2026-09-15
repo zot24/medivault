@@ -14,10 +14,127 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { seriesLabel } from "@shared/dicom-meta";
-import { groupReports, recordFileCountLabel, studyCounts, studyLabel } from "@shared/studies";
-import { localDate } from "@shared/upload-kinds";
+import { groupReports, studyCounts, studyLabel } from "@shared/studies";
+import { runLabel, seriesKind, viewLabel } from "@shared/series-kind";
+import { countLabel, localDate } from "@shared/upload-kinds";
 import { useMultiFrameSummary } from "@/lib/multi-frame-summary";
+import { isPhaseCandidate, usePhaseDetection } from "@/lib/phase-detection";
+import { useSeriesFiles, type SeriesFileRow } from "@/lib/series-files";
 import { ArrowLeft, Eye, FileText, ScanLine } from "lucide-react";
+
+/** A record with more views/runs than this shows the rest as a "+N more" chip instead of another thumbnail (plan 13 section D). */
+const VIEW_STRIP_PREVIEW_LIMIT = 8;
+
+function seriesFileLabel(
+  kind: "views" | "runs",
+  file: SeriesFileRow,
+  runNumber: number,
+): string {
+  if (kind === "views") {
+    return viewLabel({
+      imageType: file.imageType ?? [],
+      usRegionDataTypes: file.usRegionDataTypes ?? [],
+      numberOfFrames: file.numberOfFrames ?? 1,
+      frameRate: file.frameRate,
+    });
+  }
+  return runLabel(
+    {
+      positionerPrimaryAngle: file.positionerPrimaryAngle,
+      positionerSecondaryAngle: file.positionerSecondaryAngle,
+      numberOfFrames: file.frameIndex?.numberOfFrames ?? file.numberOfFrames ?? 1,
+    },
+    runNumber,
+  );
+}
+
+/** One thumbnail of the inline view/run strip (plan 13 section D). */
+function ViewStripThumbnail({
+  documentId,
+  position,
+  dicomMeta,
+  label,
+  onClick,
+  testId,
+}: {
+  documentId: number;
+  position: number;
+  dicomMeta: MedicalDocument["dicomMeta"];
+  label: string;
+  onClick: () => void;
+  testId: string;
+}) {
+  const dataUrl = useThumbnail(documentId, position, dicomMeta);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex-shrink-0 w-20 text-left group"
+      data-testid={testId}
+    >
+      <div className="w-20 h-20 rounded-lg bg-black/80 flex items-center justify-center overflow-hidden">
+        {dataUrl ? (
+          <img src={dataUrl} alt="" className="w-full h-full object-contain" />
+        ) : (
+          <ScanLine className="h-4 w-4 text-white/50" />
+        )}
+      </div>
+      <p
+        className="mt-1 text-[11px] text-foreground-subtle font-body truncate group-hover:text-foreground"
+        title={label}
+      >
+        {label}
+      </p>
+    </button>
+  );
+}
+
+/**
+ * The study page row's inline view/run strip (plan 13 section D): the first
+ * VIEW_STRIP_PREVIEW_LIMIT thumbnails of a multi-file echo/angiography
+ * record, so a person can open the right view directly instead of always
+ * landing on the first one. `onOpenAt` opens the viewer already scrubbed to
+ * that file.
+ */
+function SeriesViewStrip({
+  series,
+  kind,
+  onOpenAt,
+}: {
+  series: MedicalDocument;
+  kind: "views" | "runs";
+  onOpenAt: (series: MedicalDocument, position: number) => void;
+}) {
+  const { data: files } = useSeriesFiles(series.id, true);
+  if (!files || files.length === 0) {
+    return null;
+  }
+  const shown = files.slice(0, VIEW_STRIP_PREVIEW_LIMIT);
+  const hiddenCount = files.length - shown.length;
+  return (
+    <div
+      className="flex gap-2 overflow-x-auto pb-1 mt-2"
+      data-testid={`series-view-strip-${series.id}`}
+    >
+      {shown.map((file, index) => (
+        <ViewStripThumbnail
+          key={file.position}
+          documentId={series.id}
+          position={file.position}
+          dicomMeta={series.dicomMeta}
+          label={seriesFileLabel(kind, file, index + 1)}
+          onClick={() => onOpenAt(series, file.position)}
+          testId={`series-view-strip-thumb-${series.id}-${index}`}
+        />
+      ))}
+      {hiddenCount > 0 && (
+        <div className="flex-shrink-0 w-20 flex items-center justify-center text-xs text-foreground-subtle font-body">
+          +{hiddenCount} more
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Thumbnail({
   document: series,
@@ -43,45 +160,67 @@ function Thumbnail({
 function SeriesRow({
   series,
   onView,
+  onOpenAt,
 }: {
   series: MedicalDocument;
   onView: (series: MedicalDocument) => void;
+  onOpenAt: (series: MedicalDocument, position: number) => void;
 }) {
   const label = series.dicomMeta ? seriesLabel(series.dicomMeta) : series.title;
-  // Plan 12: an angiography record's fileCount is its cine runs, not
-  // stills — "3 runs · 298 frames" reads truer than "3 images".
+  // Plan 13: word the count for what this record's files actually are — a
+  // CT volume's "774 slices" (or "10 phases × 580 slices" once detectPhases
+  // finds a cardiac cycle in it — phase below), an echo record's "56
+  // views", an angiography record's "3 runs · 298 frames" (plan 12's
+  // totalFrames, from useMultiFrameSummary) — instead of the
+  // modality-blind "N images".
   const multiFrame = useMultiFrameSummary([series]);
-  const countLabel = multiFrame
-    ? recordFileCountLabel(multiFrame.fileCount, multiFrame.totalFrames)
-    : recordFileCountLabel(series.fileCount, null);
+  const phaseCandidate = series.dicomMeta
+    ? isPhaseCandidate(series.dicomMeta, series.fileCount)
+    : false;
+  const phase = usePhaseDetection(series.id, phaseCandidate);
+  const kind = series.dicomMeta
+    ? seriesKind(series.dicomMeta, series.fileCount, phase?.hasPhases ?? false)
+    : "single";
+  const fileCountLabel = countLabel(
+    kind,
+    series.fileCount,
+    kind === "phases" ? phase?.sliceCount ?? null : multiFrame?.totalFrames ?? null,
+  );
+  // Plan 13 section D: a multi-file echo/angiography record shows its view/
+  // run strip right in the row, so a person can open the right one directly
+  // instead of always landing on the first.
+  const showViewStrip = kind === "views" || kind === "runs";
   return (
     <div
-      className="flex items-center gap-4 p-3 rounded-xl border border-border hover:border-primary/30 hover:bg-surface-1 transition-colors"
+      className="p-3 rounded-xl border border-border hover:border-primary/30 hover:bg-surface-1 transition-colors"
       data-testid={`series-row-${series.id}`}
     >
-      <Thumbnail document={series} className="w-16 h-16" />
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <TypeBadge document={series} testId={`series-modality-${series.id}`} />
+      <div className="flex items-center gap-4">
+        <Thumbnail document={series} className="w-16 h-16" />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <TypeBadge document={series} testId={`series-modality-${series.id}`} />
+          </div>
+          <p className="font-medium text-foreground font-body truncate">{label}</p>
+          {series.dicomMeta?.seriesDescription && (
+            <p className="text-xs text-foreground-subtle font-body truncate">
+              {series.dicomMeta.seriesDescription}
+            </p>
+          )}
+          <p className="text-sm text-foreground-muted font-body">{fileCountLabel}</p>
         </div>
-        <p className="font-medium text-foreground font-body truncate">{label}</p>
-        {series.dicomMeta?.seriesDescription && (
-          <p className="text-xs text-foreground-subtle font-body truncate">
-            {series.dicomMeta.seriesDescription}
-          </p>
-        )}
-        <p className="text-sm text-foreground-muted font-body">{countLabel}</p>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onView(series)}
+          className="border-border text-foreground hover:bg-surface-1 flex-shrink-0"
+          data-testid={`button-view-series-${series.id}`}
+        >
+          <Eye className="mr-2 h-4 w-4" />
+          <span className="font-body">View</span>
+        </Button>
       </div>
-      <Button
-        variant="outline"
-        size="sm"
-        onClick={() => onView(series)}
-        className="border-border text-foreground hover:bg-surface-1 flex-shrink-0"
-        data-testid={`button-view-series-${series.id}`}
-      >
-        <Eye className="mr-2 h-4 w-4" />
-        <span className="font-body">View</span>
-      </Button>
+      {showViewStrip && <SeriesViewStrip series={series} kind={kind} onOpenAt={onOpenAt} />}
     </div>
   );
 }
@@ -119,11 +258,13 @@ function Section({
   title,
   series,
   onView,
+  onOpenAt,
   layout = "list",
 }: {
   title: string;
   series: MedicalDocument[];
   onView: (series: MedicalDocument) => void;
+  onOpenAt: (series: MedicalDocument, position: number) => void;
   layout?: "list" | "grid";
 }) {
   if (series.length === 0) {
@@ -137,7 +278,7 @@ function Section({
       ) : (
         <div className="space-y-2">
           {series.map((item) => (
-            <SeriesRow key={item.id} series={item} onView={onView} />
+            <SeriesRow key={item.id} series={item} onView={onView} onOpenAt={onOpenAt} />
           ))}
         </div>
       )}
@@ -236,6 +377,12 @@ export default function Study({
   });
   const [viewerDocument, setViewerDocument] = useState<MedicalDocument | null>(null);
   const [viewerOpen, setViewerOpen] = useState(false);
+  // Plan 13 section D: which file the viewer opens on, when a person picks
+  // a thumbnail from a row's inline view/run strip instead of the plain
+  // View button (which always opens on the first file).
+  const [viewerInitialPosition, setViewerInitialPosition] = useState<number | undefined>(
+    undefined,
+  );
 
   const study = studies?.find(
     (candidate) => candidate.studyInstanceUid === params.studyInstanceUid,
@@ -243,6 +390,13 @@ export default function Study({
 
   const openViewer = (series: MedicalDocument) => {
     setViewerDocument(series);
+    setViewerInitialPosition(undefined);
+    setViewerOpen(true);
+  };
+
+  const openViewerAt = (series: MedicalDocument, position: number) => {
+    setViewerDocument(series);
+    setViewerInitialPosition(position);
     setViewerOpen(true);
   };
 
@@ -329,14 +483,25 @@ export default function Study({
           </p>
         </div>
 
-        <Section title="Images" series={orderedImages(study)} onView={openViewer} />
+        <Section
+          title="Images"
+          series={orderedImages(study)}
+          onView={openViewer}
+          onOpenAt={openViewerAt}
+        />
         <Section
           title="Measurements"
           series={study.groups.snapshot}
           onView={openViewer}
+          onOpenAt={openViewerAt}
           layout="grid"
         />
-        <Section title="Analysis" series={study.groups.analysis} onView={openViewer} />
+        <Section
+          title="Analysis"
+          series={study.groups.analysis}
+          onView={openViewer}
+          onOpenAt={openViewerAt}
+        />
         <ReportsSection
           records={study.groups.report}
           studyInstanceUid={study.studyInstanceUid}
@@ -345,6 +510,7 @@ export default function Study({
           title="Other"
           series={[...study.groups.localizer, ...study.groups.other]}
           onView={openViewer}
+          onOpenAt={openViewerAt}
         />
 
         {study.seriesCount === 0 && (
@@ -361,6 +527,7 @@ export default function Study({
         document={viewerDocument}
         open={viewerOpen}
         onOpenChange={setViewerOpen}
+        initialPosition={viewerInitialPosition}
       />
     </div>
   );

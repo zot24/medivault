@@ -201,9 +201,20 @@ test("shows a phase select and holds the slice steady while cine-ing through pha
 
   const studyCard = page.getByTestId(`study-card-${MULTIPHASE_STUDY_UID}`);
   await expect(studyCard).toBeVisible({ timeout: 30_000 });
+  // Regression (PR #40 review, finding F1): seriesKind/countLabel's "N
+  // phases × M slices" wording (plan 13 section B) is unreachable unless
+  // `hasPhases` is actually threaded from shared/phases.ts detectPhases —
+  // this fixture is 2 phases of 2 slices; without the fix it reads as the
+  // modality-blind "4 slices" instead.
+  await expect(studyCard.getByTestId(`study-summary-${MULTIPHASE_STUDY_UID}`)).toHaveText(
+    /2 phases × 2 slices/,
+  );
   await studyCard.getByTestId(`button-open-study-${MULTIPHASE_STUDY_UID}`).click();
 
   await page.waitForURL(`**/studies/${encodeURIComponent(MULTIPHASE_STUDY_UID)}`);
+  // The study page row reads the same way (study.tsx's SeriesRow).
+  const seriesRow = page.locator('[data-testid^="series-row-"]').first();
+  await expect(seriesRow).toContainText(/2 phases × 2 slices/);
   const view = page.locator('[data-testid^="button-view-series-"]').first();
   await view.click();
 
@@ -291,6 +302,78 @@ test("plays a synthetic ultrasound cine loop and steps its frame label", async (
   // The frame slider also scrubs directly, independent of playback.
   await page.getByTestId("dicom-play").click(); // pause first
   await page.getByTestId("dicom-frame-slider").fill("0");
+  await expect(frameLabel).toHaveText("1 / 2");
+});
+
+// mini-us-view-1.dcm + mini-us-view-2.dcm: two synthetic echo cine loops (2
+// and 4 frames) sharing one study/series UID, built for this test's own
+// isolated study card (plan 13's view strip).
+const US_VIEWS_STUDY_UID = "1.2.826.0.1.3680043.8.498.study.us-views";
+
+test("shows a view strip for a multi-file echo record and switches views", async ({ page }) => {
+  await page.goto("/login");
+  await page
+    .getByTestId("input-login-email")
+    .fill(process.env.E2E_EMAIL ?? "demo@medivault.app");
+  await page
+    .getByTestId("input-login-password")
+    .fill(process.env.E2E_PASSWORD ?? "demo123");
+  await page.getByTestId("button-login-submit").click();
+  await page.waitForURL(/\/(dashboard|documents)/);
+
+  await page.goto("/documents");
+  await page.getByTestId("button-upload-document").click();
+  await page.getByTestId("input-upload-title").fill("Synthetic echo multi-view");
+  await page.getByTestId("input-upload-date").fill("2026-09-12");
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByTestId("button-choose-upload-files").click();
+  const dialog = await chooser;
+  // Both files in one selection -> one multi-file record (a "views" kind
+  // record, shared/series-kind.ts): the DICOM series a real echo study is.
+  await dialog.setFiles([
+    path.join(fixtures, "mini-us-view-1.dcm"),
+    path.join(fixtures, "mini-us-view-2.dcm"),
+  ]);
+  const uploaded = page.waitForResponse(
+    (response) => response.url().includes("/api/documents") && response.request().method() === "POST",
+  );
+  await page.getByTestId("button-upload-submit").click();
+  await uploaded;
+  // See the multi-phase test above: the studies query needs a reload to
+  // pick up a freshly uploaded series.
+  await page.reload();
+
+  const studyCard = page.getByTestId(`study-card-${US_VIEWS_STUDY_UID}`);
+  await expect(studyCard).toBeVisible({ timeout: 30_000 });
+  await studyCard.getByTestId(`button-open-study-${US_VIEWS_STUDY_UID}`).click();
+
+  await page.waitForURL(`**/studies/${encodeURIComponent(US_VIEWS_STUDY_UID)}`);
+  await expect(page.getByTestId("study-page")).toBeVisible();
+
+  // The study page row shows the same strip inline (plan 13 section D).
+  const inlineStrip = page.locator('[data-testid^="series-view-strip-"]').first();
+  await expect(inlineStrip).toBeVisible();
+  await expect(inlineStrip.locator('[data-testid$="-0"]')).toBeVisible();
+
+  // Clicking the strip's *second* thumbnail opens the viewer already
+  // scrubbed to that exact file (study.tsx's onOpenAt), not always the
+  // first — nothing end-to-end exercised this before (PR #40 review).
+  await inlineStrip.locator('[data-testid$="-1"]').click();
+
+  // The position slider is replaced by a thumbnail strip for this kind —
+  // it must not render at all.
+  await expect(page.getByTestId("dicom-slice-slider")).toHaveCount(0);
+  const strip = page.getByTestId("dicom-view-strip");
+  await expect(strip).toBeVisible();
+  await expect(page.getByTestId("dicom-view-0")).toBeVisible();
+  await expect(page.getByTestId("dicom-view-1")).toBeVisible();
+
+  const frameLabel = page.getByTestId("dicom-cine-frame-index");
+  // Opened at the second view (4-frame loop), not the first (2-frame) —
+  // proves onOpenAt's position actually reached the viewer.
+  await expect(frameLabel).toHaveText("1 / 4");
+
+  await page.getByTestId("dicom-view-0").click();
   await expect(frameLabel).toHaveText("1 / 2");
 });
 
