@@ -275,6 +275,15 @@ export async function registerRoutes(app: Express): Promise<void> {
           instanceNumber: file.instanceNumber,
           sliceLocation: file.sliceLocation,
           phase: file.phase,
+          // Plan 13: this file's own header fields, so the viewer and study
+          // page can label one view of an echo record / one run of an
+          // angiography record without fetching the file itself.
+          imageType: file.imageType,
+          positionerPrimaryAngle: file.positionerPrimaryAngle,
+          positionerSecondaryAngle: file.positionerSecondaryAngle,
+          usRegionDataTypes: file.usRegionDataTypes,
+          numberOfFrames: file.numberOfFrames,
+          frameRate: file.frameRate,
           // Present only for an uncompressed multi-frame file (plan 07):
           // tells the client to use the .../frames/:frame (or, for a batch,
           // .../frames/:from-:to — plan 12) range endpoints instead of

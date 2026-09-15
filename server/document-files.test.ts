@@ -63,6 +63,12 @@ function memoryRecords(rows: MedicalDocument[] = []) {
           sliceLocation: input.sliceLocation ?? null,
           phase: input.phase ?? null,
           frameIndex: input.frameIndex ?? null,
+          imageType: input.imageType ?? null,
+          positionerPrimaryAngle: input.positionerPrimaryAngle ?? null,
+          positionerSecondaryAngle: input.positionerSecondaryAngle ?? null,
+          usRegionDataTypes: input.usRegionDataTypes ?? null,
+          numberOfFrames: input.numberOfFrames ?? null,
+          frameRate: input.frameRate ?? null,
           createdAt: new Date("2026-09-11T00:00:00.000Z"),
         }));
         files.push(...created);
