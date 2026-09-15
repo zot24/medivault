@@ -2,7 +2,7 @@ import type { Express } from "express";
 import fs from "fs";
 import { storage } from "./storage";
 import { setupLocalAuth, isAuthenticated } from "./localAuth";
-import { createDocumentFiles, type UploadFile } from "./document-files";
+import { createDocumentFiles, MAX_FRAME_RANGE, type UploadFile } from "./document-files";
 import { uploadFilesOrReject } from "./upload-middleware";
 import {
   createObjectStoreFromEnv,
@@ -276,9 +276,21 @@ export async function registerRoutes(app: Express): Promise<void> {
           sliceLocation: file.sliceLocation,
           phase: file.phase,
           // Present only for an uncompressed multi-frame file (plan 07):
-          // tells the client to use the .../frames/:frame range endpoint
-          // instead of fetching the whole file.
-          numberOfFrames: file.frameIndex?.numberOfFrames ?? null,
+          // tells the client to use the .../frames/:frame (or, for a batch,
+          // .../frames/:from-:to — plan 12) range endpoints instead of
+          // fetching the whole file. Deliberately a subset of the server's
+          // own DicomFrameIndex — enough to size and split a batch read
+          // (frameBytes) and to know the image's shape up front (rows,
+          // columns) without a probe fetch of frame 0; windowCenter/Width
+          // still come from that probe.
+          frameIndex: file.frameIndex
+            ? {
+                numberOfFrames: file.frameIndex.numberOfFrames,
+                frameBytes: file.frameIndex.frameBytes,
+                rows: file.frameIndex.rows,
+                columns: file.frameIndex.columns,
+              }
+            : null,
         })),
       );
     } catch (error) {
@@ -313,6 +325,66 @@ export async function registerRoutes(app: Express): Promise<void> {
       res.status(500).json({ message: "Failed to read file" });
     }
   });
+
+  // An inclusive batch of frames of an uncompressed multi-frame DICOM file
+  // (plan 12), served as one fixed byte range — what the whole-run preload
+  // uses instead of one request per frame. Registered before the
+  // single-frame route below: with no dash, "/frames/5" only matches
+  // `:frame`, but the reverse order would let `:frame`'s single named
+  // param — which matches any non-slash text, dashes included — swallow
+  // "/frames/3-10" as frame "3-10" (parseInt reads that as 3) before this
+  // route ever saw it.
+  app.get(
+    '/api/documents/:id/files/:position/frames/:from-:to',
+    isAuthenticated,
+    async (req: any, res) => {
+      try {
+        const documentId = parseInt(req.params.id, 10);
+        const position = parseInt(req.params.position, 10);
+        const from = parseInt(req.params.from, 10);
+        const to = parseInt(req.params.to, 10);
+        if (
+          !Number.isInteger(documentId) ||
+          !Number.isInteger(position) ||
+          position < 0 ||
+          !Number.isInteger(from) ||
+          !Number.isInteger(to) ||
+          from < 0 ||
+          to < from ||
+          to - from + 1 > MAX_FRAME_RANGE
+        ) {
+          return res.status(404).json({ message: "Frame range not found" });
+        }
+        const owned = await getDocumentFiles().openOwnedFrameRange(
+          req.user.id,
+          documentId,
+          position,
+          from,
+          to,
+        );
+        if (!owned) {
+          return res.status(404).json({ message: "Frame range not found" });
+        }
+        res.setHeader("Content-Type", "application/octet-stream");
+        res.setHeader("X-Frame-Rows", String(owned.rows));
+        res.setHeader("X-Frame-Columns", String(owned.columns));
+        res.setHeader("X-Frame-Bits", String(owned.bitsAllocated));
+        res.setHeader("X-Frame-Photometric", owned.photometric);
+        res.setHeader("X-Window-Center", String(owned.windowCenter));
+        res.setHeader("X-Window-Width", String(owned.windowWidth));
+        res.setHeader("X-Frame-From", String(owned.from));
+        res.setHeader("X-Frame-To", String(owned.to));
+        res.setHeader("Cache-Control", "private, max-age=3600");
+        res.send(owned.bytes);
+      } catch (error) {
+        if (error instanceof ObjectStoreConfigError) {
+          return res.status(503).json({ message: error.message });
+        }
+        console.error("Error reading frame range:", error);
+        res.status(500).json({ message: "Failed to read frame range" });
+      }
+    },
+  );
 
   // One frame of an uncompressed multi-frame DICOM file (plan 07:
   // angiography cine runs), served as a fixed byte range so neither the
